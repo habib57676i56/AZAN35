@@ -118,17 +118,27 @@ class MihrabRepository(
             val snap = docRef.get().await()
             if (!snap.exists()) {
                 val safeName = displayName.trim().ifBlank { "مؤمن" }.take(60)
+                val defaultsSnap = runCatching {
+                    db.collection("adminConfigs").document("quran_defaults").get().await()
+                }.getOrNull()
+                val defaultsObj = runCatching {
+                    JSONObject(defaultsSnap?.getString("valueJson") ?: "{}")
+                }.getOrNull()
+                val defReciter = defaultsObj?.optString("defaultReciterId")?.takeIf { it.isNotBlank() } ?: "ar.alafasy"
+                val defPaper = defaultsObj?.optString("defaultPaper")?.takeIf { it in listOf("WHITE", "SEPIA", "DARK") } ?: "WHITE"
+                val defTheme = defaultsObj?.optString("defaultThemeMode")?.takeIf { it in listOf("LIGHT", "DARK", "SYSTEM") } ?: "SYSTEM"
+                val defScale = defaultsObj?.optDouble("defaultFontScale", 1.0)?.coerceIn(0.85, 1.35) ?: 1.0
                 val payload = mapOf(
                     "userId" to uid,
                     "displayName" to safeName,
                     "preferredLanguage" to "ar",
-                    "themeMode" to "SYSTEM",
-                    "mushafPaper" to "WHITE",
-                    "fontScale" to 1.0,
+                    "themeMode" to defTheme,
+                    "mushafPaper" to defPaper,
+                    "fontScale" to defScale,
                     "lastReadPage" to 1L,
                     "lastReadSurah" to 1L,
                     "lastReadAyah" to 1L,
-                    "preferredReciterId" to "ar.alafasy",
+                    "preferredReciterId" to defReciter,
                     "adhanEnabled" to true,
                     "adhanVoiceId" to "makkah",
                     "perPrayerAdhanModes" to mapOf(
@@ -373,6 +383,7 @@ class MihrabRepository(
                                 targetCount = d.targetCount.toInt().coerceIn(1, 1000),
                                 referenceAr = d.referenceAr,
                                 referenceEn = d.referenceEn,
+                                iconName = d.iconName,
                                 sortOrder = d.sortOrder.toInt(),
                                 active = d.active
                             )
@@ -410,10 +421,81 @@ class MihrabRepository(
                                 modelName = safeModel,
                                 systemPrompt = obj.optString("systemPrompt")
                                     .takeIf { it.isNotBlank() }
-                                    ?: AiRuntimeConfig.DEFAULT_ISLAMIC_SYSTEM_PROMPT
+                                    ?: AiRuntimeConfig.DEFAULT_ISLAMIC_SYSTEM_PROMPT,
+                                dailyLimitPerUser = obj.optInt("dailyLimitPerUser", 30).coerceIn(5, 500)
                             )
                         } catch (_: Exception) {
                             AiRuntimeConfig()
+                        }
+                    }
+                }
+        }
+    }
+
+    fun observeQuranDefaults(uid: String): Flow<QuranDefaultsConfig> {
+        val path = "adminConfigs/quran_defaults"
+        return safeFirestoreFlow(path, OperationType.GET, uid) {
+            db.collection("adminConfigs").document("quran_defaults")
+                .snapshots()
+                .map { snap ->
+                    if (!snap.exists()) {
+                        QuranDefaultsConfig()
+                    } else {
+                        val valueJson = snap.getString("valueJson") ?: "{}"
+                        try {
+                            val obj = JSONObject(valueJson)
+                            QuranDefaultsConfig(
+                                quranPageApiBase = obj.optString("quranPageApiBase", "https://api.quran.com/api/v4")
+                                    .takeIf { it.startsWith("https://") } ?: "https://api.quran.com/api/v4",
+                                quranFallbackApiBase = obj.optString("quranFallbackApiBase", "https://api.alquran.cloud/v1")
+                                    .takeIf { it.startsWith("https://") } ?: "https://api.alquran.cloud/v1",
+                                audioCdnBase = obj.optString("audioCdnBase", "https://everyayah.com/data")
+                                    .takeIf { it.startsWith("https://") } ?: "https://everyayah.com/data",
+                                defaultReciterId = obj.optString("defaultReciterId", "ar.alafasy").ifBlank { "ar.alafasy" },
+                                defaultPaper = obj.optString("defaultPaper", "WHITE")
+                                    .takeIf { it in listOf("WHITE", "SEPIA", "DARK") } ?: "WHITE",
+                                defaultThemeMode = obj.optString("defaultThemeMode", "SYSTEM")
+                                    .takeIf { it in listOf("LIGHT", "DARK", "SYSTEM") } ?: "SYSTEM",
+                                defaultFontScale = obj.optDouble("defaultFontScale", 1.0).coerceIn(0.85, 1.35)
+                            )
+                        } catch (_: Exception) {
+                            QuranDefaultsConfig()
+                        }
+                    }
+                }
+        }
+    }
+
+    fun observeAppOperations(uid: String): Flow<AppOperationsConfig> {
+        val path = "adminConfigs/app_operations"
+        return safeFirestoreFlow(path, OperationType.GET, uid) {
+            db.collection("adminConfigs").document("app_operations")
+                .snapshots()
+                .map { snap ->
+                    if (!snap.exists()) {
+                        AppOperationsConfig()
+                    } else {
+                        val valueJson = snap.getString("valueJson") ?: "{}"
+                        try {
+                            val obj = JSONObject(valueJson)
+                            AppOperationsConfig(
+                                bannerEnabled = obj.optBoolean("bannerEnabled", false),
+                                bannerTitleAr = obj.optString("bannerTitleAr", ""),
+                                bannerTitleEn = obj.optString("bannerTitleEn", ""),
+                                bannerBodyAr = obj.optString("bannerBodyAr", ""),
+                                bannerBodyEn = obj.optString("bannerBodyEn", ""),
+                                bannerTone = obj.optString("bannerTone", "INFO"),
+                                aiAssistantEnabled = obj.optBoolean("aiAssistantEnabled", true),
+                                quranAudioEnabled = obj.optBoolean("quranAudioEnabled", true),
+                                communityDuaWallEnabled = obj.optBoolean("communityDuaWallEnabled", true),
+                                familyKhatmahEnabled = obj.optBoolean("familyKhatmahEnabled", true),
+                                arQiblaEnabled = obj.optBoolean("arQiblaEnabled", true),
+                                kidsModeEnabled = obj.optBoolean("kidsModeEnabled", true),
+                                customAdhanUploadEnabled = obj.optBoolean("customAdhanUploadEnabled", true),
+                                maintenanceMode = obj.optBoolean("maintenanceMode", false)
+                            )
+                        } catch (_: Exception) {
+                            AppOperationsConfig()
                         }
                     }
                 }

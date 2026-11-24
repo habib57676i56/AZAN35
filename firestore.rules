@@ -29,7 +29,11 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && ('admin' in request.auth.token) && request.auth.token.admin == true;
+      return isSignedIn() &&
+             ('email' in request.auth.token) &&
+             request.auth.token.email == 'habiybullohy@gmail.com' &&
+             ('email_verified' in request.auth.token) &&
+             request.auth.token.email_verified == true;
     }
 
     function isValidTimestamp(ts) {
@@ -170,7 +174,7 @@ service cloud.firestore {
 
     function isValidAdminConfig(data) {
       return data.configKey is string && data.configKey.size() >= 1 && data.configKey.size() <= 80 &&
-             data.valueJson is string && data.valueJson.size() <= 8000 &&
+             data.valueJson is string && data.valueJson.size() <= 16000 &&
              isValidTimestamp(data.createdAt) &&
              isValidTimestamp(data.updatedAt);
     }
@@ -195,6 +199,7 @@ service cloud.firestore {
              data.targetCount is int && data.targetCount >= 1 && data.targetCount <= 1000 &&
              data.referenceAr is string && data.referenceAr.size() <= 400 &&
              data.referenceEn is string && data.referenceEn.size() <= 400 &&
+             (!('iconName' in data) || (data.iconName is string && data.iconName.size() <= 60)) &&
              data.sortOrder is int && data.sortOrder >= 0 && data.sortOrder <= 10000 &&
              data.active is bool &&
              isValidTimestamp(data.createdAt) &&
@@ -226,8 +231,8 @@ service cloud.firestore {
 
     // --- USER PROFILE & SUBCOLLECTIONS ---
     match /users/{userId} {
-      allow get: if isOwner(userId) && isValidId(userId);
-      allow list: if false;
+      allow get: if (isOwner(userId) || isAdmin()) && isValidId(userId);
+      allow list: if isAdmin();
 
       allow create: if isOwner(userId) &&
                        isValidId(userId) &&
@@ -248,7 +253,7 @@ service cloud.firestore {
                        ]) &&
                        isValidUserSettings(incoming(), userId);
 
-      allow update: if isOwner(userId) &&
+      allow update: if (isOwner(userId) || isAdmin()) &&
                        isValidId(userId) &&
                        isValidUserSettings(incoming(), userId) &&
                        incoming().userId == existing().userId &&
@@ -262,7 +267,7 @@ service cloud.firestore {
                          'khatmahPagesRead', 'updatedAt'
                        ]);
 
-      allow delete: if isOwner(userId) && isValidId(userId);
+      allow delete: if (isOwner(userId) || isAdmin()) && isValidId(userId);
 
       match /prayerLogs/{dateKey} {
         allow get: if isOwner(userId) && isValidId(dateKey);
@@ -404,12 +409,12 @@ service cloud.firestore {
     // --- PHASE 1 & PHASE 3 DYNAMIC RECITERS CATALOG ---
     match /reciters/{reciterId} {
       allow get: if isSignedIn() && isValidId(reciterId);
-      allow list: if isSignedIn() && existing().active == true;
+      allow list: if (isSignedIn() && existing().active == true) || isAdmin();
       allow create, update: if isAdmin() && isValidId(reciterId) && isValidReciter(incoming());
       allow delete: if isAdmin() && isValidId(reciterId);
     }
 
-    // --- PHASE 3 PREPARED ADMIN CONFIGS & ADHAN VOICES ---
+    // --- PHASE 3 ADMIN CONFIGS, ADHAN VOICES & ADHKAR ---
     match /adminConfigs/{configId} {
       allow get: if isSignedIn() && isValidId(configId);
       allow list: if isSignedIn();
@@ -419,14 +424,14 @@ service cloud.firestore {
 
     match /adhanVoices/{voiceId} {
       allow get: if isSignedIn() && isValidId(voiceId);
-      allow list: if isSignedIn() && existing().active == true;
+      allow list: if (isSignedIn() && existing().active == true) || isAdmin();
       allow create, update: if isAdmin() && isValidId(voiceId) && isValidAdhanVoice(incoming());
       allow delete: if isAdmin() && isValidId(voiceId);
     }
 
     match /adhkarItems/{itemId} {
       allow get: if isSignedIn() && isValidId(itemId);
-      allow list: if isSignedIn() && existing().active == true;
+      allow list: if (isSignedIn() && existing().active == true) || isAdmin();
       allow create, update: if isAdmin() && isValidId(itemId) && isValidAdhkarItem(incoming());
       allow delete: if isAdmin() && isValidId(itemId);
     }
@@ -456,7 +461,7 @@ service cloud.firestore {
                           incoming().diff(existing()).affectedKeys().hasOnly(['alias', 'category', 'requestText', 'updatedAt']))
                        );
 
-      allow delete: if isSignedIn() && isValidId(postId) && existing().authorUid == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(postId) && (existing().authorUid == request.auth.uid || isAdmin());
     }
 
     // --- FAMILY KHATMAH GROUPS ---

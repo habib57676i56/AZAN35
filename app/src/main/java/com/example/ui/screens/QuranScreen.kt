@@ -47,6 +47,7 @@ import com.example.core.hardware.QuranRecitationPlayer
 import com.example.core.hardware.QuranTtsAudioPlayer
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
+import com.example.data.firebase.AppOperationsConfig
 import com.example.data.firebase.UserSettingsDoc
 import com.example.domain.ArabicTextNormalizer
 import com.example.domain.QuranCatalog
@@ -63,6 +64,7 @@ fun QuranScreen(
     recitationPlayer: QuranRecitationPlayer,
     appLanguage: AppLanguage,
     strings: LocalizedStrings,
+    appOperations: AppOperationsConfig = AppOperationsConfig(),
     onOpenAiAssistant: () -> Unit = {}
 ) {
     val settingsState by viewModel.settingsState.collectAsStateWithLifecycle()
@@ -120,6 +122,8 @@ fun QuranScreen(
                         strings = strings,
                         externalTargetPage = externalTargetPage,
                         onExternalPageConsumed = { externalTargetPage = null },
+                        quranAudioEnabled = appOperations.quranAudioEnabled,
+                        aiAssistantEnabled = appOperations.aiAssistantEnabled,
                         onOpenAiAssistant = onOpenAiAssistant
                     )
                 }
@@ -150,7 +154,8 @@ fun QuranScreen(
                             KhatmahAndGroupsSection(
                                 settings = settings,
                                 groupsState = groupsState,
-                                viewModel = viewModel
+                                viewModel = viewModel,
+                                familyKhatmahEnabled = appOperations.familyKhatmahEnabled
                             )
                         }
                     }

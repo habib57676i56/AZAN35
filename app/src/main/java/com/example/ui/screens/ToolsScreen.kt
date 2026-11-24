@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
+import com.example.data.firebase.AppOperationsConfig
 import com.example.data.firebase.UserSettingsDoc
 import com.example.domain.CalculatorsEngine
 import com.example.domain.IslamicLibraryData
@@ -90,6 +91,9 @@ fun ToolsScreen(
     currentThemeMode: AppThemeMode,
     useIndic: Boolean,
     onToggleIndic: (Boolean) -> Unit,
+    isSuperAdmin: Boolean = false,
+    onOpenAdminDashboard: () -> Unit = {},
+    appOperations: AppOperationsConfig = AppOperationsConfig(),
     onSignOut: () -> Unit
 ) {
     val context = LocalContext.current
@@ -170,6 +174,9 @@ fun ToolsScreen(
                         currentThemeMode = currentThemeMode,
                         useIndic = useIndic,
                         onToggleIndic = onToggleIndic,
+                        isSuperAdmin = isSuperAdmin,
+                        onOpenAdminDashboard = onOpenAdminDashboard,
+                        kidsModeEnabledFlag = appOperations.kidsModeEnabled,
                         viewModel = viewModel,
                         onSignOut = onSignOut
                     )
@@ -465,12 +472,47 @@ private fun SettingsAndPrivacySection(
     currentThemeMode: AppThemeMode,
     useIndic: Boolean,
     onToggleIndic: (Boolean) -> Unit,
+    isSuperAdmin: Boolean,
+    onOpenAdminDashboard: () -> Unit,
+    kidsModeEnabledFlag: Boolean,
     viewModel: MihrabViewModel,
     onSignOut: () -> Unit
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        if (isSuperAdmin) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("open_admin_dashboard_card")
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(MihrabIcons.AdminShield, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(strings.adminDashboardTitle, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = strings.adminBadgeLabel,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = onOpenAdminDashboard,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("open_admin_dashboard_button")
+                    ) {
+                        Icon(MihrabIcons.AdminShield, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (isArabicUi) "فتح لوحة الإدارة الشاملة" else "Open Super Admin Dashboard")
+                    }
+                }
+            }
+        }
         // 1. Arabic-first Language & RTL Switcher
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -597,26 +639,28 @@ private fun SettingsAndPrivacySection(
                     )
                 }
 
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            if (isArabicUi) "وضع الأطفال" else "Kids Mode",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            if (isArabicUi) "واجهة مبسطة وممتعة لتعليم القرآن والأذكار" else "Simplified joyful learning & star rewards",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                if (kidsModeEnabledFlag) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                if (isArabicUi) "وضع الأطفال" else "Kids Mode",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                if (isArabicUi) "واجهة مبسطة وممتعة لتعليم القرآن والأذكار" else "Simplified joyful learning & star rewards",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = settings.kidsMode,
+                            onCheckedChange = { viewModel.updateSettings(mapOf("kidsMode" to it)) }
                         )
                     }
-                    Switch(
-                        checked = settings.kidsMode,
-                        onCheckedChange = { viewModel.updateSettings(mapOf("kidsMode" to it)) }
-                    )
                 }
             }
         }

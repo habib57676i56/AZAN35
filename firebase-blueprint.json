@@ -215,6 +215,7 @@
         "targetCount": { "type": "integer" },
         "referenceAr": { "type": "string" },
         "referenceEn": { "type": "string" },
+        "iconName": { "type": "string" },
         "sortOrder": { "type": "integer" },
         "active": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" },

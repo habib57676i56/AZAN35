@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
 sealed interface AiUiState {
     data object Idle : AiUiState
@@ -67,6 +68,21 @@ class AiViewModel(
             flowOf(emptyList<AiChatDoc>()).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
         }
 
+    private var sessionRequestsToday = 0
+
+    private fun countTodayUserRequests(): Int {
+        val nowCal = Calendar.getInstance()
+        val nowYear = nowCal.get(Calendar.YEAR)
+        val nowDay = nowCal.get(Calendar.DAY_OF_YEAR)
+        val persistedToday = chatHistoryState.value.count { doc ->
+            if (doc.role != "user") return@count false
+            val date = doc.createdAt?.toDate() ?: return@count false
+            val c = Calendar.getInstance().apply { time = date }
+            c.get(Calendar.YEAR) == nowYear && c.get(Calendar.DAY_OF_YEAR) == nowDay
+        }
+        return maxOf(persistedToday, sessionRequestsToday)
+    }
+
     fun askCompanion(question: String, languageName: String, surahRef: String? = null) {
         val trimmed = question.trim()
         if (trimmed.isEmpty()) return
@@ -75,6 +91,11 @@ class AiViewModel(
             _companionState.value = AiUiState.Error("تم تعطيل المساعد الذكي مؤقتاً من إعدادات الإدارة.")
             return
         }
+        if (countTodayUserRequests() >= cfg.dailyLimitPerUser) {
+            _companionState.value = AiUiState.Error("بلغت الحد اليومي (${cfg.dailyLimitPerUser}) لاستخدام المساعد الذكي.")
+            return
+        }
+        sessionRequestsToday++
 
         val priorHistory = chatHistoryState.value
         viewModelScope.launch {
@@ -130,6 +151,11 @@ class AiViewModel(
             _ayahTafsirState.value = AiUiState.Error("تم تعطيل المساعد الذكي مؤقتاً من إعدادات الإدارة.")
             return
         }
+        if (countTodayUserRequests() >= cfg.dailyLimitPerUser) {
+            _ayahTafsirState.value = AiUiState.Error("بلغت الحد اليومي (${cfg.dailyLimitPerUser}) لاستخدام المساعد الذكي.")
+            return
+        }
+        sessionRequestsToday++
         val ref = "$surahNumber:$ayahNumber"
         val userSummaryPrompt = "تفسير ومعاني مفردات سورة $surahNameAr ($ref): $arabicText"
 
@@ -177,6 +203,11 @@ class AiViewModel(
             _hifzQuizState.value = UiState.Error("تم تعطيل المساعد الذكي مؤقتاً من إعدادات الإدارة.")
             return
         }
+        if (countTodayUserRequests() >= cfg.dailyLimitPerUser) {
+            _hifzQuizState.value = UiState.Error("بلغت الحد اليومي (${cfg.dailyLimitPerUser}) لاستخدام المساعد الذكي.")
+            return
+        }
+        sessionRequestsToday++
         viewModelScope.launch {
             _hifzQuizState.value = UiState.Loading
             aiRepository.generateMemorizationQuiz(

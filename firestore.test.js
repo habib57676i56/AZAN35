@@ -189,11 +189,15 @@ test("Reciters catalog (Phase 1/3) permits active read and blocks non-admin writ
     });
   });
 
-  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
-  const adminDb = testEnv.authenticatedContext("admin_1", { admin: true }).firestore();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID, { email: "alice@example.com", email_verified: true }).firestore();
+  const spoofedAdminDb = testEnv.authenticatedContext("spoof_admin", { admin: true, email: "other@gmail.com", email_verified: true }).firestore();
+  const unverifiedSuperDb = testEnv.authenticatedContext("unverified_super", { email: "habiybullohy@gmail.com", email_verified: false }).firestore();
+  const adminDb = testEnv.authenticatedContext("super_admin", { email: "habiybullohy@gmail.com", email_verified: true }).firestore();
 
   await assertSucceeds(aliceDb.collection("reciters").where("active", "==", true).get());
   await assertFails(aliceDb.collection("reciters").get()); // must filter active == true
+  await assertFails(spoofedAdminDb.collection("reciters").get()); // spoofed claim denied
+  await assertFails(unverifiedSuperDb.collection("reciters").get()); // unverified email denied
   await assertFails(
     aliceDb.collection("reciters").doc("fake").set({
       nameAr: "Fake",
@@ -255,10 +259,11 @@ test("Community Dua Wall and Khatmah groups continue to enforce strict parity", 
   await assertFails(bobDb.collection("duaWall").doc("post_1").delete());
 });
 
-test("Phase 2 per-prayer Adhan settings, adminConfigs AI prompt, adhanVoices, and adhkarItems enforce parity", async () => {
+test("Phase 2 & 3 per-prayer Adhan, adminConfigs, adhanVoices, adhkarItems, and exclusive Super Admin lock enforce parity", async () => {
   const past = new Date(Date.now() - 5000);
-  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
-  const adminDb = testEnv.authenticatedContext("admin_1", { admin: true }).firestore();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID, { email: "alice@example.com", email_verified: true }).firestore();
+  const spoofedDb = testEnv.authenticatedContext("spoof", { admin: true, email: "attacker@gmail.com", email_verified: true }).firestore();
+  const adminDb = testEnv.authenticatedContext("super_admin", { email: "habiybullohy@gmail.com", email_verified: true }).firestore();
 
   await assertSucceeds(aliceDb.collection("users").doc(ALICE_UID).set(validUserSettings(ALICE_UID, past)));
   await assertSucceeds(
@@ -324,6 +329,7 @@ test("Phase 2 per-prayer Adhan settings, adminConfigs AI prompt, adhanVoices, an
       targetCount: 7,
       referenceAr: "صحيح البخاري",
       referenceEn: "Sahih al-Bukhari",
+      iconName: "HealthAndSafety",
       sortOrder: 1,
       active: true,
       createdAt: past,
@@ -331,5 +337,28 @@ test("Phase 2 per-prayer Adhan settings, adminConfigs AI prompt, adhanVoices, an
     })
   );
   await assertSucceeds(aliceDb.collection("adhkarItems").where("active", "==", true).get());
+
+  // Phase 3: Only habiybullohy@gmail.com (verified) can list users or mutate admin configs/catalogs
+  await assertFails(aliceDb.collection("users").get());
+  await assertFails(spoofedDb.collection("users").get());
+  await assertFails(
+    spoofedDb.collection("adminConfigs").doc("app_operations").set({
+      configKey: "app_operations",
+      valueJson: "{}",
+      createdAt: past,
+      updatedAt: past,
+    })
+  );
+  await assertSucceeds(adminDb.collection("users").get());
+  await assertSucceeds(adminDb.collection("adhkarItems").get());
+  await assertSucceeds(adminDb.collection("adhanVoices").get());
+  await assertSucceeds(
+    adminDb.collection("adminConfigs").doc("app_operations").set({
+      configKey: "app_operations",
+      valueJson: JSON.stringify({ bannerEnabled: true, bannerTitleAr: "تنبيه", maintenanceMode: false }),
+      createdAt: past,
+      updatedAt: past,
+    })
+  );
 });
 

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.firebase.AdhanAlertMode
 import com.example.data.firebase.AdhkarLogDoc
 import com.example.data.firebase.AiRuntimeConfig
+import com.example.data.firebase.AppOperationsConfig
 import com.example.data.firebase.BookmarkDoc
 import com.example.data.firebase.DuaWallPostDoc
 import com.example.data.firebase.JournalEntryDoc
@@ -13,6 +14,7 @@ import com.example.data.firebase.KhatmahGroupDoc
 import com.example.data.firebase.MihrabRepository
 import com.example.data.firebase.ObligationDoc
 import com.example.data.firebase.PrayerLogDoc
+import com.example.data.firebase.QuranDefaultsConfig
 import com.example.data.firebase.TasbihCounterDoc
 import com.example.data.firebase.UserSettingsDoc
 import com.example.data.local.AdhanVoiceEntity
@@ -190,6 +192,24 @@ class MihrabViewModel(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000L),
                 initialValue = AiRuntimeConfig()
+            )
+
+    val quranDefaultsState: StateFlow<QuranDefaultsConfig> =
+        repository.observeQuranDefaults(currentUserId)
+            .catch { emit(QuranDefaultsConfig()) }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000L),
+                initialValue = QuranDefaultsConfig()
+            )
+
+    val appOperationsState: StateFlow<AppOperationsConfig> =
+        repository.observeAppOperations(currentUserId)
+            .catch { emit(AppOperationsConfig()) }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000L),
+                initialValue = AppOperationsConfig()
             )
 
     // --- PHASE 1 MUSHAF ACTIONS ---

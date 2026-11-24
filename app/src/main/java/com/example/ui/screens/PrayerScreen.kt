@@ -82,6 +82,7 @@ import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
 import com.example.core.i18n.formatNumerals
 import com.example.data.firebase.AdhanAlertMode
+import com.example.data.firebase.AppOperationsConfig
 import com.example.data.firebase.UserSettingsDoc
 import com.example.domain.CalculationMethod
 import com.example.domain.IslamicLibraryData
@@ -105,6 +106,7 @@ fun PrayerScreen(
     appLanguage: AppLanguage,
     strings: LocalizedStrings,
     useIndic: Boolean,
+    appOperations: AppOperationsConfig = AppOperationsConfig(),
     onOpenKhutbahAi: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -425,8 +427,10 @@ fun PrayerScreen(
                                     "• Ghusl & fragrance • Surah Al-Kahf • Abundant Salawat ﷺ • Seek the final hour before Maghrib."
                                 }
                             )
-                            OutlinedButton(onClick = onOpenKhutbahAi) {
-                                Text(if (isArabicUi) "تلخيص خطبة الجمعة بالذكاء الاصطناعي" else "Summarize Today's Khutbah with AI")
+                            if (appOperations.aiAssistantEnabled) {
+                                OutlinedButton(onClick = onOpenKhutbahAi) {
+                                    Text(if (isArabicUi) "تلخيص خطبة الجمعة بالذكاء الاصطناعي" else "Summarize Today's Khutbah with AI")
+                                }
                             }
                         }
                     }
@@ -775,50 +779,52 @@ fun PrayerScreen(
                     }
                 }
 
-                // Custom Audio File Upload / Selection via SAF
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (settings.adhanVoiceId == "custom") MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceContainerLow
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Rounded.AudioFile, null, tint = MaterialTheme.colorScheme.primary)
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(strings.uploadCustomAdhan, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                if (settings.customAdhanName.isNotBlank()) {
-                                    Text(
-                                        text = "${if (isArabicUi) "الملف المختار" else "Selected"}: ${settings.customAdhanName}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(
-                                onClick = { audioPickerLauncher.launch(arrayOf("audio/*")) },
-                                modifier = Modifier.weight(1f).testTag("pick_custom_adhan_button")
-                            ) {
-                                Text(strings.uploadCustomAdhan)
-                            }
-                            if (!customPath.isNullOrBlank()) {
-                                OutlinedButton(
-                                    onClick = {
-                                        viewModel.updateSettings(mapOf("adhanVoiceId" to "custom"))
-                                        adhanAudioPlayer.playPreview(
-                                            voice = selectedVoice,
-                                            mode = AdhanAlertMode.FULL_ADHAN,
-                                            customLocalPath = customPath,
-                                            customDisplayName = settings.customAdhanName
+                if (appOperations.customAdhanUploadEnabled) {
+                    // Custom Audio File Upload / Selection via SAF
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (settings.adhanVoiceId == "custom") MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surfaceContainerLow
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(Icons.Rounded.AudioFile, null, tint = MaterialTheme.colorScheme.primary)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(strings.uploadCustomAdhan, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                    if (settings.customAdhanName.isNotBlank()) {
+                                        Text(
+                                            text = "${if (isArabicUi) "الملف المختار" else "Selected"}: ${settings.customAdhanName}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary
                                         )
                                     }
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = { audioPickerLauncher.launch(arrayOf("audio/*")) },
+                                    modifier = Modifier.weight(1f).testTag("pick_custom_adhan_button")
                                 ) {
-                                    Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(strings.previewAdhan)
+                                    Text(strings.uploadCustomAdhan)
+                                }
+                                if (!customPath.isNullOrBlank()) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            viewModel.updateSettings(mapOf("adhanVoiceId" to "custom"))
+                                            adhanAudioPlayer.playPreview(
+                                                voice = selectedVoice,
+                                                mode = AdhanAlertMode.FULL_ADHAN,
+                                                customLocalPath = customPath,
+                                                customDisplayName = settings.customAdhanName
+                                            )
+                                        }
+                                    ) {
+                                        Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(strings.previewAdhan)
+                                    }
                                 }
                             }
                         }
@@ -904,6 +910,7 @@ fun PrayerScreen(
                 distanceKm = schedule.distanceToKaabaKm,
                 isArabicUi = isArabicUi,
                 useIndic = useIndic,
+                arQiblaEnabled = appOperations.arQiblaEnabled,
                 onSelectCity = { preset -> viewModel.selectCityPreset(preset) },
                 onGpsLocation = { label, lat, lng -> viewModel.updateLocationCoordinates(label, lat, lng) },
                 onClose = { showQiblaSheet = false }

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">محراب</string>
+    <string name="shortcut_prayer_short">الصلاة</string>
+    <string name="shortcut_prayer_long">مواقيت الصلاة والقبلة</string>
+    <string name="shortcut_quran_short">المصحف</string>
+    <string name="shortcut_quran_long">فتح مصحف المدينة</string>
+    <string name="shortcut_tasbih_short">المسبحة</string>
+    <string name="shortcut_tasbih_long">المسبحة الرقمية والأذكار</string>
+</resources>

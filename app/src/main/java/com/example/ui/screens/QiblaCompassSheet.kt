@@ -47,6 +47,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,6 +85,7 @@ fun QiblaAndLocationDialogContent(
     distanceKm: Int,
     isArabicUi: Boolean = true,
     useIndic: Boolean = true,
+    arQiblaEnabled: Boolean = true,
     onSelectCity: (CityPreset) -> Unit,
     onGpsLocation: (String, Double, Double) -> Unit,
     onClose: () -> Unit
@@ -93,6 +95,9 @@ fun QiblaAndLocationDialogContent(
         .collectAsStateWithLifecycle(initialValue = 0f)
 
     var arModeEnabled by remember { mutableStateOf(false) }
+    LaunchedEffect(arQiblaEnabled) {
+        if (!arQiblaEnabled) arModeEnabled = false
+    }
     var permissionNotice by remember { mutableStateOf<String?>(null) }
 
     val cameraLauncher = rememberLauncherForActivityResult(
@@ -177,25 +182,27 @@ fun QiblaAndLocationDialogContent(
                 label = { Text(if (isArabicUi) "البوصلة" else "Compass") },
                 leadingIcon = { Icon(Icons.Rounded.Explore, null, modifier = Modifier.size(18.dp)) }
             )
-            FilterChip(
-                selected = arModeEnabled,
-                onClick = {
-                    val granted = ContextCompat.checkSelfPermission(
-                        context, Manifest.permission.CAMERA
-                    ) == PackageManager.PERMISSION_GRANTED
-                    if (granted) {
-                        arModeEnabled = true
-                    } else {
-                        cameraLauncher.launch(Manifest.permission.CAMERA)
-                    }
-                },
-                label = { Text(if (isArabicUi) "الواقع المعزز AR" else "AR Camera") },
-                leadingIcon = { Icon(Icons.Rounded.CameraAlt, null, modifier = Modifier.size(18.dp)) },
-                modifier = Modifier.testTag("ar_qibla_toggle")
-            )
+            if (arQiblaEnabled) {
+                FilterChip(
+                    selected = arModeEnabled,
+                    onClick = {
+                        val granted = ContextCompat.checkSelfPermission(
+                            context, Manifest.permission.CAMERA
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (granted) {
+                            arModeEnabled = true
+                        } else {
+                            cameraLauncher.launch(Manifest.permission.CAMERA)
+                        }
+                    },
+                    label = { Text(if (isArabicUi) "الواقع المعزز AR" else "AR Camera") },
+                    leadingIcon = { Icon(Icons.Rounded.CameraAlt, null, modifier = Modifier.size(18.dp)) },
+                    modifier = Modifier.testTag("ar_qibla_toggle")
+                )
+            }
         }
 
-        if (arModeEnabled) {
+        if (arModeEnabled && arQiblaEnabled) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()

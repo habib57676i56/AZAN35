@@ -94,6 +94,7 @@ import com.example.core.hardware.shareDesignedVerseTextOrCard
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
 import com.example.core.i18n.formatNumerals
+import com.example.data.firebase.AppOperationsConfig
 import com.example.domain.AdhkarCategoryMeta
 import com.example.domain.IslamicLibraryData
 import com.example.ui.icons.MihrabIcons
@@ -110,7 +111,8 @@ fun DhikrScreen(
     currentUserId: String,
     appLanguage: AppLanguage,
     strings: LocalizedStrings,
-    useIndic: Boolean
+    useIndic: Boolean,
+    appOperations: AppOperationsConfig = AppOperationsConfig()
 ) {
     val context = LocalContext.current
     val isArabicUi = appLanguage == AppLanguage.ARABIC || appLanguage == AppLanguage.URDU
@@ -365,7 +367,7 @@ fun DhikrScreen(
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Icon(
-                                            imageVector = MihrabIcons.iconForAdhkarCategory(dhikr.category),
+                                            imageVector = MihrabIcons.iconForAdhkarItem(dhikr.iconName, dhikr.category),
                                             contentDescription = null,
                                             tint = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.size(18.dp)
@@ -475,6 +477,7 @@ fun DhikrScreen(
                         currentUserId = currentUserId,
                         isArabicUi = isArabicUi,
                         strings = strings,
+                        communityDuaWallEnabled = appOperations.communityDuaWallEnabled,
                         viewModel = viewModel
                     )
                 }
@@ -912,6 +915,7 @@ private fun JournalAndDuaWallSection(
     currentUserId: String,
     isArabicUi: Boolean,
     strings: LocalizedStrings,
+    communityDuaWallEnabled: Boolean,
     viewModel: MihrabViewModel
 ) {
     var subMode by remember { mutableIntStateOf(0) } // 0=Private Journal, 1=Community Dua Wall
@@ -926,10 +930,12 @@ private fun JournalAndDuaWallSection(
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = subMode == 0, onClick = { subMode = 0 }, label = { Text(strings.duaJournal) })
-            FilterChip(selected = subMode == 1, onClick = { subMode = 1 }, label = { Text(strings.communityDuaWall) })
+            if (communityDuaWallEnabled) {
+                FilterChip(selected = subMode == 1, onClick = { subMode = 1 }, label = { Text(strings.communityDuaWall) })
+            }
         }
 
-        if (subMode == 0) {
+        if (subMode == 0 || !communityDuaWallEnabled) {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(strings.duaJournal, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

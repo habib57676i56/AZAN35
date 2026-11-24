@@ -71,6 +71,9 @@ class QuranRecitationPlayer(
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    @Volatile
+    private var audioCdnBase: String = "https://everyayah.com/data"
+
     private var mediaPlayer: MediaPlayer? = null
     private var playJob: Job? = null
 
@@ -79,6 +82,13 @@ class QuranRecitationPlayer(
 
     init {
         RecitationPlayerHolder.instance = this
+    }
+
+    fun setAudioCdnBase(baseUrl: String) {
+        val clean = baseUrl.trim().trimEnd('/')
+        if (clean.startsWith("https://")) {
+            audioCdnBase = clean
+        }
     }
 
     fun setReciter(reciter: ReciterEntity) {
@@ -357,7 +367,7 @@ class QuranRecitationPlayer(
 
         val surahStr = surahNumber.toString().padStart(3, '0')
         val ayahStr = ayahNumber.toString().padStart(3, '0')
-        val primaryUrl = "https://everyayah.com/data/${reciter.everyAyahFolder}/$surahStr$ayahStr.mp3"
+        val primaryUrl = "${audioCdnBase}/${reciter.everyAyahFolder}/$surahStr$ayahStr.mp3"
         val fallbackUrl = "https://cdn.islamic.network/quran/audio/128/${reciter.editionId}/$globalAyah.mp3"
 
         val bytes = downloadBytesOrNull(primaryUrl)

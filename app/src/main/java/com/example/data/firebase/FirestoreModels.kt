@@ -2,8 +2,22 @@ package com.example.data.firebase
 
 import androidx.annotation.Keep
 import com.google.firebase.Timestamp
+import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.IgnoreExtraProperties
+
+object AdminAccess {
+    const val SUPER_ADMIN_EMAIL = "habiybullohy@gmail.com"
+
+    fun isSuperAdmin(user: FirebaseUser?): Boolean {
+        if (user == null) return false
+        return isSuperAdmin(user.email, user.isEmailVerified)
+    }
+
+    fun isSuperAdmin(email: String?, emailVerified: Boolean): Boolean {
+        return email?.trim()?.lowercase() == SUPER_ADMIN_EMAIL && emailVerified
+    }
+}
 
 enum class AdhanAlertMode(val id: String, val labelAr: String, val labelEn: String) {
     FULL_ADHAN("FULL_ADHAN", "أذان كامل", "Full Adhan"),
@@ -204,6 +218,7 @@ data class AdhkarItemDoc(
     val targetCount: Long = 1L,
     val referenceAr: String = "",
     val referenceEn: String = "",
+    val iconName: String = "",
     val sortOrder: Long = 1L,
     val active: Boolean = true,
     val createdAt: Timestamp? = null,
@@ -213,7 +228,8 @@ data class AdhkarItemDoc(
 data class AiRuntimeConfig(
     val enabled: Boolean = true,
     val modelName: String = "gemini-3.8-flash",
-    val systemPrompt: String = DEFAULT_ISLAMIC_SYSTEM_PROMPT
+    val systemPrompt: String = DEFAULT_ISLAMIC_SYSTEM_PROMPT,
+    val dailyLimitPerUser: Int = 30
 ) {
     companion object {
         const val DEFAULT_ISLAMIC_SYSTEM_PROMPT =
@@ -222,6 +238,33 @@ data class AiRuntimeConfig(
                 "التزم بالأدب والوضوح واللغة العربية الفصيحة، أو لغة سؤال المستخدم، مع التنبيه اللطيف عند المسائل الفقهية الخاصة بالرجوع إلى أهل العلم المعتمدين."
     }
 }
+
+data class QuranDefaultsConfig(
+    val quranPageApiBase: String = "https://api.quran.com/api/v4",
+    val quranFallbackApiBase: String = "https://api.alquran.cloud/v1",
+    val audioCdnBase: String = "https://everyayah.com/data",
+    val defaultReciterId: String = "ar.alafasy",
+    val defaultPaper: String = "WHITE",
+    val defaultThemeMode: String = "SYSTEM",
+    val defaultFontScale: Double = 1.0
+)
+
+data class AppOperationsConfig(
+    val bannerEnabled: Boolean = false,
+    val bannerTitleAr: String = "",
+    val bannerTitleEn: String = "",
+    val bannerBodyAr: String = "",
+    val bannerBodyEn: String = "",
+    val bannerTone: String = "INFO",
+    val aiAssistantEnabled: Boolean = true,
+    val quranAudioEnabled: Boolean = true,
+    val communityDuaWallEnabled: Boolean = true,
+    val familyKhatmahEnabled: Boolean = true,
+    val arQiblaEnabled: Boolean = true,
+    val kidsModeEnabled: Boolean = true,
+    val customAdhanUploadEnabled: Boolean = true,
+    val maintenanceMode: Boolean = false
+)
 
 @Keep
 @IgnoreExtraProperties

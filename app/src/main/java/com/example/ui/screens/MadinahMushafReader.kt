@@ -141,6 +141,8 @@ fun MadinahMushafReader(
     strings: LocalizedStrings,
     externalTargetPage: Int?,
     onExternalPageConsumed: () -> Unit,
+    quranAudioEnabled: Boolean = true,
+    aiAssistantEnabled: Boolean = true,
     onOpenAiAssistant: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -349,8 +351,12 @@ fun MadinahMushafReader(
             }
         }
 
-        // Docked Multi-Reciter Synced Audio Bar (hidden in Focus mode unless playing)
-        if (!focusBarlessMode || audioState.isPlaying || audioState.isBuffering) {
+        LaunchedEffect(quranAudioEnabled) {
+            if (!quranAudioEnabled) recitationPlayer.stop()
+        }
+
+        // Docked Multi-Reciter Synced Audio Bar (hidden in Focus mode unless playing, or when disabled by Admin)
+        if (quranAudioEnabled && (!focusBarlessMode || audioState.isPlaying || audioState.isBuffering)) {
             val activeModel = (pagesMap[activePageNum] as? UiState.Success)?.data
             DockedRecitationAudioBar(
                 audioState = audioState,
@@ -439,38 +445,42 @@ fun MadinahMushafReader(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Button(
-                        onClick = {
-                            recitationPlayer.playAyah(
-                                surahNumber = ayah.surahNumber,
-                                ayahNumber = ayah.numberInSurah,
-                                pageNumber = ayah.pageNumber
-                            )
-                            selectedAyahForAction = null
-                        },
-                        modifier = Modifier.testTag("ayah_action_play")
-                    ) {
-                        Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(strings.playFromAyah)
+                    if (quranAudioEnabled) {
+                        Button(
+                            onClick = {
+                                recitationPlayer.playAyah(
+                                    surahNumber = ayah.surahNumber,
+                                    ayahNumber = ayah.numberInSurah,
+                                    pageNumber = ayah.pageNumber
+                                )
+                                selectedAyahForAction = null
+                            },
+                            modifier = Modifier.testTag("ayah_action_play")
+                        ) {
+                            Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(strings.playFromAyah)
+                        }
                     }
 
-                    OutlinedButton(
-                        onClick = {
-                            showAiTafsirPanel = true
-                            aiViewModel.askAiTafsirForAyah(
-                                surahNameAr = ayah.surahNameAr,
-                                surahNumber = ayah.surahNumber,
-                                ayahNumber = ayah.numberInSurah,
-                                arabicText = ayah.textUthmani,
-                                languageName = appLanguage.nativeLabel
-                            )
-                        },
-                        modifier = Modifier.testTag("ayah_action_ai_tafsir")
-                    ) {
-                        Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(strings.askAiTafsir)
+                    if (aiAssistantEnabled) {
+                        OutlinedButton(
+                            onClick = {
+                                showAiTafsirPanel = true
+                                aiViewModel.askAiTafsirForAyah(
+                                    surahNameAr = ayah.surahNameAr,
+                                    surahNumber = ayah.surahNumber,
+                                    ayahNumber = ayah.numberInSurah,
+                                    arabicText = ayah.textUthmani,
+                                    languageName = appLanguage.nativeLabel
+                                )
+                            },
+                            modifier = Modifier.testTag("ayah_action_ai_tafsir")
+                        ) {
+                            Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(strings.askAiTafsir)
+                        }
                     }
 
                     OutlinedButton(

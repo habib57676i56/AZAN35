@@ -72,6 +72,7 @@ import com.example.core.hardware.QuranTtsAudioPlayer
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
 import com.example.core.i18n.formatNumerals
+import com.example.data.firebase.AppOperationsConfig
 import com.example.data.firebase.UserSettingsDoc
 import com.example.domain.HijriCalendarEngine
 import com.example.domain.IslamicLibraryData
@@ -94,7 +95,8 @@ fun LearnScreen(
     appLanguage: AppLanguage,
     strings: LocalizedStrings,
     useIndic: Boolean,
-    initialSubTab: Int = 0
+    initialSubTab: Int = 0,
+    appOperations: AppOperationsConfig = AppOperationsConfig()
 ) {
     val settingsState by viewModel.settingsState.collectAsStateWithLifecycle()
     val logsState by viewModel.prayerLogsState.collectAsStateWithLifecycle()
@@ -325,7 +327,8 @@ fun LearnScreen(
                         aiViewModel = aiViewModel,
                         appLanguage = appLanguage,
                         strings = strings,
-                        isArabicUi = isArabicUi
+                        isArabicUi = isArabicUi,
+                        globalAiFlagEnabled = appOperations.aiAssistantEnabled
                     )
                 }
             }
@@ -477,11 +480,13 @@ private fun AskAiAndKhutbahContent(
     aiViewModel: AiViewModel,
     appLanguage: AppLanguage,
     strings: LocalizedStrings,
-    isArabicUi: Boolean
+    isArabicUi: Boolean,
+    globalAiFlagEnabled: Boolean
 ) {
     val companionState by aiViewModel.companionState.collectAsStateWithLifecycle()
     val chatHistory by aiViewModel.chatHistoryState.collectAsStateWithLifecycle()
     val aiConfig by aiViewModel.aiRuntimeConfig.collectAsStateWithLifecycle()
+    val effectiveAiEnabled = aiConfig.enabled && globalAiFlagEnabled
     val hifzQuizState by aiViewModel.hifzQuizState.collectAsStateWithLifecycle()
     val khutbahState by aiViewModel.khutbahState.collectAsStateWithLifecycle()
 
@@ -539,7 +544,7 @@ private fun AskAiAndKhutbahContent(
                     )
                 }
 
-                if (!aiConfig.enabled) {
+                if (!effectiveAiEnabled) {
                     Surface(
                         color = MaterialTheme.colorScheme.errorContainer,
                         shape = MaterialTheme.shapes.medium,
@@ -660,7 +665,7 @@ private fun AskAiAndKhutbahContent(
                             questionInput = ""
                             aiViewModel.askCompanion(q, appLanguage.nativeLabel)
                         },
-                        enabled = aiConfig.enabled && questionInput.isNotBlank() &&
+                        enabled = effectiveAiEnabled && questionInput.isNotBlank() &&
                             companionState !is AiUiState.Loading && companionState !is AiUiState.Streaming,
                         modifier = Modifier.fillMaxWidth().testTag("ai_ask_button")
                     ) {
@@ -691,7 +696,7 @@ private fun AskAiAndKhutbahContent(
                             selectedQuizOption = -1
                             aiViewModel.generateHifzQuiz(hifzTopicInput, appLanguage.nativeLabel)
                         },
-                        enabled = aiConfig.enabled && hifzQuizState !is UiState.Loading,
+                        enabled = effectiveAiEnabled && hifzQuizState !is UiState.Loading,
                         modifier = Modifier.fillMaxWidth().testTag("ai_generate_quiz_button")
                     ) {
                         Icon(Icons.Rounded.Quiz, null, modifier = Modifier.size(18.dp))
@@ -798,7 +803,7 @@ private fun AskAiAndKhutbahContent(
                 )
                 OutlinedButton(
                     onClick = { aiViewModel.summarizeKhutbah(khutbahTopic, appLanguage.nativeLabel) },
-                    enabled = aiConfig.enabled && khutbahTopic.isNotBlank() && khutbahState !is UiState.Loading
+                    enabled = effectiveAiEnabled && khutbahTopic.isNotBlank() && khutbahState !is UiState.Loading
                 ) {
                     Text(if (isArabicUi) "توليد ملخص عملي" else "Generate Actionable Summary")
                 }

@@ -13,26 +13,23 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AutoStories
-import androidx.compose.material.icons.outlined.Build
-import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.Mosque
-import androidx.compose.material.icons.outlined.School
-import androidx.compose.material.icons.rounded.AutoStories
-import androidx.compose.material.icons.rounded.Build
-import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.Mosque
-import androidx.compose.material.icons.rounded.School
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -57,10 +54,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.credentials.CredentialManager
@@ -73,6 +72,8 @@ import com.example.core.hardware.QuranRecitationPlayer
 import com.example.core.hardware.QuranTtsAudioPlayer
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.stringsFor
+import com.example.data.firebase.AdminAccess
+import com.example.data.firebase.AdminRepository
 import com.example.data.firebase.MihrabRepository
 import com.example.data.firebase.UserSettingsDoc
 import com.example.data.firebase.attemptAutoSignIn
@@ -82,6 +83,7 @@ import com.example.data.firebase.performSignOut
 import com.example.data.local.MihrabLocalDatabase
 import com.example.data.quran.MushafRepository
 import com.example.ui.icons.MihrabIcons
+import com.example.ui.screens.AdminDashboardScreen
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.DhikrScreen
 import com.example.ui.screens.KidsModeScreen
@@ -92,6 +94,7 @@ import com.example.ui.screens.ToolsScreen
 import com.example.ui.theme.AppThemeMode
 import com.example.ui.theme.MihrabTheme
 import com.example.ui.theme.MihrabThemePreset
+import com.example.ui.viewmodel.AdminViewModel
 import com.example.ui.viewmodel.AiViewModel
 import com.example.ui.viewmodel.MihrabViewModel
 import com.example.ui.viewmodel.UiState
@@ -161,10 +164,12 @@ private fun MihrabRootApp(initialTab: Int) {
         }
     } else {
         val uid = user.uid
+        val isSuperAdmin = AdminAccess.isSuperAdmin(user)
         key(uid) {
             AuthenticatedMihrabShell(
                 currentUserId = uid,
                 displayName = user.displayName ?: "مؤمن",
+                isSuperAdmin = isSuperAdmin,
                 initialTab = initialTab,
                 themePreset = themePreset,
                 onChangeThemePreset = { themePreset = it },
@@ -184,6 +189,7 @@ private fun MihrabRootApp(initialTab: Int) {
 private fun AuthenticatedMihrabShell(
     currentUserId: String,
     displayName: String,
+    isSuperAdmin: Boolean,
     initialTab: Int,
     themePreset: MihrabThemePreset,
     onChangeThemePreset: (MihrabThemePreset) -> Unit,
@@ -191,9 +197,11 @@ private fun AuthenticatedMihrabShell(
 ) {
     val context = LocalContext.current
     val localDb = remember(context) { MihrabLocalDatabase.getInstance(context) }
-    val sharedRepository = remember(context, localDb) {
+    val db = remember(context) {
         val databaseId = context.applicationContext.getString(R.string.firestore_database_id)
-        val db = FirebaseFirestore.getInstance(databaseId)
+        FirebaseFirestore.getInstance(databaseId)
+    }
+    val sharedRepository = remember(db, localDb) {
         MihrabRepository(
             db = db,
             localPrefsDao = localDb.localPrefsDao(),
@@ -202,6 +210,7 @@ private fun AuthenticatedMihrabShell(
             adhkarDao = localDb.adhkarDao()
         )
     }
+    val mushafRepository = remember(localDb) { MushafRepository(localDb.mushafDao()) }
 
     val mihrabViewModel: MihrabViewModel = viewModel(
         key = currentUserId,
@@ -209,7 +218,7 @@ private fun AuthenticatedMihrabShell(
             initializer {
                 MihrabViewModel(
                     repository = sharedRepository,
-                    mushafRepository = MushafRepository(localDb.mushafDao()),
+                    mushafRepository = mushafRepository,
                     currentUserId = currentUserId,
                     initialDisplayName = displayName
                 )
@@ -267,6 +276,16 @@ private fun AuthenticatedMihrabShell(
     val localPrefs by mihrabViewModel.localPrefsState.collectAsStateWithLifecycle()
     val statusMessage by mihrabViewModel.statusMessage.collectAsStateWithLifecycle()
     val useIndic by mihrabViewModel.useIndicNumerals.collectAsStateWithLifecycle()
+    val quranDefaults by mihrabViewModel.quranDefaultsState.collectAsStateWithLifecycle()
+    val appOperations by mihrabViewModel.appOperationsState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(quranDefaults) {
+        mushafRepository.setApiSources(
+            primaryBase = quranDefaults.quranPageApiBase,
+            fallbackBase = quranDefaults.quranFallbackApiBase
+        )
+        recitationPlayer.setAudioCdnBase(quranDefaults.audioCdnBase)
+    }
 
     // Use Room localPrefs first for zero-flicker cold start before Firestore emits
     val remoteSettings = (settingsState as? UiState.Success)?.data
@@ -307,8 +326,12 @@ private fun AuthenticatedMihrabShell(
 
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab) }
     var learnSubTab by rememberSaveable { mutableIntStateOf(0) }
+    var showAdminDashboard by rememberSaveable { mutableStateOf(false) }
+    var bannerDismissedKey by rememberSaveable { mutableStateOf("") }
 
-    if (selectedTab != 0) {
+    if (showAdminDashboard && isSuperAdmin) {
+        BackHandler { showAdminDashboard = false }
+    } else if (selectedTab != 0) {
         BackHandler { selectedTab = 0 }
     }
 
@@ -340,7 +363,28 @@ private fun AuthenticatedMihrabShell(
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             CompositionLocalProvider(LocalLayoutDirection provides appLanguage.layoutDirection) {
-                if (effectiveSettings.kidsMode) {
+                if (showAdminDashboard && isSuperAdmin) {
+                    val adminRepository = remember(db) { AdminRepository(db = db) }
+                    val adminViewModel: AdminViewModel = viewModel(
+                        key = "admin_$currentUserId",
+                        factory = viewModelFactory {
+                            initializer {
+                                AdminViewModel(
+                                    adminRepository = adminRepository,
+                                    mihrabRepository = sharedRepository,
+                                    currentUserId = currentUserId
+                                )
+                            }
+                        }
+                    )
+                    AdminDashboardScreen(
+                        adminViewModel = adminViewModel,
+                        adhanAudioPlayer = adhanAudioPlayer,
+                        appLanguage = appLanguage,
+                        strings = strings,
+                        onBack = { showAdminDashboard = false }
+                    )
+                } else if (effectiveSettings.kidsMode && appOperations.kidsModeEnabled) {
                     Scaffold(
                         topBar = {
                             TopAppBar(
@@ -370,7 +414,7 @@ private fun AuthenticatedMihrabShell(
                             topBar = {
                                 TopAppBar(
                                     title = {
-                                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
                                             Icon(
                                                 imageVector = MihrabIcons.MihrabArch,
                                                 contentDescription = null,
@@ -379,6 +423,20 @@ private fun AuthenticatedMihrabShell(
                                             )
                                             Spacer(Modifier.width(8.dp))
                                             Text(strings.appTitle, style = MaterialTheme.typography.headlineMedium)
+                                        }
+                                    },
+                                    actions = {
+                                        if (isSuperAdmin) {
+                                            IconButton(
+                                                onClick = { showAdminDashboard = true },
+                                                modifier = Modifier.testTag("top_bar_admin_button")
+                                            ) {
+                                                Icon(
+                                                    imageVector = MihrabIcons.AdminShield,
+                                                    contentDescription = strings.adminDashboardTitle,
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
                                         }
                                     },
                                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -428,63 +486,175 @@ private fun AuthenticatedMihrabShell(
                                     }
                                 }
 
-                                Box(
+                                Column(
                                     modifier = Modifier
                                         .weight(1f)
                                         .fillMaxSize()
                                 ) {
-                                    when (selectedTab) {
-                                        0 -> PrayerScreen(
-                                            viewModel = mihrabViewModel,
-                                            adhanAudioPlayer = adhanAudioPlayer,
-                                            appLanguage = appLanguage,
-                                            strings = strings,
-                                            useIndic = useIndic,
-                                            onOpenKhutbahAi = {
-                                                learnSubTab = 3
-                                                selectedTab = 3
+                                    val bannerTitle = if (arabicPrimary) appOperations.bannerTitleAr.ifBlank { appOperations.bannerTitleEn }
+                                    else appOperations.bannerTitleEn.ifBlank { appOperations.bannerTitleAr }
+                                    val bannerBody = if (arabicPrimary) appOperations.bannerBodyAr.ifBlank { appOperations.bannerBodyEn }
+                                    else appOperations.bannerBodyEn.ifBlank { appOperations.bannerBodyAr }
+                                    val bannerSignature = "$bannerTitle|$bannerBody|${appOperations.bannerTone}"
+
+                                    if (appOperations.bannerEnabled &&
+                                        (bannerTitle.isNotBlank() || bannerBody.isNotBlank()) &&
+                                        bannerDismissedKey != bannerSignature
+                                    ) {
+                                        val toneContainer = when (appOperations.bannerTone) {
+                                            "URGENT" -> MaterialTheme.colorScheme.errorContainer
+                                            "SUCCESS" -> MaterialTheme.colorScheme.secondaryContainer
+                                            else -> MaterialTheme.colorScheme.primaryContainer
+                                        }
+                                        val toneContent = when (appOperations.bannerTone) {
+                                            "URGENT" -> MaterialTheme.colorScheme.onErrorContainer
+                                            "SUCCESS" -> MaterialTheme.colorScheme.onSecondaryContainer
+                                            else -> MaterialTheme.colorScheme.onPrimaryContainer
+                                        }
+                                        Card(
+                                            colors = CardDefaults.cardColors(containerColor = toneContainer),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 16.dp, vertical = 6.dp)
+                                                .testTag("global_broadcast_banner")
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = MihrabIcons.BroadcastBanner,
+                                                    contentDescription = null,
+                                                    tint = toneContent
+                                                )
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    if (bannerTitle.isNotBlank()) {
+                                                        Text(
+                                                            text = bannerTitle,
+                                                            style = MaterialTheme.typography.titleSmall,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = toneContent
+                                                        )
+                                                    }
+                                                    if (bannerBody.isNotBlank()) {
+                                                        Text(
+                                                            text = bannerBody,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = toneContent
+                                                        )
+                                                    }
+                                                }
+                                                IconButton(onClick = { bannerDismissedKey = bannerSignature }) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Close,
+                                                        contentDescription = strings.cancel,
+                                                        tint = toneContent
+                                                    )
+                                                }
                                             }
-                                        )
-                                        1 -> QuranScreen(
-                                            viewModel = mihrabViewModel,
-                                            aiViewModel = aiViewModel,
-                                            audioPlayer = audioPlayer,
-                                            recitationPlayer = recitationPlayer,
-                                            appLanguage = appLanguage,
-                                            strings = strings,
-                                            onOpenAiAssistant = {
-                                                learnSubTab = 3
-                                                selectedTab = 3
+                                        }
+                                    }
+
+                                    if (appOperations.maintenanceMode) {
+                                        Card(
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 16.dp, vertical = 4.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.WarningAmber,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onTertiaryContainer
+                                                )
+                                                Column {
+                                                    Text(
+                                                        text = strings.maintenanceNoticeTitle,
+                                                        style = MaterialTheme.typography.labelLarge,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                                                    )
+                                                    Text(
+                                                        text = strings.maintenanceNoticeBody,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                                                    )
+                                                }
                                             }
-                                        )
-                                        2 -> DhikrScreen(
-                                            viewModel = mihrabViewModel,
-                                            audioPlayer = audioPlayer,
-                                            currentUserId = currentUserId,
-                                            appLanguage = appLanguage,
-                                            strings = strings,
-                                            useIndic = useIndic
-                                        )
-                                        3 -> LearnScreen(
-                                            viewModel = mihrabViewModel,
-                                            aiViewModel = aiViewModel,
-                                            audioPlayer = audioPlayer,
-                                            appLanguage = appLanguage,
-                                            strings = strings,
-                                            useIndic = useIndic,
-                                            initialSubTab = learnSubTab
-                                        )
-                                        4 -> ToolsScreen(
-                                            viewModel = mihrabViewModel,
-                                            strings = strings,
-                                            appLanguage = appLanguage,
-                                            currentThemePreset = themePreset,
-                                            onChangeThemePreset = onChangeThemePreset,
-                                            currentThemeMode = themeMode,
-                                            useIndic = useIndic,
-                                            onToggleIndic = { mihrabViewModel.toggleIndicNumerals(it) },
-                                            onSignOut = onSignOut
-                                        )
+                                        }
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxWidth()
+                                    ) {
+                                        when (selectedTab) {
+                                            0 -> PrayerScreen(
+                                                viewModel = mihrabViewModel,
+                                                adhanAudioPlayer = adhanAudioPlayer,
+                                                appLanguage = appLanguage,
+                                                strings = strings,
+                                                useIndic = useIndic,
+                                                appOperations = appOperations,
+                                                onOpenKhutbahAi = {
+                                                    learnSubTab = 3
+                                                    selectedTab = 3
+                                                }
+                                            )
+                                            1 -> QuranScreen(
+                                                viewModel = mihrabViewModel,
+                                                aiViewModel = aiViewModel,
+                                                audioPlayer = audioPlayer,
+                                                recitationPlayer = recitationPlayer,
+                                                appLanguage = appLanguage,
+                                                strings = strings,
+                                                appOperations = appOperations,
+                                                onOpenAiAssistant = {
+                                                    learnSubTab = 3
+                                                    selectedTab = 3
+                                                }
+                                            )
+                                            2 -> DhikrScreen(
+                                                viewModel = mihrabViewModel,
+                                                audioPlayer = audioPlayer,
+                                                currentUserId = currentUserId,
+                                                appLanguage = appLanguage,
+                                                strings = strings,
+                                                useIndic = useIndic,
+                                                appOperations = appOperations
+                                            )
+                                            3 -> LearnScreen(
+                                                viewModel = mihrabViewModel,
+                                                aiViewModel = aiViewModel,
+                                                audioPlayer = audioPlayer,
+                                                appLanguage = appLanguage,
+                                                strings = strings,
+                                                useIndic = useIndic,
+                                                initialSubTab = learnSubTab,
+                                                appOperations = appOperations
+                                            )
+                                            4 -> ToolsScreen(
+                                                viewModel = mihrabViewModel,
+                                                strings = strings,
+                                                appLanguage = appLanguage,
+                                                currentThemePreset = themePreset,
+                                                onChangeThemePreset = onChangeThemePreset,
+                                                currentThemeMode = themeMode,
+                                                useIndic = useIndic,
+                                                onToggleIndic = { mihrabViewModel.toggleIndicNumerals(it) },
+                                                isSuperAdmin = isSuperAdmin,
+                                                onOpenAdminDashboard = { if (isSuperAdmin) showAdminDashboard = true },
+                                                appOperations = appOperations,
+                                                onSignOut = onSignOut
+                                            )
+                                        }
                                     }
                                 }
                             }

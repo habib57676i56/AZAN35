@@ -38,6 +38,23 @@ class MushafRepository(
         .readTimeout(25, TimeUnit.SECONDS)
         .build()
 
+    @Volatile
+    private var quranPageApiBase: String = "https://api.quran.com/api/v4"
+
+    @Volatile
+    private var quranFallbackApiBase: String = "https://api.alquran.cloud/v1"
+
+    fun setApiSources(primaryBase: String, fallbackBase: String) {
+        val cleanPrimary = primaryBase.trim().trimEnd('/')
+        val cleanFallback = fallbackBase.trim().trimEnd('/')
+        if (cleanPrimary.startsWith("https://")) {
+            quranPageApiBase = cleanPrimary
+        }
+        if (cleanFallback.startsWith("https://")) {
+            quranFallbackApiBase = cleanFallback
+        }
+    }
+
     val cachedPageCount: Flow<Int> = mushafDao.observeCachedPageCount()
 
     suspend fun getPage(pageNumber: Int): Result<MushafPageModel> = withContext(Dispatchers.IO) {
@@ -96,7 +113,7 @@ class MushafRepository(
     suspend fun downloadFullQuranOffline(onProgress: (Float) -> Unit): Result<Int> = withContext(Dispatchers.IO) {
         try {
             onProgress(0.1f)
-            val url = "https://api.alquran.cloud/v1/quran/quran-uthmani"
+            val url = "${quranFallbackApiBase}/quran/quran-uthmani"
             val req = Request.Builder().url(url).build()
             val body = httpClient.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) throw IllegalStateException("HTTP ${resp.code}")
@@ -202,7 +219,7 @@ class MushafRepository(
     }
 
     private fun fetchFromQuranCom(page: Int): MushafPageModel {
-        val url = "https://api.quran.com/api/v4/verses/by_page/$page" +
+        val url = "${quranPageApiBase}/verses/by_page/$page" +
             "?language=ar&words=true" +
             "&fields=text_uthmani,verse_key,page_number,juz_number,hizb_number,rub_el_hizb_number,sajdah_number" +
             "&word_fields=text_uthmani,line_number,char_type_name"
@@ -273,7 +290,7 @@ class MushafRepository(
     }
 
     private fun fetchFromAlQuranCloud(page: Int): MushafPageModel {
-        val url = "https://api.alquran.cloud/v1/page/$page/quran-uthmani"
+        val url = "${quranFallbackApiBase}/page/$page/quran-uthmani"
         val req = Request.Builder().url(url).build()
         val body = httpClient.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) throw IllegalStateException("AlQuranCloud HTTP ${resp.code}")
@@ -319,7 +336,7 @@ class MushafRepository(
 
     private fun searchOnlineAlQuranCloud(query: String): List<QuranSearchHit> {
         val encoded = URLEncoder.encode(query, "UTF-8")
-        val url = "https://api.alquran.cloud/v1/search/$encoded/all/quran-simple-clean"
+        val url = "${quranFallbackApiBase}/search/$encoded/all/quran-simple-clean"
         val req = Request.Builder().url(url).build()
         val body = httpClient.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) return emptyList()

@@ -100,7 +100,24 @@ data class LocalizedStrings(
     val previewAdhan: String,
     val stopAdhan: String,
     val customTargetLabel: String,
-    val dailyAdhkarStats: String
+    val dailyAdhkarStats: String,
+    // Phase 3 Super Admin & App Operations Strings
+    val adminDashboardTitle: String,
+    val adminBadgeLabel: String,
+    val adminAccessDenied: String,
+    val adminTabDefaults: String,
+    val adminTabReciters: String,
+    val adminTabAdhkar: String,
+    val adminTabAdhan: String,
+    val adminTabAiControl: String,
+    val adminTabOperations: String,
+    val adminSaveChanges: String,
+    val adminSeedDefaults: String,
+    val adminExportBackup: String,
+    val adminImportBackup: String,
+    val aiRateLimitReached: String,
+    val maintenanceNoticeTitle: String,
+    val maintenanceNoticeBody: String
 )
 
 fun stringsFor(language: AppLanguage): LocalizedStrings = when (language) {
@@ -184,7 +201,23 @@ fun stringsFor(language: AppLanguage): LocalizedStrings = when (language) {
         previewAdhan = "معاينة الصوت",
         stopAdhan = "إيقاف",
         customTargetLabel = "هدف مخصص",
-        dailyAdhkarStats = "إنجاز الأذكار اليومي"
+        dailyAdhkarStats = "إنجاز الأذكار اليومي",
+        adminDashboardTitle = "لوحة الإدارة الشاملة",
+        adminBadgeLabel = "المشرف الأعلى",
+        adminAccessDenied = "الوصول مقصور حصرياً على حساب المشرف الأعلى المعتمد.",
+        adminTabDefaults = "القرآن والافتراضيات",
+        adminTabReciters = "القراء",
+        adminTabAdhkar = "الأذكار",
+        adminTabAdhan = "الأذان",
+        adminTabAiControl = "الذكاء الاصطناعي",
+        adminTabOperations = "العمليات والنسخ",
+        adminSaveChanges = "حفظ التغييرات السحابية",
+        adminSeedDefaults = "مزامنة الافتراضيات للسحابة",
+        adminExportBackup = "تصدير نسخة JSON كاملة",
+        adminImportBackup = "استيراد نسخة JSON",
+        aiRateLimitReached = "بلغت الحد اليومي المسموح لطلبات المساعد الذكي. حاول غداً.",
+        maintenanceNoticeTitle = "صيانة مجدولة",
+        maintenanceNoticeBody = "بعض الخدمات السحابية في وضع الصيانة حالياً مع بقاء المصحف والأذكار المحلية متاحة."
     )
     AppLanguage.ENGLISH -> LocalizedStrings(
         appTitle = "Mihrab",
@@ -266,7 +299,23 @@ fun stringsFor(language: AppLanguage): LocalizedStrings = when (language) {
         previewAdhan = "Preview",
         stopAdhan = "Stop",
         customTargetLabel = "Custom Target",
-        dailyAdhkarStats = "Daily Adhkar Stats"
+        dailyAdhkarStats = "Daily Adhkar Stats",
+        adminDashboardTitle = "Super Admin Dashboard",
+        adminBadgeLabel = "Super Admin",
+        adminAccessDenied = "Access restricted exclusively to the verified Super Admin account.",
+        adminTabDefaults = "Quran & Defaults",
+        adminTabReciters = "Reciters",
+        adminTabAdhkar = "Adhkar",
+        adminTabAdhan = "Adhan",
+        adminTabAiControl = "AI Control",
+        adminTabOperations = "Operations",
+        adminSaveChanges = "Save Cloud Config",
+        adminSeedDefaults = "Seed Defaults to Cloud",
+        adminExportBackup = "Export Full DB (JSON)",
+        adminImportBackup = "Import DB Backup (JSON)",
+        aiRateLimitReached = "Daily AI request limit reached. Please try again tomorrow.",
+        maintenanceNoticeTitle = "Maintenance Mode",
+        maintenanceNoticeBody = "Cloud operations are temporarily in maintenance mode; offline Mushaf and Adhkar remain available."
     )
     AppLanguage.TURKISH -> stringsFor(AppLanguage.ENGLISH).copy(
         appTitle = "Mihrab",

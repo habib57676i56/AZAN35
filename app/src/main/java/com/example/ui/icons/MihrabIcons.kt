@@ -10,17 +10,22 @@ import androidx.compose.material.icons.outlined.Handyman
 import androidx.compose.material.icons.outlined.Mosque
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.rounded.Alarm
+import androidx.compose.material.icons.rounded.AdminPanelSettings
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoStories
+import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.Calculate
+import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Flight
 import androidx.compose.material.icons.rounded.Grain
+import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Handyman
 import androidx.compose.material.icons.rounded.HealthAndSafety
 import androidx.compose.material.icons.rounded.Home
@@ -236,4 +241,50 @@ object MihrabIcons {
     val Privacy: ImageVector = Icons.Rounded.PrivacyTip
     val Settings: ImageVector = Icons.Rounded.Settings
     val ScholarBook: ImageVector = Icons.Rounded.MenuBook
+    val AdminShield: ImageVector = Icons.Rounded.AdminPanelSettings
+    val BroadcastBanner: ImageVector = Icons.Rounded.Campaign
+    val DatabaseBackup: ImageVector = Icons.Rounded.Backup
+    val FeatureFlags: ImageVector = Icons.Rounded.Flag
+    val UsersManager: ImageVector = Icons.Rounded.Group
+
+    val selectableAdhkarIconNames: List<String> = listOf(
+        "WbSunny",
+        "NightsStay",
+        "CheckCircle",
+        "Bedtime",
+        "Alarm",
+        "Mosque",
+        "Flight",
+        "Home",
+        "HealthAndSafety",
+        "AutoStories",
+        "Verified",
+        "VolunteerActivism",
+        "TasbihBeads",
+        "MihrabArch",
+        "KaabaCube",
+        "AiSpark"
+    )
+
+    fun iconForAdhkarItem(iconName: String, categoryId: String): ImageVector {
+        return when (iconName.trim().lowercase()) {
+            "wbsunny", "sun" -> Icons.Rounded.WbSunny
+            "nightsstay", "moon" -> Icons.Rounded.NightsStay
+            "checkcircle", "check-circle" -> Icons.Rounded.CheckCircle
+            "bedtime", "sleep" -> Icons.Rounded.Bedtime
+            "alarm", "sunrise" -> Icons.Rounded.Alarm
+            "mosque" -> Icons.Rounded.Mosque
+            "flight", "plane" -> Icons.Rounded.Flight
+            "home" -> Icons.Rounded.Home
+            "healthandsafety", "shield" -> Icons.Rounded.HealthAndSafety
+            "autostories", "book-open" -> Icons.Rounded.AutoStories
+            "verified", "award" -> Icons.Rounded.Verified
+            "volunteeractivism", "heart" -> Icons.Rounded.VolunteerActivism
+            "tasbihbeads", "tasbih" -> TasbihBeads
+            "mihrabarch", "mihrab" -> MihrabArch
+            "kaabacube", "kaaba" -> KaabaCube
+            "aispark", "sparkles" -> Icons.Rounded.AutoAwesome
+            else -> iconForAdhkarCategory(categoryId)
+        }
+    }
 }

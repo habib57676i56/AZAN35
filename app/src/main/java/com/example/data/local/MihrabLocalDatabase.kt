@@ -101,6 +101,7 @@ data class AdhkarEntity(
     val targetCount: Int,
     val referenceAr: String,
     val referenceEn: String,
+    val iconName: String = "",
     val sortOrder: Int,
     val active: Boolean = true
 )
@@ -210,7 +211,7 @@ interface AdhkarDao {
         AdhanVoiceEntity::class,
         AdhkarEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class MihrabLocalDatabase : RoomDatabase() {

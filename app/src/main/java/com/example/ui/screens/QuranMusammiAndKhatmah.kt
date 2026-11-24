@@ -353,7 +353,8 @@ fun AlMusammiSection(
 fun KhatmahAndGroupsSection(
     settings: UserSettingsDoc,
     groupsState: UiState<List<KhatmahGroupDoc>>,
-    viewModel: MihrabViewModel
+    viewModel: MihrabViewModel,
+    familyKhatmahEnabled: Boolean = true
 ) {
     var newGroupName by remember { mutableStateOf("") }
     var dailyPagesGoal by remember { mutableIntStateOf(20) }
@@ -401,13 +402,14 @@ fun KhatmahAndGroupsSection(
             }
         }
 
-        Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-            shape = MaterialTheme.shapes.large,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Family & Friends Khatmah", style = MaterialTheme.typography.titleLarge)
+        if (familyKhatmahEnabled) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Family & Friends Khatmah", style = MaterialTheme.typography.titleLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = newGroupName,
@@ -469,4 +471,5 @@ fun KhatmahAndGroupsSection(
             }
         }
     }
+}
 }
