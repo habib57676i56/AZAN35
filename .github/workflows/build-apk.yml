@@ -3,11 +3,14 @@ name: Build Mihrab Android APK
 on:
   push:
     branches:
-      - main
+      - "**"
+    tags:
+      - "v*"
   workflow_dispatch:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   build-android-apk:
@@ -27,6 +30,19 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Accept Android SDK Licenses & Ensure API 36 SDK
+        shell: bash
+        run: |
+          SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          mkdir -p "$SDK_DIR/licenses"
+          printf "\n24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n" > "$SDK_DIR/licenses/android-sdk-license"
+          printf "\n84831b9409646a918e30573bab4c9c91346d8abd\n" > "$SDK_DIR/licenses/android-sdk-preview-license"
+          if command -v sdkmanager >/dev/null 2>&1; then
+            yes | sdkmanager --licenses >/dev/null 2>&1 || true
+            sdkmanager "platform-tools" "build-tools;36.0.0" "platforms;android-36.1" || \
+              sdkmanager "platform-tools" "build-tools;36.0.0" "platforms;android-36" || true
+          fi
+
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -36,19 +52,24 @@ jobs:
         shell: bash
         run: |
           if [ ! -f debug.keystore ] && [ -f debug.keystore.base64 ]; then
-            base64 -d debug.keystore.base64 > debug.keystore
+            tr -d '\r\n' < debug.keystore.base64 | base64 -d > debug.keystore || rm -f debug.keystore
+          fi
+          if [ ! -s debug.keystore ]; then
+            keytool -genkeypair -v -keystore debug.keystore -storepass android \
+              -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+              -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
           if [ -n "${{ secrets.GOOGLE_SERVICES_JSON_B64 }}" ]; then
-            echo "${{ secrets.GOOGLE_SERVICES_JSON_B64 }}" | base64 -d > app/google-services.json
+            echo "${{ secrets.GOOGLE_SERVICES_JSON_B64 }}" | tr -d '\r\n' | base64 -d > app/google-services.json
           fi
 
       - name: Build Debug APK
         shell: bash
         run: |
           if [ -x ./gradlew ]; then
-            ./gradlew :app:compileDebugKotlin :app:assembleDebug --no-daemon
+            ./gradlew :app:assembleDebug --no-daemon --stacktrace
           else
-            gradle :app:compileDebugKotlin :app:assembleDebug --no-daemon
+            gradle :app:assembleDebug --no-daemon --stacktrace
           fi
 
       - name: Build Signed Release APK (if release signing secrets are set)
@@ -58,11 +79,11 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         shell: bash
         run: |
-          echo "${{ secrets.RELEASE_KEYSTORE_B64 }}" | base64 -d > my-upload-key.jks
+          echo "${{ secrets.RELEASE_KEYSTORE_B64 }}" | tr -d '\r\n' | base64 -d > my-upload-key.jks
           if [ -x ./gradlew ]; then
-            ./gradlew :app:assembleRelease --no-daemon
+            ./gradlew :app:assembleRelease --no-daemon --stacktrace
           else
-            gradle :app:assembleRelease --no-daemon
+            gradle :app:assembleRelease --no-daemon --stacktrace
           fi
 
       - name: Collect APK Outputs
@@ -80,12 +101,16 @@ jobs:
         with:
           name: mihrab-android-apk
           path: dist-apk/*.apk
+          if-no-files-found: error
           retention-days: 30
 
       - name: Publish GitHub Release with APK
+        id: gh_release
+        if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
+        continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: mihrab-v1.0.${{ github.run_number }}
+          tag_name: mihrab-v1.0.${{ github.run_number }}.${{ github.run_attempt }}
           name: Mihrab Android v1.0.${{ github.run_number }}
           body: |
             Automated native Android APK build for **Mihrab (محراب)**.
@@ -95,3 +120,19 @@ jobs:
           files: dist-apk/*.apk
           draft: false
           prerelease: false
+
+      - name: Write Download Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Mihrab Android APK Build"
+            if [ -f dist-apk/Mihrab-debug.apk ]; then
+              echo "- **Artifact**: Download \`mihrab-android-apk\` from the **Artifacts** section at the bottom of this workflow run."
+            fi
+            if [ "${{ steps.gh_release.outcome }}" = "success" ]; then
+              echo "- **GitHub Release**: Published under the repository **Releases** tab."
+            else
+              echo "- **GitHub Release note**: If the Release step was skipped/blocked, enable **Settings -> Actions -> General -> Workflow permissions -> Read and write permissions** in GitHub, or download \`mihrab-android-apk\` directly from **Artifacts** above."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
