@@ -67,6 +67,13 @@ jobs:
           if [ -n "$GOOGLE_SERVICES_JSON_B64" ]; then
             printf '%s' "$GOOGLE_SERVICES_JSON_B64" | tr -d '\r\n' | base64 -d > app/google-services.json
           fi
+          if [ ! -f app/google-services.json ] && [ -f google-services.json ]; then
+            echo "Found google-services.json at repo root; copying to app/google-services.json"
+            cp google-services.json app/google-services.json
+          fi
+          echo "Checking app/google-services.json:" && ls -lh app/google-services.json || true
+          echo "Checking debug.keystore.base64:" && ls -lh debug.keystore.base64 || true
+          keytool -list -v -keystore debug.keystore -storepass android -alias androiddebugkey 2>/dev/null | grep -E "SHA1:|SHA256:" || true
 
       - name: Build Debug APK
         shell: bash
@@ -78,6 +85,7 @@ jobs:
           fi
           if ! "$GRADLE_CMD" :app:assembleDebug \
             --no-daemon \
+            --no-build-cache \
             --console=plain \
             --max-workers=2 \
             -Dorg.gradle.configuration-cache=false \
