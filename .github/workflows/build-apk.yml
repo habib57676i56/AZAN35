@@ -54,25 +54,36 @@ jobs:
       - name: Prepare Debug Keystore & Optional Firebase Config
         env:
           GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+          DEBUG_KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}
         shell: bash
         run: |
-          if [ ! -f debug.keystore ] && [ -f debug.keystore.base64 ]; then
-            tr -d '\r\n' < debug.keystore.base64 | base64 -d > debug.keystore || rm -f debug.keystore
+          if [ -n "$DEBUG_KEYSTORE_B64" ]; then
+            printf '%s' "$DEBUG_KEYSTORE_B64" | tr -d ' \t\r\n' | base64 -d > debug.keystore || rm -f debug.keystore
+          fi
+          if [ ! -s debug.keystore ] && [ -f debug.keystore.base64 ]; then
+            tr -d ' \t\r\n' < debug.keystore.base64 | base64 -d > debug.keystore || rm -f debug.keystore
           fi
           if [ ! -s debug.keystore ]; then
+            echo "DEBUG_KEYSTORE_GENERATED=true" >> "$GITHUB_ENV"
             keytool -genkeypair -v -keystore debug.keystore -storepass android \
               -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
               -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          else
+            echo "DEBUG_KEYSTORE_GENERATED=false" >> "$GITHUB_ENV"
           fi
           if [ -n "$GOOGLE_SERVICES_JSON_B64" ]; then
-            printf '%s' "$GOOGLE_SERVICES_JSON_B64" | tr -d '\r\n' | base64 -d > app/google-services.json
+            if printf '%s' "$GOOGLE_SERVICES_JSON_B64" | grep -q '"project_info"'; then
+              printf '%s' "$GOOGLE_SERVICES_JSON_B64" > app/google-services.json
+            else
+              printf '%s' "$GOOGLE_SERVICES_JSON_B64" | tr -d ' \t\r\n' | base64 -d > app/google-services.json
+            fi
           fi
           if [ ! -f app/google-services.json ] && [ -f google-services.json ]; then
             echo "Found google-services.json at repo root; copying to app/google-services.json"
             cp google-services.json app/google-services.json
           fi
           echo "Checking app/google-services.json:" && ls -lh app/google-services.json || true
-          echo "Checking debug.keystore.base64:" && ls -lh debug.keystore.base64 || true
+          echo "Checking debug.keystore:" && ls -lh debug.keystore || true
           keytool -list -v -keystore debug.keystore -storepass android -alias androiddebugkey 2>/dev/null | grep -E "SHA1:|SHA256:" || true
 
       - name: Build Debug APK
@@ -167,15 +178,15 @@ jobs:
         run: |
           {
             echo "## Mihrab Android APK Build"
-            if [ -f app/google-services.json ]; then
+            if [ -s app/google-services.json ]; then
               echo "- **Firebase Config**: \`app/google-services.json\` included."
             else
               echo "- **Firebase Warning**: \`app/google-services.json\` was MISSING — Google Sign-In & Firebase will not work in this APK."
             fi
-            if [ -f debug.keystore.base64 ]; then
-              echo "- **Debug Signing**: \`debug.keystore.base64\` included (SHA-1 matches Firebase)."
+            if [ "${DEBUG_KEYSTORE_GENERATED:-true}" = "false" ]; then
+              echo "- **Debug Signing**: \`debug.keystore\` loaded from Secret/Repo (matches Firebase SHA-1)."
             else
-              echo "- **Debug Signing Warning**: \`debug.keystore.base64\` was missing — random debug key used (Google Sign-In may fail SHA-1 check)."
+              echo "- **Debug Signing Warning**: Neither \`DEBUG_KEYSTORE_B64\` secret nor \`debug.keystore.base64\` found — random debug key used (Google Sign-In may fail SHA-1 check)."
             fi
             if [ -f dist-apk/Mihrab-debug.apk ]; then
               echo "- **Artifact**: Download \`mihrab-android-apk\` from the **Artifacts** section at the bottom of this workflow run."
