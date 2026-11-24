@@ -159,6 +159,16 @@ jobs:
         run: |
           {
             echo "## Mihrab Android APK Build"
+            if [ -f app/google-services.json ]; then
+              echo "- **Firebase Config**: \`app/google-services.json\` included."
+            else
+              echo "- **Firebase Warning**: \`app/google-services.json\` was MISSING — Google Sign-In & Firebase will not work in this APK."
+            fi
+            if [ -f debug.keystore.base64 ]; then
+              echo "- **Debug Signing**: \`debug.keystore.base64\` included (SHA-1 matches Firebase)."
+            else
+              echo "- **Debug Signing Warning**: \`debug.keystore.base64\` was missing — random debug key used (Google Sign-In may fail SHA-1 check)."
+            fi
             if [ -f dist-apk/Mihrab-debug.apk ]; then
               echo "- **Artifact**: Download \`mihrab-android-apk\` from the **Artifacts** section at the bottom of this workflow run."
             fi

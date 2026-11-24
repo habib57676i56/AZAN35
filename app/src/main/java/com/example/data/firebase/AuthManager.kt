@@ -2,6 +2,7 @@ package com.example.data.firebase
 
 import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.util.Log
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,6 +32,7 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -191,7 +193,7 @@ fun onGoogleSignInClicked(
         .build()
     scope.launch {
         try {
-            val activity = context as? Activity
+            val activity = context.findActivity()
                 ?: throw IllegalStateException("Sign-in requires an Activity context")
             val cred = credentialManager.getCredential(activity, request).credential
             if (cred is CustomCredential && cred.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
@@ -199,14 +201,37 @@ fun onGoogleSignInClicked(
                 Firebase.auth.signInWithCredential(GoogleAuthProvider.getCredential(token, null)).await()
                 onAuthSuccess()
             } else {
-                onAuthError("Unexpected credential type returned.")
+                onAuthError("نوع بيانات اعتماد غير متوقع من Google.")
             }
         } catch (e: GetCredentialCancellationException) {
-            Log.w("Auth", "Google Sign-In flow cancelled or dismissed: ${e.message}", e)
-            onAuthCancelled()
+            val detail = e.errorMessage?.toString().orEmpty()
+            Log.w("Auth", "Google Sign-In flow cancelled or dismissed: $detail", e)
+            if (detail.contains("developer", ignoreCase = true) ||
+                detail.contains("28444") ||
+                detail.contains("sha", ignoreCase = true) ||
+                detail.contains("config", ignoreCase = true)
+            ) {
+                onAuthError("تعذر إتمام تسجيل الدخول ($detail). تأكد من وجود ملف debug.keystore.base64 في GitHub لتطابق بصمة SHA-1.")
+            } else {
+                onAuthCancelled()
+            }
+        } catch (e: GetCredentialException) {
+            val detail = e.errorMessage?.toString()?.takeIf { it.isNotBlank() } ?: e.localizedMessage ?: e.type
+            Log.e("Auth", "Google Sign-In GetCredentialException (${e.type}): $detail", e)
+            val shaHint = if (
+                detail.contains("28444") ||
+                detail.contains("10") ||
+                detail.contains("developer", ignoreCase = true) ||
+                detail.contains("sha", ignoreCase = true) ||
+                detail.contains("credential", ignoreCase = true) ||
+                detail.contains("provider", ignoreCase = true)
+            ) {
+                "\nتأكد من رفع ملف debug.keystore.base64 إلى جذر مستودع GitHub وإعادة بناء APK لتطابق بصمة SHA-1."
+            } else ""
+            onAuthError("فشل تسجيل الدخول عبر Google: $detail$shaHint")
         } catch (e: Exception) {
             Log.e("Auth", "Google Sign-In failed", e)
-            onAuthError(e.localizedMessage ?: "Sign in failed. Please try again.")
+            onAuthError("فشل تسجيل الدخول: ${e.localizedMessage ?: e.javaClass.simpleName}")
         }
     }
 }
@@ -228,6 +253,15 @@ fun performSignOut(
             }
         }
     }
+}
+
+private fun Context.findActivity(): Activity? {
+    var current: Context? = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
+    }
+    return null
 }
 
 private fun resolveDefaultWebClientId(context: Context): String? {
