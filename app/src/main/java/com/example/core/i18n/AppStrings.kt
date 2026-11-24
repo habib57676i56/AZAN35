@@ -87,7 +87,20 @@ data class LocalizedStrings(
     val fontScaleLabel: String,
     val copiedToast: String,
     val networkErrorFallback: String,
-    val resumeLastRead: String
+    val resumeLastRead: String,
+    // Phase 2 AI Assistant, Adhkar & Custom Adhan Strings
+    val aiAssistantTitle: String,
+    val aiChatTab: String,
+    val aiQuizTab: String,
+    val aiClearHistory: String,
+    val aiDisabledNotice: String,
+    val adhanSettingsTitle: String,
+    val chooseAdhanVoice: String,
+    val uploadCustomAdhan: String,
+    val previewAdhan: String,
+    val stopAdhan: String,
+    val customTargetLabel: String,
+    val dailyAdhkarStats: String
 )
 
 fun stringsFor(language: AppLanguage): LocalizedStrings = when (language) {
@@ -108,15 +121,15 @@ fun stringsFor(language: AppLanguage): LocalizedStrings = when (language) {
         alMusammi = "المُسمِّع",
         khatmahPlan = "الختمة",
         bookmarksLabel = "العلامات",
-        morningEveningAdhkar = "الأذكار",
-        digitalTasbih = "التسبيح",
+        morningEveningAdhkar = "موسوعة الأذكار",
+        digitalTasbih = "المسبحة",
         namesOfAllah = "الأسماء الحسنى",
         duaJournal = "مفكرة الدعاء",
         communityDuaWall = "حائط الدعاء",
         hijriCalendar = "التقويم",
         ramadanMode = "رمضان",
         knowledgeHub = "المكتبة",
-        askAiCompanion = "اسأل المساعد",
+        askAiCompanion = "المساعد الإسلامي الذكي",
         zakatCalculator = "الزكاة",
         inheritanceCalculator = "المواريث",
         pilgrimGuide = "الحج والعمرة",
@@ -159,7 +172,19 @@ fun stringsFor(language: AppLanguage): LocalizedStrings = when (language) {
         fontScaleLabel = "حجم الخط",
         copiedToast = "تم نسخ الآية الكريمة",
         networkErrorFallback = "تعذر تحميل الصفحة من الشبكة؛ تأكد من الاتصال أو حمل المصحف محلياً.",
-        resumeLastRead = "متابعة القراءة"
+        resumeLastRead = "متابعة القراءة",
+        aiAssistantTitle = "المساعد الإسلامي الذكي",
+        aiChatTab = "الحوار والتفسير",
+        aiQuizTab = "مدرّب الحفظ والمتشابهات",
+        aiClearHistory = "مسح السجل",
+        aiDisabledNotice = "تم تعطيل المساعد الذكي مؤقتاً من لوحة الإدارة.",
+        adhanSettingsTitle = "الأذان المخصص والمؤذنون",
+        chooseAdhanVoice = "اختر صوت المؤذن",
+        uploadCustomAdhan = "اختيار ملف أذان من الجهاز",
+        previewAdhan = "معاينة الصوت",
+        stopAdhan = "إيقاف",
+        customTargetLabel = "هدف مخصص",
+        dailyAdhkarStats = "إنجاز الأذكار اليومي"
     )
     AppLanguage.ENGLISH -> LocalizedStrings(
         appTitle = "Mihrab",
@@ -186,7 +211,7 @@ fun stringsFor(language: AppLanguage): LocalizedStrings = when (language) {
         hijriCalendar = "Calendar",
         ramadanMode = "Ramadan",
         knowledgeHub = "Knowledge",
-        askAiCompanion = "Ask Scholarly AI",
+        askAiCompanion = "Islamic AI Assistant",
         zakatCalculator = "Zakat",
         inheritanceCalculator = "Inheritance",
         pilgrimGuide = "Hajj & Umrah",
@@ -229,7 +254,19 @@ fun stringsFor(language: AppLanguage): LocalizedStrings = when (language) {
         fontScaleLabel = "Font Scale",
         copiedToast = "Verse copied to clipboard",
         networkErrorFallback = "Unable to load page from network. Check internet or sync full Mushaf offline.",
-        resumeLastRead = "Resume"
+        resumeLastRead = "Resume",
+        aiAssistantTitle = "Islamic AI Assistant",
+        aiChatTab = "Tafsir & Q&A",
+        aiQuizTab = "Hifz & Mutashabihat",
+        aiClearHistory = "Clear History",
+        aiDisabledNotice = "AI Assistant is currently disabled by Admin settings.",
+        adhanSettingsTitle = "Custom Adhan & Muezzins",
+        chooseAdhanVoice = "Select Muezzin Voice",
+        uploadCustomAdhan = "Pick Custom Audio from Device",
+        previewAdhan = "Preview",
+        stopAdhan = "Stop",
+        customTargetLabel = "Custom Target",
+        dailyAdhkarStats = "Daily Adhkar Stats"
     )
     AppLanguage.TURKISH -> stringsFor(AppLanguage.ENGLISH).copy(
         appTitle = "Mihrab",

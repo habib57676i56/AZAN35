@@ -140,7 +140,8 @@ fun MadinahMushafReader(
     appLanguage: AppLanguage,
     strings: LocalizedStrings,
     externalTargetPage: Int?,
-    onExternalPageConsumed: () -> Unit
+    onExternalPageConsumed: () -> Unit,
+    onOpenAiAssistant: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -545,10 +546,26 @@ fun MadinahMushafReader(
                         is AiUiState.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(10.dp))
-                            Text(if (isArabicUi) "جارٍ استحضار التفسير..." else "Fetching AI Tafsir...")
+                            Text(if (isArabicUi) "جارٍ استحضار التفسير ومعاني المفردات..." else "Fetching AI Tafsir & word meanings...")
                         }
                         is AiUiState.Streaming -> Text(ts.text, style = MaterialTheme.typography.bodyLarge)
-                        is AiUiState.Success -> Text(ts.text, style = MaterialTheme.typography.bodyLarge)
+                        is AiUiState.Success -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(ts.text, style = MaterialTheme.typography.bodyLarge)
+                            OutlinedButton(
+                                onClick = {
+                                    selectedAyahForAction = null
+                                    onOpenAiAssistant()
+                                },
+                                modifier = Modifier.fillMaxWidth().testTag("open_full_ai_from_tafsir")
+                            ) {
+                                Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    if (isArabicUi) "متابعة الحوار في المساعد الذكي (محفوظ في السجل)"
+                                    else "Continue in AI Assistant (Saved to History)"
+                                )
+                            }
+                        }
                         is AiUiState.Error -> Text(ts.message, color = MaterialTheme.colorScheme.error)
                         else -> Unit
                     }

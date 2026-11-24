@@ -254,3 +254,82 @@ test("Community Dua Wall and Khatmah groups continue to enforce strict parity", 
   );
   await assertFails(bobDb.collection("duaWall").doc("post_1").delete());
 });
+
+test("Phase 2 per-prayer Adhan settings, adminConfigs AI prompt, adhanVoices, and adhkarItems enforce parity", async () => {
+  const past = new Date(Date.now() - 5000);
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const adminDb = testEnv.authenticatedContext("admin_1", { admin: true }).firestore();
+
+  await assertSucceeds(aliceDb.collection("users").doc(ALICE_UID).set(validUserSettings(ALICE_UID, past)));
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      perPrayerAdhanModes: {
+        fajr: "FULL_ADHAN",
+        dhuhr: "TAKBIR_ONLY",
+        asr: "GENTLE_CHIME",
+        maghrib: "FULL_ADHAN",
+        isha: "SILENT",
+      },
+      customAdhanName: "my_custom_adhan.mp3",
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      perPrayerAdhanModes: { fajr: "INVALID_MODE" },
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  await assertSucceeds(
+    adminDb.collection("adminConfigs").doc("ai_settings").set({
+      configKey: "ai_settings",
+      valueJson: JSON.stringify({ enabled: true, modelName: "gemini-3.8-flash", systemPrompt: "أنت مساعد إسلامي." }),
+      createdAt: past,
+      updatedAt: past,
+    })
+  );
+  await assertSucceeds(aliceDb.collection("adminConfigs").doc("ai_settings").get());
+  await assertFails(
+    aliceDb.collection("adminConfigs").doc("ai_settings").set({
+      configKey: "ai_settings",
+      valueJson: "{}",
+      createdAt: past,
+      updatedAt: past,
+    })
+  );
+
+  await assertSucceeds(
+    adminDb.collection("adhanVoices").doc("makkah").set({
+      nameAr: "أذان المسجد الحرام",
+      nameEn: "Makkah Al-Haram",
+      muezzin: "الشيخ علي ملا",
+      audioUrl: "https://example.com/makkah.mp3",
+      active: true,
+      createdAt: past,
+      updatedAt: past,
+    })
+  );
+  await assertSucceeds(aliceDb.collection("adhanVoices").where("active", "==", true).get());
+  await assertFails(aliceDb.collection("adhanVoices").doc("hacked").delete());
+
+  await assertSucceeds(
+    adminDb.collection("adhkarItems").doc("ruqyah_1").set({
+      category: "RUQYAH",
+      titleAr: "سورة الفاتحة والشفاء",
+      titleEn: "Al-Fatihah Ruqyah",
+      arabic: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+      transliteration: "Bismillah",
+      translation: "In the name of Allah",
+      targetCount: 7,
+      referenceAr: "صحيح البخاري",
+      referenceEn: "Sahih al-Bukhari",
+      sortOrder: 1,
+      active: true,
+      createdAt: past,
+      updatedAt: past,
+    })
+  );
+  await assertSucceeds(aliceDb.collection("adhkarItems").where("active", "==", true).get());
+});
+

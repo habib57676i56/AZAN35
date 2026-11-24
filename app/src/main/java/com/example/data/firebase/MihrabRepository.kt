@@ -2,10 +2,15 @@ package com.example.data.firebase
 
 import android.content.Context
 import com.example.R
+import com.example.data.local.AdhanVoiceDao
+import com.example.data.local.AdhanVoiceEntity
+import com.example.data.local.AdhkarDao
+import com.example.data.local.AdhkarEntity
 import com.example.data.local.LocalPrefsDao
 import com.example.data.local.LocalUserPrefsEntity
 import com.example.data.local.ReciterDao
 import com.example.data.local.ReciterEntity
+import com.example.domain.AdhkarAndAdhanCatalog
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
@@ -30,6 +35,8 @@ class MihrabRepository(
     private val db: FirebaseFirestore,
     private val localPrefsDao: LocalPrefsDao? = null,
     private val reciterDao: ReciterDao? = null,
+    private val adhanVoiceDao: AdhanVoiceDao? = null,
+    private val adhkarDao: AdhkarDao? = null,
     private val auth: FirebaseAuth = Firebase.auth
 ) {
     constructor(context: Context) : this(
@@ -74,6 +81,7 @@ class MihrabRepository(
                 } else null
             }.onEach { doc ->
                 if (doc != null && localPrefsDao != null) {
+                    val existingLocal = localPrefsDao.getPrefs(uid)
                     localPrefsDao.upsertPrefs(
                         LocalUserPrefsEntity(
                             userId = uid,
@@ -87,6 +95,9 @@ class MihrabRepository(
                             preferredReciterId = doc.preferredReciterId,
                             adhanEnabled = doc.adhanEnabled,
                             adhanVoiceId = doc.adhanVoiceId,
+                            customAdhanName = doc.customAdhanName,
+                            customAdhanLocalPath = existingLocal?.customAdhanLocalPath ?: "",
+                            perPrayerAdhanJson = JSONObject(doc.perPrayerAdhanModes).toString(),
                             khatmahPagesRead = doc.khatmahPagesRead.toInt().coerceIn(0, 604)
                         )
                     )
@@ -120,6 +131,14 @@ class MihrabRepository(
                     "preferredReciterId" to "ar.alafasy",
                     "adhanEnabled" to true,
                     "adhanVoiceId" to "makkah",
+                    "perPrayerAdhanModes" to mapOf(
+                        "fajr" to "FULL_ADHAN",
+                        "dhuhr" to "FULL_ADHAN",
+                        "asr" to "FULL_ADHAN",
+                        "maghrib" to "FULL_ADHAN",
+                        "isha" to "FULL_ADHAN"
+                    ),
+                    "customAdhanName" to "",
                     "calculationMethod" to "MWL",
                     "city" to "Makkah",
                     "latitude" to 21.4225,
@@ -140,7 +159,7 @@ class MihrabRepository(
                 )
                 docRef.set(payload).await()
             } else {
-                // Backfill any newly added Phase 1 fields on existing user documents safely
+                // Backfill any newly added Phase 1 & Phase 2 fields on existing user documents safely
                 val data = snap.data ?: emptyMap()
                 val backfill = mutableMapOf<String, Any>()
                 if (!data.containsKey("themeMode")) backfill["themeMode"] = "SYSTEM"
@@ -152,6 +171,16 @@ class MihrabRepository(
                 if (!data.containsKey("preferredReciterId")) backfill["preferredReciterId"] = "ar.alafasy"
                 if (!data.containsKey("adhanEnabled")) backfill["adhanEnabled"] = true
                 if (!data.containsKey("adhanVoiceId")) backfill["adhanVoiceId"] = "makkah"
+                if (!data.containsKey("perPrayerAdhanModes")) {
+                    backfill["perPrayerAdhanModes"] = mapOf(
+                        "fajr" to "FULL_ADHAN",
+                        "dhuhr" to "FULL_ADHAN",
+                        "asr" to "FULL_ADHAN",
+                        "maghrib" to "FULL_ADHAN",
+                        "isha" to "FULL_ADHAN"
+                    )
+                }
+                if (!data.containsKey("customAdhanName")) backfill["customAdhanName"] = ""
                 if (backfill.isNotEmpty()) {
                     backfill["updatedAt"] = FieldValue.serverTimestamp()
                     docRef.update(backfill).await()
@@ -174,6 +203,11 @@ class MihrabRepository(
             // Mirror immediately into local SQLite for instant zero-jank reactivity
             localPrefsDao?.let { dao ->
                 val cur = dao.getPrefs(uid) ?: LocalUserPrefsEntity(userId = uid)
+                val updatedModesJson = (fields["perPrayerAdhanModes"] as? Map<*, *>)?.let { m ->
+                    val obj = JSONObject()
+                    m.forEach { (k, v) -> if (k != null && v != null) obj.put(k.toString(), v.toString()) }
+                    obj.toString()
+                } ?: cur.perPrayerAdhanJson
                 dao.upsertPrefs(
                     cur.copy(
                         preferredLanguage = (fields["preferredLanguage"] as? String) ?: cur.preferredLanguage,
@@ -186,6 +220,8 @@ class MihrabRepository(
                         preferredReciterId = (fields["preferredReciterId"] as? String) ?: cur.preferredReciterId,
                         adhanEnabled = (fields["adhanEnabled"] as? Boolean) ?: cur.adhanEnabled,
                         adhanVoiceId = (fields["adhanVoiceId"] as? String) ?: cur.adhanVoiceId,
+                        customAdhanName = (fields["customAdhanName"] as? String) ?: cur.customAdhanName,
+                        perPrayerAdhanJson = updatedModesJson,
                         khatmahPagesRead = (fields["khatmahPagesRead"] as? Number)?.toInt() ?: cur.khatmahPagesRead,
                         updatedAt = System.currentTimeMillis()
                     )
@@ -202,6 +238,34 @@ class MihrabRepository(
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun saveCustomAdhanLocalFile(localPath: String, displayName: String): Result<Unit> {
+        val uid = auth.currentUser?.uid ?: return Result.failure(IllegalStateException("Not authenticated"))
+        return try {
+            val cleanName = displayName.trim().take(120)
+            localPrefsDao?.let { dao ->
+                val cur = dao.getPrefs(uid) ?: LocalUserPrefsEntity(userId = uid)
+                dao.upsertPrefs(
+                    cur.copy(
+                        customAdhanLocalPath = localPath,
+                        customAdhanName = cleanName,
+                        adhanVoiceId = "custom",
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+            }
+            updateUserSettings(
+                mapOf(
+                    "customAdhanName" to cleanName,
+                    "adhanVoiceId" to "custom"
+                )
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             Result.failure(e)
         }
     }
@@ -240,6 +304,117 @@ class MihrabRepository(
                         mapped
                     } else {
                         reciterDao?.getActiveReciters()?.takeIf { it.isNotEmpty() } ?: DEFAULT_RECITERS
+                    }
+                }
+        }
+    }
+
+    // --- PHASE 2 CATALOGS: ADHAN VOICES & 12-CATEGORY ADHKAR ENCYCLOPEDIA ---
+    suspend fun ensureAdhanAndAdhkarSeededLocally() {
+        adhanVoiceDao?.let { dao ->
+            if (dao.getActiveVoices().isEmpty()) {
+                dao.upsertAll(AdhkarAndAdhanCatalog.defaultAdhanVoices)
+            }
+        }
+        adhkarDao?.let { dao ->
+            if (dao.getAllActive().isEmpty()) {
+                dao.upsertAll(AdhkarAndAdhanCatalog.defaultAdhkarEntities)
+            }
+        }
+    }
+
+    fun observeAdhanVoices(uid: String): Flow<List<AdhanVoiceEntity>> {
+        val path = "adhanVoices"
+        return safeFirestoreFlow(path, OperationType.LIST, uid) {
+            db.collection("adhanVoices")
+                .whereEqualTo("active", true)
+                .snapshots()
+                .map { snap ->
+                    val docs = snap.toObjects(AdhanVoiceDoc::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                    if (docs.isNotEmpty()) {
+                        val mapped = docs.map { d ->
+                            AdhanVoiceEntity(
+                                id = d.id.ifBlank { d.nameEn.lowercase().replace(" ", "_") },
+                                nameAr = d.nameAr,
+                                nameEn = d.nameEn,
+                                muezzin = d.muezzin,
+                                audioUrl = d.audioUrl,
+                                active = d.active
+                            )
+                        }
+                        adhanVoiceDao?.upsertAll(mapped)
+                        mapped
+                    } else {
+                        adhanVoiceDao?.getActiveVoices()?.takeIf { it.isNotEmpty() }
+                            ?: AdhkarAndAdhanCatalog.defaultAdhanVoices
+                    }
+                }
+        }
+    }
+
+    fun observeAdhkarItems(uid: String): Flow<List<AdhkarEntity>> {
+        val path = "adhkarItems"
+        return safeFirestoreFlow(path, OperationType.LIST, uid) {
+            db.collection("adhkarItems")
+                .whereEqualTo("active", true)
+                .snapshots()
+                .map { snap ->
+                    val docs = snap.toObjects(AdhkarItemDoc::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                    if (docs.isNotEmpty()) {
+                        val mapped = docs.sortedBy { it.sortOrder }.map { d ->
+                            AdhkarEntity(
+                                id = d.id,
+                                category = d.category,
+                                titleAr = d.titleAr,
+                                titleEn = d.titleEn,
+                                arabic = d.arabic,
+                                transliteration = d.transliteration,
+                                translation = d.translation,
+                                targetCount = d.targetCount.toInt().coerceIn(1, 1000),
+                                referenceAr = d.referenceAr,
+                                referenceEn = d.referenceEn,
+                                sortOrder = d.sortOrder.toInt(),
+                                active = d.active
+                            )
+                        }
+                        adhkarDao?.upsertAll(mapped)
+                        mapped
+                    } else {
+                        adhkarDao?.getAllActive()?.takeIf { it.isNotEmpty() }
+                            ?: AdhkarAndAdhanCatalog.defaultAdhkarEntities
+                    }
+                }
+        }
+    }
+
+    fun observeAiConfig(uid: String): Flow<AiRuntimeConfig> {
+        val path = "adminConfigs/ai_settings"
+        return safeFirestoreFlow(path, OperationType.GET, uid) {
+            db.collection("adminConfigs").document("ai_settings")
+                .snapshots()
+                .map { snap ->
+                    if (!snap.exists()) {
+                        AiRuntimeConfig()
+                    } else {
+                        val valueJson = snap.getString("valueJson") ?: "{}"
+                        try {
+                            val obj = JSONObject(valueJson)
+                            val rawModel = obj.optString("modelName", "gemini-3.8-flash").trim()
+                            val safeModel = if (rawModel.startsWith("gemini-3") || rawModel.startsWith("gemini-4")) {
+                                rawModel
+                            } else {
+                                "gemini-3.8-flash"
+                            }
+                            AiRuntimeConfig(
+                                enabled = obj.optBoolean("enabled", true),
+                                modelName = safeModel,
+                                systemPrompt = obj.optString("systemPrompt")
+                                    .takeIf { it.isNotBlank() }
+                                    ?: AiRuntimeConfig.DEFAULT_ISLAMIC_SYSTEM_PROMPT
+                            )
+                        } catch (_: Exception) {
+                            AiRuntimeConfig()
+                        }
                     }
                 }
         }
@@ -580,7 +755,17 @@ class MihrabRepository(
         }
     }
 
-    // --- PHASE 2 PREPARED: ADHKAR LOGS & AI CHATS ---
+    // --- PHASE 2: ADHKAR LOGS & AI CHATS ---
+    fun observeAdhkarLogs(uid: String, dateKey: String): Flow<List<AdhkarLogDoc>> {
+        val path = "users/$uid/adhkarLogs"
+        return safeFirestoreFlow(path, OperationType.LIST, uid) {
+            db.collection("users").document(uid).collection("adhkarLogs")
+                .whereEqualTo("dateKey", dateKey)
+                .snapshots()
+                .map { snap -> snap.toObjects(AdhkarLogDoc::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE) }
+        }
+    }
+
     suspend fun saveAdhkarLog(dateKey: String, category: String, completedCount: Long, targetCount: Long): Result<Unit> {
         val uid = auth.currentUser?.uid ?: return Result.failure(IllegalStateException("Not authenticated"))
         val docId = "${dateKey}_${category.replace(Regex("[^a-zA-Z0-9_\\-]"), "_")}".take(64)
@@ -618,14 +803,27 @@ class MihrabRepository(
         }
     }
 
+    fun observeAiChats(uid: String): Flow<List<AiChatDoc>> {
+        val path = "users/$uid/aiChats"
+        return safeFirestoreFlow(path, OperationType.LIST, uid) {
+            db.collection("users").document(uid).collection("aiChats")
+                .orderBy("createdAt", Query.Direction.ASCENDING)
+                .limitToLast(60)
+                .snapshots()
+                .map { snap -> snap.toObjects(AiChatDoc::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE) }
+        }
+    }
+
     suspend fun saveAiChatMessage(role: String, content: String, surahRef: String?): Result<Unit> {
         val uid = auth.currentUser?.uid ?: return Result.failure(IllegalStateException("Not authenticated"))
         val path = "users/$uid/aiChats"
         return try {
             requireUserId()
+            val cleanContent = content.trim().take(8000)
+            require(cleanContent.isNotEmpty()) { "Message content cannot be empty" }
             val payload = mapOf(
                 "role" to if (role == "assistant") "assistant" else "user",
-                "content" to content.trim().take(8000),
+                "content" to cleanContent,
                 "surahRef" to surahRef?.trim()?.take(64)?.takeIf { it.isNotEmpty() },
                 "createdAt" to FieldValue.serverTimestamp(),
                 "updatedAt" to FieldValue.serverTimestamp()
@@ -636,6 +834,24 @@ class MihrabRepository(
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.CREATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun clearAiChats(): Result<Unit> {
+        val uid = auth.currentUser?.uid ?: return Result.failure(IllegalStateException("Not authenticated"))
+        val path = "users/$uid/aiChats"
+        return try {
+            requireUserId()
+            val docs = db.collection("users").document(uid).collection("aiChats").get().await()
+            for (d in docs.documents) {
+                d.reference.delete().await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, path)
             Result.failure(e)
         }
     }

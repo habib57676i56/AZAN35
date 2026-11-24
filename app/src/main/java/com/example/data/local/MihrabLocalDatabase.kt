@@ -72,8 +72,37 @@ data class LocalUserPrefsEntity(
     val preferredReciterId: String = "ar.alafasy",
     val adhanEnabled: Boolean = true,
     val adhanVoiceId: String = "makkah",
+    val customAdhanName: String = "",
+    val customAdhanLocalPath: String = "",
+    val perPrayerAdhanJson: String = "{}",
     val khatmahPagesRead: Int = 0,
     val updatedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "adhan_voices")
+data class AdhanVoiceEntity(
+    @PrimaryKey val id: String,
+    val nameAr: String,
+    val nameEn: String,
+    val muezzin: String,
+    val audioUrl: String,
+    val active: Boolean = true
+)
+
+@Entity(tableName = "adhkar_items")
+data class AdhkarEntity(
+    @PrimaryKey val id: String,
+    val category: String,
+    val titleAr: String,
+    val titleEn: String,
+    val arabic: String,
+    val transliteration: String,
+    val translation: String,
+    val targetCount: Int,
+    val referenceAr: String,
+    val referenceEn: String,
+    val sortOrder: Int,
+    val active: Boolean = true
 )
 
 @Dao
@@ -147,15 +176,41 @@ interface LocalPrefsDao {
     suspend fun deletePrefs(userId: String)
 }
 
+@Dao
+interface AdhanVoiceDao {
+    @Query("SELECT * FROM adhan_voices WHERE active = 1")
+    fun observeActiveVoices(): Flow<List<AdhanVoiceEntity>>
+
+    @Query("SELECT * FROM adhan_voices WHERE active = 1")
+    suspend fun getActiveVoices(): List<AdhanVoiceEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(voices: List<AdhanVoiceEntity>)
+}
+
+@Dao
+interface AdhkarDao {
+    @Query("SELECT * FROM adhkar_items WHERE active = 1 ORDER BY sortOrder ASC")
+    fun observeAllActive(): Flow<List<AdhkarEntity>>
+
+    @Query("SELECT * FROM adhkar_items WHERE active = 1 ORDER BY sortOrder ASC")
+    suspend fun getAllActive(): List<AdhkarEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(items: List<AdhkarEntity>)
+}
+
 @Database(
     entities = [
         MushafPageEntity::class,
         QuranAyahIndexEntity::class,
         ReciterEntity::class,
         CachedAudioEntity::class,
-        LocalUserPrefsEntity::class
+        LocalUserPrefsEntity::class,
+        AdhanVoiceEntity::class,
+        AdhkarEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class MihrabLocalDatabase : RoomDatabase() {
@@ -163,6 +218,8 @@ abstract class MihrabLocalDatabase : RoomDatabase() {
     abstract fun reciterDao(): ReciterDao
     abstract fun audioCacheDao(): AudioCacheDao
     abstract fun localPrefsDao(): LocalPrefsDao
+    abstract fun adhanVoiceDao(): AdhanVoiceDao
+    abstract fun adhkarDao(): AdhkarDao
 
     companion object {
         @Volatile

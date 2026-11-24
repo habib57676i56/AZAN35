@@ -10,12 +10,16 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.Build
@@ -64,6 +68,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.core.hardware.AdhanAudioPlayer
 import com.example.core.hardware.QuranRecitationPlayer
 import com.example.core.hardware.QuranTtsAudioPlayer
 import com.example.core.i18n.AppLanguage
@@ -76,6 +81,7 @@ import com.example.data.firebase.configureAppCheck
 import com.example.data.firebase.performSignOut
 import com.example.data.local.MihrabLocalDatabase
 import com.example.data.quran.MushafRepository
+import com.example.ui.icons.MihrabIcons
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.DhikrScreen
 import com.example.ui.screens.KidsModeScreen
@@ -92,6 +98,7 @@ import com.example.ui.viewmodel.UiState
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
+import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -184,19 +191,24 @@ private fun AuthenticatedMihrabShell(
 ) {
     val context = LocalContext.current
     val localDb = remember(context) { MihrabLocalDatabase.getInstance(context) }
+    val sharedRepository = remember(context, localDb) {
+        val databaseId = context.applicationContext.getString(R.string.firestore_database_id)
+        val db = FirebaseFirestore.getInstance(databaseId)
+        MihrabRepository(
+            db = db,
+            localPrefsDao = localDb.localPrefsDao(),
+            reciterDao = localDb.reciterDao(),
+            adhanVoiceDao = localDb.adhanVoiceDao(),
+            adhkarDao = localDb.adhkarDao()
+        )
+    }
 
     val mihrabViewModel: MihrabViewModel = viewModel(
         key = currentUserId,
         factory = viewModelFactory {
             initializer {
-                val databaseId = context.applicationContext.getString(R.string.firestore_database_id)
-                val db = FirebaseFirestore.getInstance(databaseId)
                 MihrabViewModel(
-                    repository = MihrabRepository(
-                        db = db,
-                        localPrefsDao = localDb.localPrefsDao(),
-                        reciterDao = localDb.reciterDao()
-                    ),
+                    repository = sharedRepository,
                     mushafRepository = MushafRepository(localDb.mushafDao()),
                     currentUserId = currentUserId,
                     initialDisplayName = displayName
@@ -205,8 +217,19 @@ private fun AuthenticatedMihrabShell(
         }
     )
 
-    val aiViewModel: AiViewModel = viewModel(key = "ai_$currentUserId")
+    val aiViewModel: AiViewModel = viewModel(
+        key = "ai_$currentUserId",
+        factory = viewModelFactory {
+            initializer {
+                AiViewModel(
+                    mihrabRepository = sharedRepository,
+                    currentUserId = currentUserId
+                )
+            }
+        }
+    )
     val audioPlayer = remember(context) { QuranTtsAudioPlayer(context) }
+    val adhanAudioPlayer = remember(context) { AdhanAudioPlayer(context) }
     val recitationPlayer = remember(context, localDb) {
         QuranRecitationPlayer(
             context = context,
@@ -215,9 +238,10 @@ private fun AuthenticatedMihrabShell(
         )
     }
 
-    DisposableEffect(audioPlayer, recitationPlayer) {
+    DisposableEffect(audioPlayer, adhanAudioPlayer, recitationPlayer) {
         onDispose {
             audioPlayer.release()
+            adhanAudioPlayer.release()
             recitationPlayer.release()
         }
     }
@@ -246,6 +270,17 @@ private fun AuthenticatedMihrabShell(
 
     // Use Room localPrefs first for zero-flicker cold start before Firestore emits
     val remoteSettings = (settingsState as? UiState.Success)?.data
+    val localPerPrayerModes = remember(localPrefs?.perPrayerAdhanJson) {
+        val raw = localPrefs?.perPrayerAdhanJson ?: "{}"
+        try {
+            val obj = JSONObject(raw)
+            val defaults = UserSettingsDoc().perPrayerAdhanModes.toMutableMap()
+            obj.keys().forEach { k -> defaults[k] = obj.optString(k, "FULL_ADHAN") }
+            defaults
+        } catch (_: Exception) {
+            UserSettingsDoc().perPrayerAdhanModes
+        }
+    }
     val effectiveSettings = remoteSettings ?: UserSettingsDoc(
         userId = currentUserId,
         displayName = displayName,
@@ -259,6 +294,8 @@ private fun AuthenticatedMihrabShell(
         preferredReciterId = localPrefs?.preferredReciterId ?: "ar.alafasy",
         adhanEnabled = localPrefs?.adhanEnabled ?: true,
         adhanVoiceId = localPrefs?.adhanVoiceId ?: "makkah",
+        perPrayerAdhanModes = localPerPrayerModes,
+        customAdhanName = localPrefs?.customAdhanName ?: "",
         khatmahPagesRead = (localPrefs?.khatmahPagesRead ?: 0).toLong()
     )
 
@@ -283,13 +320,17 @@ private fun AuthenticatedMihrabShell(
         }
     }
 
-    val navItems = listOf(
-        Triple(strings.tabPrayer, Icons.Rounded.Mosque, Icons.Outlined.Mosque),
-        Triple(strings.tabQuran, Icons.Rounded.AutoStories, Icons.Outlined.AutoStories),
-        Triple(strings.tabDhikr, Icons.Rounded.Favorite, Icons.Outlined.FavoriteBorder),
-        Triple(strings.tabLearn, Icons.Rounded.School, Icons.Outlined.School),
-        Triple(strings.tabTools, Icons.Rounded.Build, Icons.Outlined.Build)
+    val navLabels = listOf(
+        strings.tabPrayer,
+        strings.tabQuran,
+        strings.tabDhikr,
+        strings.tabLearn,
+        strings.tabTools
     )
+    val navItems = navLabels.mapIndexed { idx, label ->
+        val (filled, outlined) = MihrabIcons.navIcons(idx)
+        Triple(label, filled, outlined)
+    }
 
     MihrabTheme(
         preset = themePreset,
@@ -328,7 +369,18 @@ private fun AuthenticatedMihrabShell(
                             snackbarHost = { SnackbarHost(snackbarHostState) },
                             topBar = {
                                 TopAppBar(
-                                    title = { Text(strings.appTitle, style = MaterialTheme.typography.headlineMedium) },
+                                    title = {
+                                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = MihrabIcons.MihrabArch,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(strings.appTitle, style = MaterialTheme.typography.headlineMedium)
+                                        }
+                                    },
                                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
                                 )
                             },
@@ -384,6 +436,8 @@ private fun AuthenticatedMihrabShell(
                                     when (selectedTab) {
                                         0 -> PrayerScreen(
                                             viewModel = mihrabViewModel,
+                                            adhanAudioPlayer = adhanAudioPlayer,
+                                            appLanguage = appLanguage,
                                             strings = strings,
                                             useIndic = useIndic,
                                             onOpenKhutbahAi = {
@@ -397,12 +451,17 @@ private fun AuthenticatedMihrabShell(
                                             audioPlayer = audioPlayer,
                                             recitationPlayer = recitationPlayer,
                                             appLanguage = appLanguage,
-                                            strings = strings
+                                            strings = strings,
+                                            onOpenAiAssistant = {
+                                                learnSubTab = 3
+                                                selectedTab = 3
+                                            }
                                         )
                                         2 -> DhikrScreen(
                                             viewModel = mihrabViewModel,
                                             audioPlayer = audioPlayer,
                                             currentUserId = currentUserId,
+                                            appLanguage = appLanguage,
                                             strings = strings,
                                             useIndic = useIndic
                                         )

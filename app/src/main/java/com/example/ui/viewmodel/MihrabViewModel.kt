@@ -3,6 +3,9 @@ package com.example.ui.viewmodel
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.firebase.AdhanAlertMode
+import com.example.data.firebase.AdhkarLogDoc
+import com.example.data.firebase.AiRuntimeConfig
 import com.example.data.firebase.BookmarkDoc
 import com.example.data.firebase.DuaWallPostDoc
 import com.example.data.firebase.JournalEntryDoc
@@ -12,10 +15,13 @@ import com.example.data.firebase.ObligationDoc
 import com.example.data.firebase.PrayerLogDoc
 import com.example.data.firebase.TasbihCounterDoc
 import com.example.data.firebase.UserSettingsDoc
+import com.example.data.local.AdhanVoiceEntity
+import com.example.data.local.AdhkarEntity
 import com.example.data.local.LocalUserPrefsEntity
 import com.example.data.local.ReciterEntity
 import com.example.data.quran.MushafRepository
 import com.example.data.quran.QuranSearchHit
+import com.example.domain.AdhkarAndAdhanCatalog
 import com.example.domain.CalculationMethod
 import com.example.domain.CityPreset
 import com.example.domain.DailyPrayerSchedule
@@ -84,6 +90,7 @@ class MihrabViewModel(
     init {
         viewModelScope.launch {
             repository.ensureDefaultRecitersSeededLocally()
+            repository.ensureAdhanAndAdhkarSeededLocally()
             repository.ensureUserSettings(initialDisplayName).onFailure { err ->
                 _statusMessage.value = err.localizedMessage ?: "تعذر مزامنة الملف الشخصي"
             }
@@ -147,6 +154,43 @@ class MihrabViewModel(
 
     val khatmahGroupsState: StateFlow<UiState<List<KhatmahGroupDoc>>> =
         repository.observeKhatmahGroups(currentUserId).toUiStateFlow("family khatmah")
+
+    // --- PHASE 2 STATE FLOWS: ADHAN VOICES, ADHKAR ENCYCLOPEDIA, DAILY ADHKAR STATS & AI CONFIG ---
+    val adhanVoicesState: StateFlow<List<AdhanVoiceEntity>> =
+        repository.observeAdhanVoices(currentUserId)
+            .catch { emit(AdhkarAndAdhanCatalog.defaultAdhanVoices) }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000L),
+                initialValue = AdhkarAndAdhanCatalog.defaultAdhanVoices
+            )
+
+    val adhkarCatalogState: StateFlow<List<AdhkarEntity>> =
+        repository.observeAdhkarItems(currentUserId)
+            .catch { emit(AdhkarAndAdhanCatalog.defaultAdhkarEntities) }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000L),
+                initialValue = AdhkarAndAdhanCatalog.defaultAdhkarEntities
+            )
+
+    val todayAdhkarLogsState: StateFlow<List<AdhkarLogDoc>> =
+        repository.observeAdhkarLogs(currentUserId, todayDateKey())
+            .catch { emit(emptyList()) }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000L),
+                initialValue = emptyList()
+            )
+
+    val aiConfigState: StateFlow<AiRuntimeConfig> =
+        repository.observeAiConfig(currentUserId)
+            .catch { emit(AiRuntimeConfig()) }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000L),
+                initialValue = AiRuntimeConfig()
+            )
 
     // --- PHASE 1 MUSHAF ACTIONS ---
     fun ensureMushafPageLoaded(page: Int) {
@@ -390,6 +434,31 @@ class MihrabViewModel(
         viewModelScope.launch {
             repository.upsertTasbihCounter(id, label, arabicText, count, target)
                 .onFailure { _statusMessage.value = it.localizedMessage ?: "تعذر حفظ التسبيح" }
+        }
+    }
+
+    fun logAdhkarProgress(category: String, completedCount: Int, targetCount: Int) {
+        viewModelScope.launch {
+            repository.saveAdhkarLog(
+                dateKey = todayDateKey(),
+                category = category,
+                completedCount = completedCount.toLong(),
+                targetCount = targetCount.coerceAtLeast(1).toLong()
+            )
+        }
+    }
+
+    fun savePerPrayerAdhanMode(currentMap: Map<String, String>, prayerKey: String, mode: AdhanAlertMode) {
+        val updated = currentMap.toMutableMap()
+        updated[prayerKey] = mode.id
+        updateSettings(mapOf("perPrayerAdhanModes" to updated))
+    }
+
+    fun saveCustomAdhanFile(localPath: String, displayName: String) {
+        viewModelScope.launch {
+            repository.saveCustomAdhanLocalFile(localPath, displayName)
+                .onSuccess { _statusMessage.value = "تم حفظ الأذان المخصص: $displayName" }
+                .onFailure { _statusMessage.value = it.localizedMessage ?: "تعذر حفظ ملف الأذان" }
         }
     }
 

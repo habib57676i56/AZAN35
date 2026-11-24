@@ -17,6 +17,8 @@
         "preferredReciterId": { "type": "string" },
         "adhanEnabled": { "type": "boolean" },
         "adhanVoiceId": { "type": "string" },
+        "perPrayerAdhanModes": { "type": "object" },
+        "customAdhanName": { "type": "string" },
         "calculationMethod": { "type": "string", "enum": ["MWL", "ISNA", "UMM_AL_QURA", "EGYPTIAN", "KARACHI"] },
         "city": { "type": "string" },
         "latitude": { "type": "number" },
@@ -196,6 +198,30 @@
       },
       "required": ["nameAr", "nameEn", "muezzin", "audioUrl", "active", "createdAt", "updatedAt"]
     },
+    "AdhkarItem": {
+      "title": "AdhkarItem",
+      "description": "12-category Adhkar and Duas encyclopedia entry synced with Room cache",
+      "type": "object",
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": ["MORNING", "EVENING", "AFTER_PRAYER", "SLEEP", "WAKING_UP", "MOSQUE", "TRAVEL", "HOME_FOOD", "RUQYAH", "QURANIC_DUAS", "PROPHETIC_DUAS", "GENERAL_DUAS"]
+        },
+        "titleAr": { "type": "string" },
+        "titleEn": { "type": "string" },
+        "arabic": { "type": "string" },
+        "transliteration": { "type": "string" },
+        "translation": { "type": "string" },
+        "targetCount": { "type": "integer" },
+        "referenceAr": { "type": "string" },
+        "referenceEn": { "type": "string" },
+        "sortOrder": { "type": "integer" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["category", "titleAr", "titleEn", "arabic", "targetCount", "sortOrder", "active", "createdAt", "updatedAt"]
+    },
     "DuaWallPost": {
       "title": "DuaWallPost",
       "description": "Anonymous community prayer request on the Dua Wall",
@@ -271,7 +297,11 @@
     },
     "/adhanVoices/{voiceId}": {
       "schema": "AdhanVoice",
-      "description": "Phase 3 Adhan audio voices catalog"
+      "description": "Phase 2/3 Adhan audio voices catalog"
+    },
+    "/adhkarItems/{itemId}": {
+      "schema": "AdhkarItem",
+      "description": "Phase 2/3 12-category Adhkar and Duas library"
     },
     "/duaWall/{postId}": {
       "schema": "DuaWallPost",

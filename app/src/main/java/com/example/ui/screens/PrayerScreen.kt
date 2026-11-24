@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,20 +26,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AirplanemodeActive
-import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Mosque
-import androidx.compose.material.icons.rounded.NightsStay
+import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Star
-import androidx.compose.material.icons.rounded.Timer
-import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.VolumeOff
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -56,12 +55,14 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,33 +77,45 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
+import com.example.core.hardware.AdhanAudioPlayer
+import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
 import com.example.core.i18n.formatNumerals
-import com.example.data.firebase.PrayerLogDoc
+import com.example.data.firebase.AdhanAlertMode
 import com.example.data.firebase.UserSettingsDoc
 import com.example.domain.CalculationMethod
 import com.example.domain.IslamicLibraryData
 import com.example.domain.PrayerTimeEntry
 import com.example.domain.PrayerTimesEngine
+import com.example.ui.icons.MihrabIcons
 import com.example.ui.theme.AmiriFontFamily
 import com.example.ui.theme.BurnishedGold
 import com.example.ui.theme.SanctuaryEmerald
 import com.example.ui.viewmodel.MihrabViewModel
 import com.example.ui.viewmodel.UiState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.Calendar
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun PrayerScreen(
     viewModel: MihrabViewModel,
+    adhanAudioPlayer: AdhanAudioPlayer,
+    appLanguage: AppLanguage,
     strings: LocalizedStrings,
     useIndic: Boolean,
     onOpenKhutbahAi: () -> Unit
 ) {
+    val scope = rememberCoroutineScope()
+    val isArabicUi = appLanguage == AppLanguage.ARABIC || appLanguage == AppLanguage.URDU
+
     val settingsState by viewModel.settingsState.collectAsStateWithLifecycle()
+    val localPrefs by viewModel.localPrefsState.collectAsStateWithLifecycle()
     val logsState by viewModel.prayerLogsState.collectAsStateWithLifecycle()
     val manualOffsets by viewModel.manualOffsets.collectAsStateWithLifecycle()
+    val adhanVoices by viewModel.adhanVoicesState.collectAsStateWithLifecycle()
+    val adhanState by adhanAudioPlayer.state.collectAsStateWithLifecycle()
 
     val settings = (settingsState as? UiState.Success)?.data ?: UserSettingsDoc()
     val logs = (logsState as? UiState.Success)?.data ?: emptyList()
@@ -143,12 +156,29 @@ fun PrayerScreen(
     )
 
     var showQiblaSheet by remember { mutableStateOf(false) }
+    var showAdhanSheet by remember { mutableStateOf(false) }
     var showMethodSheet by remember { mutableStateOf(false) }
     var showGuidesSheet by remember { mutableStateOf(false) }
     var showRakahCounterSheet by remember { mutableStateOf(false) }
     var khushuPrePrayerMode by remember { mutableStateOf(false) }
 
     val isFriday = remember { Calendar.getInstance().get(Calendar.DAY_OF_WEEK) == Calendar.FRIDAY }
+
+    val audioPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                adhanAudioPlayer.importCustomAudioFromUri(uri)
+                    .onSuccess { (localPath, displayName) ->
+                        viewModel.saveCustomAdhanFile(localPath, displayName)
+                    }
+                    .onFailure { err ->
+                        viewModel.showMessage(err.localizedMessage ?: "تعذر استيراد ملف الأذان")
+                    }
+            }
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
@@ -172,12 +202,12 @@ fun PrayerScreen(
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(250.dp)
+                                .height(254.dp)
                         )
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(250.dp)
+                                .height(254.dp)
                                 .background(
                                     Brush.verticalGradient(
                                         colors = listOf(
@@ -200,7 +230,7 @@ fun PrayerScreen(
                             ) {
                                 Column {
                                     Text(
-                                        text = formatNumerals(hijriToday.formattedEn(), useIndic),
+                                        text = if (isArabicUi) hijriToday.formattedAr() else formatNumerals(hijriToday.formattedEn(), useIndic),
                                         style = MaterialTheme.typography.labelLarge,
                                         color = Color(0xFFE2B95B)
                                     )
@@ -220,10 +250,10 @@ fun PrayerScreen(
                                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(Icons.Rounded.Explore, null, tint = Color(0xFFE2B95B), modifier = Modifier.size(18.dp))
+                                        Icon(MihrabIcons.KaabaCube, null, tint = Color(0xFFE2B95B), modifier = Modifier.size(18.dp))
                                         Spacer(Modifier.width(6.dp))
                                         Text(
-                                            text = "${formatNumerals("${schedule.qiblaBearingDegrees.toInt()}°", useIndic)} Qibla",
+                                            text = "${formatNumerals("${schedule.qiblaBearingDegrees.toInt()}°", useIndic)} ${if (isArabicUi) "القبلة" else "Qibla"}",
                                             color = Color.White,
                                             style = MaterialTheme.typography.labelLarge
                                         )
@@ -234,7 +264,7 @@ fun PrayerScreen(
                             Spacer(modifier = Modifier.height(22.dp))
 
                             Text(
-                                text = strings.nextPrayer.uppercase(),
+                                text = strings.nextPrayer,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color(0xFFE2B95B)
                             )
@@ -245,12 +275,16 @@ fun PrayerScreen(
                             ) {
                                 Column {
                                     Text(
-                                        text = "${nextPrayerEntry.nameEn} • ${nextPrayerEntry.nameAr}",
+                                        text = if (isArabicUi) nextPrayerEntry.nameAr else "${nextPrayerEntry.nameEn} • ${nextPrayerEntry.nameAr}",
                                         style = MaterialTheme.typography.displayMedium,
                                         color = Color.White
                                     )
                                     Text(
-                                        text = "Adhan at ${formatNumerals(nextPrayerEntry.formattedTime, useIndic)}",
+                                        text = if (isArabicUi) {
+                                            "الأذان الساعة ${formatNumerals(nextPrayerEntry.formattedTime, useIndic)}"
+                                        } else {
+                                            "Adhan at ${formatNumerals(nextPrayerEntry.formattedTime, useIndic)}"
+                                        },
                                         style = MaterialTheme.typography.bodyLarge,
                                         color = Color.White.copy(alpha = 0.9f)
                                     )
@@ -270,17 +304,17 @@ fun PrayerScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "Imsak: ${formatNumerals(schedule.imsak.formattedTime, useIndic)}",
+                                    text = "${if (isArabicUi) "الإمساك" else "Imsak"}: ${formatNumerals(schedule.imsak.formattedTime, useIndic)}",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = Color.White.copy(alpha = 0.8f)
                                 )
                                 Text(
-                                    text = "Sunrise: ${formatNumerals(schedule.sunrise.formattedTime, useIndic)}",
+                                    text = "${if (isArabicUi) "الشروق" else "Sunrise"}: ${formatNumerals(schedule.sunrise.formattedTime, useIndic)}",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = Color.White.copy(alpha = 0.8f)
                                 )
                                 Text(
-                                    text = "Qiyam ⅓: ${formatNumerals(schedule.lastThirdQiyam, useIndic)}",
+                                    text = "${if (isArabicUi) "القيام ⅓" else "Qiyam ⅓"}: ${formatNumerals(schedule.lastThirdQiyam, useIndic)}",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = Color(0xFFE2B95B)
                                 )
@@ -290,7 +324,7 @@ fun PrayerScreen(
                 }
             }
 
-            // 2. Quick Action Tools Strip
+            // 2. Quick Action Tools Strip with semantic icons + Custom Adhan trigger
             item {
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -298,34 +332,39 @@ fun PrayerScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     AssistChip(
+                        onClick = { showAdhanSheet = true },
+                        label = { Text(strings.adhanSettingsTitle) },
+                        leadingIcon = { Icon(MihrabIcons.AdhanVoice, null, modifier = Modifier.size(18.dp)) },
+                        modifier = Modifier.testTag("open_adhan_settings_chip")
+                    )
+                    AssistChip(
                         onClick = { showQiblaSheet = true },
                         label = { Text(strings.qiblaCompass) },
-                        leadingIcon = { Icon(Icons.Rounded.Explore, null, modifier = Modifier.size(18.dp)) }
+                        leadingIcon = { Icon(MihrabIcons.Qibla, null, modifier = Modifier.size(18.dp)) }
                     )
                     AssistChip(
                         onClick = { showMethodSheet = true },
-                        label = { Text("Method & Offsets") },
-                        leadingIcon = { Icon(Icons.Rounded.Tune, null, modifier = Modifier.size(18.dp)) }
+                        label = { Text(if (isArabicUi) "الحساب والتعديل" else "Method & Offsets") },
+                        leadingIcon = { Icon(MihrabIcons.MethodTune, null, modifier = Modifier.size(18.dp)) }
                     )
                     AssistChip(
                         onClick = { showGuidesSheet = true },
-                        label = { Text("Prayer Guides") },
-                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.MenuBook, null, modifier = Modifier.size(18.dp)) }
+                        label = { Text(if (isArabicUi) "أحكام الصلوات" else "Prayer Guides") },
+                        leadingIcon = { Icon(MihrabIcons.Guides, null, modifier = Modifier.size(18.dp)) }
                     )
                     AssistChip(
                         onClick = { showRakahCounterSheet = true },
-                        label = { Text("Rak'ah & Focus") },
-                        leadingIcon = { Icon(Icons.Rounded.Timer, null, modifier = Modifier.size(18.dp)) }
+                        label = { Text(if (isArabicUi) "عدّاد الركعات" else "Rak'ah & Focus") },
+                        leadingIcon = { Icon(MihrabIcons.RakahTimer, null, modifier = Modifier.size(18.dp)) }
                     )
                     AssistChip(
                         onClick = { khushuPrePrayerMode = !khushuPrePrayerMode },
-                        label = { Text("Khushu' Reflection") },
-                        leadingIcon = { Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp)) }
+                        label = { Text(if (isArabicUi) "تأمل الخشوع" else "Khushu' Reflection") },
+                        leadingIcon = { Icon(MihrabIcons.KhushuStar, null, modifier = Modifier.size(18.dp)) }
                     )
                 }
             }
 
-            // Khushu' Pre-Prayer Reflection & Friday Sunnah Banner
             if (khushuPrePrayerMode) {
                 item {
                     Card(
@@ -333,14 +372,22 @@ fun PrayerScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Khushu' Reflection Before Prayer", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Text(
-                                "Pause for 10 seconds. Imagine standing before the King of Kings as if this were your farewell prayer. Silence worldly notifications.",
+                                if (isArabicUi) "استحضار الخشوع قبل الصلاة" else "Khushu' Reflection Before Prayer",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                if (isArabicUi) {
+                                    "توقف ١٠ ثوانٍ وتذكّر أنك تقف بين يدي ملك الملوك؛ صلِّ صلاة مودِّع."
+                                } else {
+                                    "Pause for 10 seconds. Imagine standing before the King of Kings as if this were your farewell prayer."
+                                },
                                 style = MaterialTheme.typography.bodyMedium
                             )
                             val rating = (todayLog?.khushuRating ?: 3L).toInt()
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Today's presence: ", style = MaterialTheme.typography.labelLarge)
+                                Text(if (isArabicUi) "حضور القلب اليوم: " else "Today's presence: ", style = MaterialTheme.typography.labelLarge)
                                 (1..5).forEach { star ->
                                     IconButton(
                                         onClick = { viewModel.setKhushuRating(star, todayLog) },
@@ -366,10 +413,20 @@ fun PrayerScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Jumu'ah Mubarak • Friday Sunnahs", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text("• Ghusl & clean fragrance • Recite Surah Al-Kahf • Abundant Salawat upon the Prophet ﷺ • Seek the final hour before Maghrib for answered Dua.")
+                            Text(
+                                if (isArabicUi) "جمعة مباركة • سنن يوم الجمعة" else "Jumu'ah Mubarak • Friday Sunnahs",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                if (isArabicUi) {
+                                    "• الغسل والتطيب • قراءة سورة الكهف • الإكثار من الصلاة على النبي ﷺ • تحري ساعة الإجابة قبل المغرب."
+                                } else {
+                                    "• Ghusl & fragrance • Surah Al-Kahf • Abundant Salawat ﷺ • Seek the final hour before Maghrib."
+                                }
+                            )
                             OutlinedButton(onClick = onOpenKhutbahAi) {
-                                Text("Summarize Today's Khutbah with AI")
+                                Text(if (isArabicUi) "تلخيص خطبة الجمعة بالذكاء الاصطناعي" else "Summarize Today's Khutbah with AI")
                             }
                         }
                     }
@@ -386,6 +443,14 @@ fun PrayerScreen(
                     todayLog?.isha == true
                 ).count { it }
 
+                val activeVoice = adhanVoices.firstOrNull { it.id == settings.adhanVoiceId } ?: adhanVoices.firstOrNull()
+                val activeVoiceLabel = when {
+                    !settings.adhanEnabled -> if (isArabicUi) "الأذان متوقف" else "Adhan Muted"
+                    settings.adhanVoiceId == "custom" && settings.customAdhanName.isNotBlank() -> settings.customAdhanName
+                    activeVoice != null -> if (isArabicUi) activeVoice.nameAr else activeVoice.nameEn
+                    else -> ""
+                }
+
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                     shape = MaterialTheme.shapes.large,
@@ -397,10 +462,14 @@ fun PrayerScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(strings.prayerTracker, style = MaterialTheme.typography.titleLarge)
                                 Text(
-                                    formatNumerals("$completedCount / 5 Obligatory Completed", useIndic),
+                                    text = if (isArabicUi) {
+                                        "${formatNumerals("$completedCount / 5", useIndic)} فرائض • $activeVoiceLabel"
+                                    } else {
+                                        "${formatNumerals("$completedCount / 5", useIndic)} Completed • $activeVoiceLabel"
+                                    },
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.primary
                                 )
@@ -408,7 +477,7 @@ fun PrayerScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Rounded.AirplanemodeActive, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(Modifier.width(4.dp))
-                                Text("Qasr", style = MaterialTheme.typography.labelLarge)
+                                Text(if (isArabicUi) "قصر" else "Qasr", style = MaterialTheme.typography.labelLarge)
                                 Spacer(Modifier.width(6.dp))
                                 Switch(
                                     checked = settings.travelerMode,
@@ -435,17 +504,24 @@ fun PrayerScreen(
                         )
 
                         prayerRows.forEach { (entry, checked, key) ->
+                            val mode = AdhanAlertMode.fromId(settings.perPrayerAdhanModes[key])
                             PrayerRowItem(
                                 entry = entry,
                                 isCompleted = checked,
                                 isNext = nextPrayerEntry.key == entry.key,
+                                alertMode = mode,
+                                isArabicUi = isArabicUi,
                                 useIndic = useIndic,
-                                onToggle = { viewModel.togglePrayerToday(key, todayLog) }
+                                onToggle = { viewModel.togglePrayerToday(key, todayLog) },
+                                onOpenAdhan = { showAdhanSheet = true }
                             )
                         }
 
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                        Text("Sunnah & Nawafil Schedule", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            if (isArabicUi) "السنن الرواتب والنوافل" else "Sunnah & Nawafil Schedule",
+                            style = MaterialTheme.typography.titleMedium
+                        )
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -453,29 +529,29 @@ fun PrayerScreen(
                             FilterChip(
                                 selected = todayLog?.sunnahRawatib == true,
                                 onClick = { viewModel.togglePrayerToday("sunnahRawatib", todayLog) },
-                                label = { Text("12 Rawatib") }
+                                label = { Text(if (isArabicUi) "السنن الرواتب (١٢)" else "12 Rawatib") }
                             )
                             FilterChip(
                                 selected = todayLog?.duha == true,
                                 onClick = { viewModel.togglePrayerToday("duha", todayLog) },
-                                label = { Text("Duha") }
+                                label = { Text(if (isArabicUi) "الضحى" else "Duha") }
                             )
                             FilterChip(
                                 selected = todayLog?.witr == true,
                                 onClick = { viewModel.togglePrayerToday("witr", todayLog) },
-                                label = { Text("Witr") }
+                                label = { Text(if (isArabicUi) "الوتر" else "Witr") }
                             )
                             FilterChip(
                                 selected = todayLog?.qiyam == true,
                                 onClick = { viewModel.togglePrayerToday("qiyam", todayLog) },
-                                label = { Text("Qiyam / Tahajjud") }
+                                label = { Text(if (isArabicUi) "قيام الليل" else "Qiyam / Tahajjud") }
                             )
                         }
                     }
                 }
             }
 
-            // 4. Qada Missed Prayers Counter & Weekly Consistency
+            // 4. Qada Missed Prayers Counter
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -485,16 +561,16 @@ fun PrayerScreen(
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(strings.qadaCounter, style = MaterialTheme.typography.titleLarge)
                         Text(
-                            "Track and gradually fulfill missed obligatory prayers with ease.",
+                            if (isArabicUi) "تابع قضاء الصلوات الفائتة وأتمها بالتدريج." else "Track and gradually fulfill missed obligatory prayers with ease.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         val qadaItems = listOf(
-                            Triple("Fajr", "qadaFajr", settings.qadaFajr),
-                            Triple("Dhuhr", "qadaDhuhr", settings.qadaDhuhr),
-                            Triple("Asr", "qadaAsr", settings.qadaAsr),
-                            Triple("Maghrib", "qadaMaghrib", settings.qadaMaghrib),
-                            Triple("Isha", "qadaIsha", settings.qadaIsha)
+                            Triple(if (isArabicUi) "الفجر" else "Fajr", "qadaFajr", settings.qadaFajr),
+                            Triple(if (isArabicUi) "الظهر" else "Dhuhr", "qadaDhuhr", settings.qadaDhuhr),
+                            Triple(if (isArabicUi) "العصر" else "Asr", "qadaAsr", settings.qadaAsr),
+                            Triple(if (isArabicUi) "المغرب" else "Maghrib", "qadaMaghrib", settings.qadaMaghrib),
+                            Triple(if (isArabicUi) "العشاء" else "Isha", "qadaIsha", settings.qadaIsha)
                         )
                         qadaItems.forEach { (label, field, value) ->
                             Row(
@@ -526,7 +602,8 @@ fun PrayerScreen(
             // 5. Nearby Mosques & Iqamah Times
             item {
                 Text(
-                    "Nearby Mosques & Iqamah (${settings.city})",
+                    if (isArabicUi) "المساجد القريبة وأوقات الإقامة (${settings.city})"
+                    else "Nearby Mosques & Iqamah (${settings.city})",
                     style = MaterialTheme.typography.titleLarge
                 )
             }
@@ -550,11 +627,15 @@ fun PrayerScreen(
                             Text(mosque.distanceLabel, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                         }
                         Text(
-                            "Iqamah: Fajr ${mosque.iqamahFajr} • Dhuhr ${mosque.iqamahDhuhr} • Asr ${mosque.iqamahAsr} • Maghrib ${mosque.iqamahMaghrib} • Isha ${mosque.iqamahIsha}",
+                            if (isArabicUi) {
+                                "الإقامة: الفجر ${mosque.iqamahFajr} • الظهر ${mosque.iqamahDhuhr} • العصر ${mosque.iqamahAsr} • المغرب ${mosque.iqamahMaghrib} • العشاء ${mosque.iqamahIsha}"
+                            } else {
+                                "Iqamah: Fajr ${mosque.iqamahFajr} • Dhuhr ${mosque.iqamahDhuhr} • Asr ${mosque.iqamahAsr} • Maghrib ${mosque.iqamahMaghrib} • Isha ${mosque.iqamahIsha}"
+                            },
                             style = MaterialTheme.typography.bodyMedium
                         )
                         Text(
-                            "Jumu'ah Khutbah: ${mosque.jummahKhutbah}",
+                            if (isArabicUi) "خطبة الجمعة: ${mosque.jummahKhutbah}" else "Jumu'ah Khutbah: ${mosque.jummahKhutbah}",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.secondary
                         )
@@ -578,12 +659,251 @@ fun PrayerScreen(
         }
     }
 
+    // --- CUSTOM ADHAN & PER-PRAYER ALERT SHEET ---
+    if (showAdhanSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val fallbackVoice = adhanVoices.first()
+        val selectedVoice = adhanVoices.firstOrNull { it.id == settings.adhanVoiceId } ?: fallbackVoice
+        val customPath = localPrefs?.customAdhanLocalPath?.takeIf { it.isNotBlank() }
+
+        ModalBottomSheet(
+            onDismissRequest = {
+                adhanAudioPlayer.stop()
+                showAdhanSheet = false
+            },
+            sheetState = sheetState
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Rounded.NotificationsActive, null, tint = MaterialTheme.colorScheme.primary)
+                        Text(strings.adhanSettingsTitle, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    }
+                    Switch(
+                        checked = settings.adhanEnabled,
+                        onCheckedChange = { viewModel.updateSettings(mapOf("adhanEnabled" to it)) }
+                    )
+                }
+
+                // Active Playback / Buffering Banner
+                if (adhanState.isPlaying || adhanState.isBuffering || !adhanState.errorMessage.isNullOrBlank()) {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.weight(1f)) {
+                                if (adhanState.isBuffering) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Icon(MihrabIcons.iconForAdhanMode(adhanState.activeMode), null, tint = MaterialTheme.colorScheme.primary)
+                                }
+                                Column {
+                                    Text(adhanState.activeLabel, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                                    if (!adhanState.errorMessage.isNullOrBlank()) {
+                                        Text(adhanState.errorMessage!!, style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                            if (adhanState.isPlaying || adhanState.isBuffering) {
+                                OutlinedButton(onClick = { adhanAudioPlayer.stop() }) {
+                                    Icon(Icons.Rounded.Stop, null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(strings.stopAdhan)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Text(strings.chooseAdhanVoice, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+                // Built-in 5 Famous Muezzins synced from Firestore / Room
+                adhanVoices.forEach { voice ->
+                    val isSelected = settings.adhanVoiceId == voice.id
+                    Card(
+                        onClick = { viewModel.updateSettings(mapOf("adhanVoiceId" to voice.id)) },
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow
+                        ),
+                        modifier = Modifier.fillMaxWidth().testTag("adhan_voice_${voice.id}")
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(if (isArabicUi) voice.nameAr else voice.nameEn, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(voice.muezzin, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedButton(
+                                    onClick = {
+                                        if (adhanState.isPlaying && adhanState.activeLabel == voice.nameAr) {
+                                            adhanAudioPlayer.stop()
+                                        } else {
+                                            adhanAudioPlayer.playPreview(voice, AdhanAlertMode.FULL_ADHAN)
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        if (adhanState.isPlaying && adhanState.activeLabel == voice.nameAr) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
+                                        null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(if (adhanState.isPlaying && adhanState.activeLabel == voice.nameAr) strings.stopAdhan else strings.previewAdhan)
+                                }
+                                if (isSelected) {
+                                    Spacer(Modifier.width(6.dp))
+                                    Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Custom Audio File Upload / Selection via SAF
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (settings.adhanVoiceId == "custom") MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surfaceContainerLow
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Rounded.AudioFile, null, tint = MaterialTheme.colorScheme.primary)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(strings.uploadCustomAdhan, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                if (settings.customAdhanName.isNotBlank()) {
+                                    Text(
+                                        text = "${if (isArabicUi) "الملف المختار" else "Selected"}: ${settings.customAdhanName}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = { audioPickerLauncher.launch(arrayOf("audio/*")) },
+                                modifier = Modifier.weight(1f).testTag("pick_custom_adhan_button")
+                            ) {
+                                Text(strings.uploadCustomAdhan)
+                            }
+                            if (!customPath.isNullOrBlank()) {
+                                OutlinedButton(
+                                    onClick = {
+                                        viewModel.updateSettings(mapOf("adhanVoiceId" to "custom"))
+                                        adhanAudioPlayer.playPreview(
+                                            voice = selectedVoice,
+                                            mode = AdhanAlertMode.FULL_ADHAN,
+                                            customLocalPath = customPath,
+                                            customDisplayName = settings.customAdhanName
+                                        )
+                                    }
+                                ) {
+                                    Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(strings.previewAdhan)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider()
+                Text(
+                    if (isArabicUi) "تخصيص تنبيه كل صلاة" else "Per-Prayer Notification Mode",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+
+                val fivePrayers = listOf(
+                    "fajr" to (if (isArabicUi) "الفجر" else "Fajr"),
+                    "dhuhr" to (if (isArabicUi) "الظهر" else "Dhuhr"),
+                    "asr" to (if (isArabicUi) "العصر" else "Asr"),
+                    "maghrib" to (if (isArabicUi) "المغرب" else "Maghrib"),
+                    "isha" to (if (isArabicUi) "العشاء" else "Isha")
+                )
+
+                fivePrayers.forEach { (pKey, pLabel) ->
+                    val currentMode = AdhanAlertMode.fromId(settings.perPrayerAdhanModes[pKey])
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(MihrabIcons.iconForPrayer(pKey), null, tint = MaterialTheme.colorScheme.primary)
+                                    Text(pLabel, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                }
+                                IconButton(
+                                    onClick = {
+                                        adhanAudioPlayer.playPreview(
+                                            voice = selectedVoice,
+                                            mode = currentMode,
+                                            customLocalPath = if (settings.adhanVoiceId == "custom") customPath else null,
+                                            customDisplayName = settings.customAdhanName
+                                        )
+                                    }
+                                ) {
+                                    Icon(Icons.Rounded.PlayArrow, contentDescription = strings.previewAdhan)
+                                }
+                            }
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                AdhanAlertMode.entries.forEach { mode ->
+                                    FilterChip(
+                                        selected = currentMode == mode,
+                                        onClick = {
+                                            viewModel.savePerPrayerAdhanMode(settings.perPrayerAdhanModes, pKey, mode)
+                                        },
+                                        leadingIcon = { Icon(MihrabIcons.iconForAdhanMode(mode), null, modifier = Modifier.size(16.dp)) },
+                                        label = { Text(if (isArabicUi) mode.labelAr else mode.labelEn) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = {
+                        adhanAudioPlayer.stop()
+                        showAdhanSheet = false
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isArabicUi) "تم" else "Done")
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+        }
+    }
+
     if (showQiblaSheet) {
         ModalBottomSheet(onDismissRequest = { showQiblaSheet = false }) {
             QiblaAndLocationDialogContent(
                 currentCity = settings.city,
                 qiblaBearing = schedule.qiblaBearingDegrees,
                 distanceKm = schedule.distanceToKaabaKm,
+                isArabicUi = isArabicUi,
+                useIndic = useIndic,
                 onSelectCity = { preset -> viewModel.selectCityPreset(preset) },
                 onGpsLocation = { label, lat, lng -> viewModel.updateLocationCoordinates(label, lat, lng) },
                 onClose = { showQiblaSheet = false }
@@ -600,7 +920,10 @@ fun PrayerScreen(
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Calculation Method & Manual Offsets", style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    if (isArabicUi) "طريقة الحساب والتعديلات اليدوية" else "Calculation Method & Manual Offsets",
+                    style = MaterialTheme.typography.headlineMedium
+                )
                 CalculationMethod.entries.forEach { method ->
                     Row(
                         modifier = Modifier
@@ -625,8 +948,14 @@ fun PrayerScreen(
                     }
                 }
                 HorizontalDivider()
-                Text("Manual Minute Adjustments", style = MaterialTheme.typography.titleMedium)
-                listOf("fajr" to "Fajr", "dhuhr" to "Dhuhr", "asr" to "Asr", "maghrib" to "Maghrib", "isha" to "Isha").forEach { (key, label) ->
+                Text(if (isArabicUi) "تعديل الدقائق يدوياً" else "Manual Minute Adjustments", style = MaterialTheme.typography.titleMedium)
+                listOf(
+                    "fajr" to (if (isArabicUi) "الفجر" else "Fajr"),
+                    "dhuhr" to (if (isArabicUi) "الظهر" else "Dhuhr"),
+                    "asr" to (if (isArabicUi) "العصر" else "Asr"),
+                    "maghrib" to (if (isArabicUi) "المغرب" else "Maghrib"),
+                    "isha" to (if (isArabicUi) "العشاء" else "Isha")
+                ).forEach { (key, label) ->
                     val offset = manualOffsets[key] ?: 0
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -646,7 +975,7 @@ fun PrayerScreen(
                     }
                 }
                 Button(onClick = { showMethodSheet = false }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Done")
+                    Text(if (isArabicUi) "تم" else "Done")
                 }
             }
         }
@@ -661,7 +990,7 @@ fun PrayerScreen(
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Salah & Special Prayer Guides", style = MaterialTheme.typography.headlineMedium)
+                Text(if (isArabicUi) "أدلة الصلوات والسنن" else "Salah & Special Prayer Guides", style = MaterialTheme.typography.headlineMedium)
                 IslamicLibraryData.prayerGuides.forEach { guide ->
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -701,26 +1030,26 @@ fun PrayerScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text("Rak'ah Counter & Worship Focus", style = MaterialTheme.typography.headlineMedium)
+                Text(if (isArabicUi) "عدّاد الركعات ومؤقت الخشوع" else "Rak'ah Counter & Worship Focus", style = MaterialTheme.typography.headlineMedium)
                 Text(
-                    "Tap each Sujud or Rak'ah to prevent forgetfulness while praying.",
+                    if (isArabicUi) "اضغط بعد كل سجدة أو ركعة لتفادي السهو في الصلاة." else "Tap each Sujud or Rak'ah to prevent forgetfulness while praying.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Card(modifier = Modifier.weight(1f)) {
                         Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Rak'ah", style = MaterialTheme.typography.labelLarge)
-                            Text("$rakahCount / 4", style = MaterialTheme.typography.displayMedium)
+                            Text(if (isArabicUi) "الركعات" else "Rak'ah", style = MaterialTheme.typography.labelLarge)
+                            Text(formatNumerals("$rakahCount / 4", useIndic), style = MaterialTheme.typography.displayMedium)
                             Button(onClick = { rakahCount = (rakahCount + 1) % 5 }) {
-                                Text("+1 Rak'ah")
+                                Text(if (isArabicUi) "+١ ركعة" else "+1 Rak'ah")
                             }
                         }
                     }
                     Card(modifier = Modifier.weight(1f)) {
                         Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Sujud", style = MaterialTheme.typography.labelLarge)
-                            Text("$sujudCount / 2", style = MaterialTheme.typography.displayMedium)
+                            Text(if (isArabicUi) "السجود" else "Sujud", style = MaterialTheme.typography.labelLarge)
+                            Text(formatNumerals("$sujudCount / 2", useIndic), style = MaterialTheme.typography.displayMedium)
                             Button(onClick = {
                                 if (sujudCount == 1) {
                                     sujudCount = 0
@@ -729,19 +1058,22 @@ fun PrayerScreen(
                                     sujudCount = 1
                                 }
                             }) {
-                                Text("Log Sujud")
+                                Text(if (isArabicUi) "تسجيل سجدة" else "Log Sujud")
                             }
                         }
                     }
                 }
                 HorizontalDivider()
-                Text("Quiet Worship Focus Timer: ${focusSeconds / 60}:${String.format("%02d", focusSeconds % 60)}", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "${if (isArabicUi) "مؤقت الخشوع" else "Quiet Focus"}: ${focusSeconds / 60}:${String.format("%02d", focusSeconds % 60)}",
+                    style = MaterialTheme.typography.titleMedium
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(onClick = { focusRunning = !focusRunning }) {
-                        Text(if (focusRunning) "Pause Timer" else "Start 10-Min Focus")
+                        Text(if (focusRunning) (if (isArabicUi) "إيقاف" else "Pause Timer") else (if (isArabicUi) "بدء ١٠ دقائق" else "Start 10-Min Focus"))
                     }
                     OutlinedButton(onClick = { focusRunning = false; focusSeconds = 600; rakahCount = 0; sujudCount = 0 }) {
-                        Text("Reset")
+                        Text(if (isArabicUi) "إعادة" else "Reset")
                     }
                 }
             }
@@ -754,8 +1086,11 @@ private fun PrayerRowItem(
     entry: PrayerTimeEntry,
     isCompleted: Boolean,
     isNext: Boolean,
+    alertMode: AdhanAlertMode,
+    isArabicUi: Boolean,
     useIndic: Boolean,
-    onToggle: () -> Unit
+    onToggle: () -> Unit,
+    onOpenAdhan: () -> Unit
 ) {
     Surface(
         onClick = onToggle,
@@ -778,22 +1113,45 @@ private fun PrayerRowItem(
                     contentDescription = if (isCompleted) "${entry.nameEn} completed" else "Mark ${entry.nameEn}",
                     tint = if (isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                 )
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(10.dp))
+                Icon(
+                    imageVector = MihrabIcons.iconForPrayer(entry.key),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(entry.nameEn, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.width(8.dp))
-                        Text(entry.nameAr, fontFamily = AmiriFontFamily, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            text = if (isArabicUi) entry.nameAr else entry.nameEn,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        if (!isArabicUi) {
+                            Spacer(Modifier.width(8.dp))
+                            Text(entry.nameAr, fontFamily = AmiriFontFamily, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
+                        }
                     }
                     Text(entry.sunnahInfo, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            Text(
-                text = formatNumerals(entry.formattedTime, useIndic),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = if (isNext) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                IconButton(onClick = onOpenAdhan, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        imageVector = MihrabIcons.iconForAdhanMode(alertMode),
+                        contentDescription = if (isArabicUi) alertMode.labelAr else alertMode.labelEn,
+                        tint = if (alertMode == AdhanAlertMode.SILENT) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Text(
+                    text = formatNumerals(entry.formattedTime, useIndic),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isNext) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                )
+            }
         }
     }
 }

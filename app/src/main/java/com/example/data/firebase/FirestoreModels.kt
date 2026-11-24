@@ -5,6 +5,18 @@ import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.IgnoreExtraProperties
 
+enum class AdhanAlertMode(val id: String, val labelAr: String, val labelEn: String) {
+    FULL_ADHAN("FULL_ADHAN", "أذان كامل", "Full Adhan"),
+    TAKBIR_ONLY("TAKBIR_ONLY", "تكبير فقط", "Takbir Only"),
+    GENTLE_CHIME("GENTLE_CHIME", "نغمة هادئة", "Gentle Chime"),
+    SILENT("SILENT", "صامت", "Silent");
+
+    companion object {
+        fun fromId(id: String?): AdhanAlertMode =
+            entries.firstOrNull { it.id == id } ?: FULL_ADHAN
+    }
+}
+
 @Keep
 @IgnoreExtraProperties
 data class UserSettingsDoc(
@@ -20,6 +32,14 @@ data class UserSettingsDoc(
     val preferredReciterId: String = "ar.alafasy",
     val adhanEnabled: Boolean = true,
     val adhanVoiceId: String = "makkah",
+    val perPrayerAdhanModes: Map<String, String> = mapOf(
+        "fajr" to "FULL_ADHAN",
+        "dhuhr" to "FULL_ADHAN",
+        "asr" to "FULL_ADHAN",
+        "maghrib" to "FULL_ADHAN",
+        "isha" to "FULL_ADHAN"
+    ),
+    val customAdhanName: String = "",
     val calculationMethod: String = "MWL",
     val city: String = "Makkah",
     val latitude: Double = 21.4225,
@@ -125,7 +145,6 @@ data class ReciterDoc(
     val updatedAt: Timestamp? = null
 )
 
-// Phase 2 Prepared Models
 @Keep
 @IgnoreExtraProperties
 data class AdhkarLogDoc(
@@ -148,6 +167,61 @@ data class AiChatDoc(
     val createdAt: Timestamp? = null,
     val updatedAt: Timestamp? = null
 )
+
+@Keep
+@IgnoreExtraProperties
+data class AdminConfigDoc(
+    @DocumentId val id: String = "",
+    val configKey: String = "",
+    val valueJson: String = "{}",
+    val createdAt: Timestamp? = null,
+    val updatedAt: Timestamp? = null
+)
+
+@Keep
+@IgnoreExtraProperties
+data class AdhanVoiceDoc(
+    @DocumentId val id: String = "",
+    val nameAr: String = "",
+    val nameEn: String = "",
+    val muezzin: String = "",
+    val audioUrl: String = "",
+    val active: Boolean = true,
+    val createdAt: Timestamp? = null,
+    val updatedAt: Timestamp? = null
+)
+
+@Keep
+@IgnoreExtraProperties
+data class AdhkarItemDoc(
+    @DocumentId val id: String = "",
+    val category: String = "MORNING",
+    val titleAr: String = "",
+    val titleEn: String = "",
+    val arabic: String = "",
+    val transliteration: String = "",
+    val translation: String = "",
+    val targetCount: Long = 1L,
+    val referenceAr: String = "",
+    val referenceEn: String = "",
+    val sortOrder: Long = 1L,
+    val active: Boolean = true,
+    val createdAt: Timestamp? = null,
+    val updatedAt: Timestamp? = null
+)
+
+data class AiRuntimeConfig(
+    val enabled: Boolean = true,
+    val modelName: String = "gemini-3.8-flash",
+    val systemPrompt: String = DEFAULT_ISLAMIC_SYSTEM_PROMPT
+) {
+    companion object {
+        const val DEFAULT_ISLAMIC_SYSTEM_PROMPT =
+            "أنت مساعد علمي إسلامي موثوق ومُعين على التدبر داخل تطبيق محراب. " +
+                "استند في إجاباتك على القرآن الكريم والسنة النبوية الصحيحة وأقوال أئمة التفسير المعتبرين كابن كثير والسعدي والتفسير الميسر. " +
+                "التزم بالأدب والوضوح واللغة العربية الفصيحة، أو لغة سؤال المستخدم، مع التنبيه اللطيف عند المسائل الفقهية الخاصة بالرجوع إلى أهل العلم المعتمدين."
+    }
+}
 
 @Keep
 @IgnoreExtraProperties

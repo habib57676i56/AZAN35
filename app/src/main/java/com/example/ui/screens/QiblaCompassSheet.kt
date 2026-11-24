@@ -33,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.LocationCity
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -67,11 +68,12 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.core.hardware.observeCompassAzimuth
+import com.example.core.i18n.formatNumerals
 import com.example.domain.CityPreset
 import com.example.domain.PrayerTimesEngine
+import com.example.ui.icons.MihrabIcons
 import com.example.ui.theme.BurnishedGold
 import com.example.ui.theme.SanctuaryEmerald
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -80,6 +82,8 @@ fun QiblaAndLocationDialogContent(
     currentCity: String,
     qiblaBearing: Double,
     distanceKm: Int,
+    isArabicUi: Boolean = true,
+    useIndic: Boolean = true,
     onSelectCity: (CityPreset) -> Unit,
     onGpsLocation: (String, Double, Double) -> Unit,
     onClose: () -> Unit
@@ -99,7 +103,11 @@ fun QiblaAndLocationDialogContent(
             permissionNotice = null
         } else {
             arModeEnabled = false
-            permissionNotice = "Camera permission is optional; using magnetic compass mode."
+            permissionNotice = if (isArabicUi) {
+                "إذن الكاميرا اختياري؛ يتم استخدام البوصلة المغناطيسية."
+            } else {
+                "Camera permission is optional; using magnetic compass mode."
+            }
         }
     }
 
@@ -110,12 +118,12 @@ fun QiblaAndLocationDialogContent(
             val coords = fetchLastKnownLocation(context)
             if (coords != null) {
                 onGpsLocation("GPS (${String.format("%.2f, %.2f", coords.first, coords.second)})", coords.first, coords.second)
-                permissionNotice = "Updated prayer & Qibla coordinates from device GPS."
+                permissionNotice = if (isArabicUi) "تم تحديث الإحداثيات والقبلة من نظام تحديد المواقع." else "Updated prayer & Qibla coordinates from device GPS."
             } else {
-                permissionNotice = "GPS signal unavailable on device; pick a city preset below."
+                permissionNotice = if (isArabicUi) "تعذر التقاط إشارة GPS؛ اختر مدينتك أدناه." else "GPS signal unavailable on device; pick a city preset below."
             }
         } else {
-            permissionNotice = "Location permission denied; select your city preset below."
+            permissionNotice = if (isArabicUi) "تم رفض إذن الموقع؛ اختر مدينتك أدناه." else "Location permission denied; select your city preset below."
         }
     }
 
@@ -136,16 +144,26 @@ fun QiblaAndLocationDialogContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text("Qibla & AR Sighting", style = MaterialTheme.typography.headlineMedium)
-                Text(
-                    "$currentCity • ${qiblaBearing.roundToInt()}° from North • $distanceKm km to Makkah",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(MihrabIcons.KaabaCube, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Column {
+                    Text(
+                        if (isArabicUi) "القبلة والواقع المعزز" else "Qibla & AR Sighting",
+                        style = MaterialTheme.typography.headlineMedium
+                    )
+                    Text(
+                        text = if (isArabicUi) {
+                            "$currentCity • ${formatNumerals("${qiblaBearing.roundToInt()}°", useIndic)} من الشمال • ${formatNumerals("$distanceKm", useIndic)} كم إلى مكة"
+                        } else {
+                            "$currentCity • ${qiblaBearing.roundToInt()}° from North • $distanceKm km to Makkah"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             IconButton(onClick = onClose, modifier = Modifier.testTag("close_qibla_button")) {
-                Icon(Icons.Rounded.Close, contentDescription = "Close Qibla")
+                Icon(Icons.Rounded.Close, contentDescription = if (isArabicUi) "إغلاق" else "Close Qibla")
             }
         }
 
@@ -156,7 +174,7 @@ fun QiblaAndLocationDialogContent(
             FilterChip(
                 selected = !arModeEnabled,
                 onClick = { arModeEnabled = false },
-                label = { Text("Compass") },
+                label = { Text(if (isArabicUi) "البوصلة" else "Compass") },
                 leadingIcon = { Icon(Icons.Rounded.Explore, null, modifier = Modifier.size(18.dp)) }
             )
             FilterChip(
@@ -171,7 +189,7 @@ fun QiblaAndLocationDialogContent(
                         cameraLauncher.launch(Manifest.permission.CAMERA)
                     }
                 },
-                label = { Text("AR Camera") },
+                label = { Text(if (isArabicUi) "الواقع المعزز AR" else "AR Camera") },
                 leadingIcon = { Icon(Icons.Rounded.CameraAlt, null, modifier = Modifier.size(18.dp)) },
                 modifier = Modifier.testTag("ar_qibla_toggle")
             )
@@ -197,7 +215,15 @@ fun QiblaAndLocationDialogContent(
                             shape = MaterialTheme.shapes.medium
                         ) {
                             Text(
-                                text = if (isAligned) "Facing Qibla • Kaaba Direction" else "Turn ${if (relativeAngle < 180f) "Right" else "Left"} ${angularDiff.roundToInt()}°",
+                                text = if (isAligned) {
+                                    if (isArabicUi) "أنت متجه نحو الكعبة المشرفة" else "Facing Qibla • Kaaba Direction"
+                                } else {
+                                    if (isArabicUi) {
+                                        "استدر ${if (relativeAngle < 180f) "يميناً" else "يساراً"} ${formatNumerals("${angularDiff.roundToInt()}°", useIndic)}"
+                                    } else {
+                                        "Turn ${if (relativeAngle < 180f) "Right" else "Left"} ${angularDiff.roundToInt()}°"
+                                    }
+                                },
                                 color = Color.White,
                                 style = MaterialTheme.typography.titleMedium,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -212,7 +238,7 @@ fun QiblaAndLocationDialogContent(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Explore,
+                                imageVector = MihrabIcons.KaabaCube,
                                 contentDescription = "AR Qibla Marker",
                                 tint = if (isAligned) BurnishedGold else Color.White,
                                 modifier = Modifier.size(48.dp)
@@ -241,7 +267,6 @@ fun QiblaAndLocationDialogContent(
                         center = center,
                         style = Stroke(width = if (isAligned) 8f else 4f)
                     )
-                    // Rotate compass card by -azimuth so North tracks magnetic north
                     rotate(degrees = -azimuth, pivot = center) {
                         for (deg in 0 until 360 step 30) {
                             rotate(degrees = deg.toFloat(), pivot = center) {
@@ -254,7 +279,6 @@ fun QiblaAndLocationDialogContent(
                             }
                         }
                     }
-                    // Qibla needle pointing to relativeAngle
                     rotate(degrees = relativeAngle, pivot = center) {
                         val needle = Path().apply {
                             moveTo(center.x, center.y - radius + 28f)
@@ -278,12 +302,24 @@ fun QiblaAndLocationDialogContent(
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Text(
-                    text = if (isAligned) "Aligned with the Qibla!" else "Heading ${azimuth.roundToInt()}° • Qibla ${qiblaBearing.roundToInt()}°",
+                    text = if (isAligned) {
+                        if (isArabicUi) "اتجاه القبلة مطابق الآن!" else "Aligned with the Qibla!"
+                    } else {
+                        if (isArabicUi) {
+                            "الاتجاه ${formatNumerals("${azimuth.roundToInt()}°", useIndic)} • القبلة ${formatNumerals("${qiblaBearing.roundToInt()}°", useIndic)}"
+                        } else {
+                            "Heading ${azimuth.roundToInt()}° • Qibla ${qiblaBearing.roundToInt()}°"
+                        }
+                    },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Suitable for hotel rooms, airports, and outdoor travel. Keep away from strong metal magnets.",
+                    text = if (isArabicUi) {
+                        "مناسب للمنازل والفنادق والمطارات والسفر. أبقِ الهاتف بعيداً عن المعادن المغناطيسية."
+                    } else {
+                        "Suitable for hotel rooms, airports, and outdoor travel. Keep away from strong magnets."
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -306,10 +342,10 @@ fun QiblaAndLocationDialogContent(
                 if (granted) {
                     val coords = fetchLastKnownLocation(context)
                     if (coords != null) {
-                        onGpsLocation("Current GPS", coords.first, coords.second)
-                        permissionNotice = "Location updated from GPS."
+                        onGpsLocation(if (isArabicUi) "الموقع الحالي (GPS)" else "Current GPS", coords.first, coords.second)
+                        permissionNotice = if (isArabicUi) "تم تحديث الموقع عبر GPS." else "Location updated from GPS."
                     } else {
-                        permissionNotice = "GPS fix unavailable; choose a city below."
+                        permissionNotice = if (isArabicUi) "تعذر التقاط GPS؛ اختر مدينة أدناه." else "GPS fix unavailable; choose a city below."
                     }
                 } else {
                     locationLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -319,10 +355,14 @@ fun QiblaAndLocationDialogContent(
         ) {
             Icon(Icons.Rounded.MyLocation, null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Detect My GPS Location")
+            Text(if (isArabicUi) "تحديد موقعي عبر GPS" else "Detect My GPS Location")
         }
 
-        Text("Quick City Presets", style = MaterialTheme.typography.titleMedium, modifier = Modifier.align(Alignment.Start))
+        Text(
+            if (isArabicUi) "مدن سريعة الاختيار" else "Quick City Presets",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.align(Alignment.Start)
+        )
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -332,13 +372,14 @@ fun QiblaAndLocationDialogContent(
                 FilterChip(
                     selected = currentCity == preset.name,
                     onClick = { onSelectCity(preset) },
+                    leadingIcon = { Icon(Icons.Rounded.LocationCity, null, modifier = Modifier.size(16.dp)) },
                     label = { Text(preset.name) }
                 )
             }
         }
 
         Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
-            Text("Done")
+            Text(if (isArabicUi) "تم" else "Done")
         }
     }
 }

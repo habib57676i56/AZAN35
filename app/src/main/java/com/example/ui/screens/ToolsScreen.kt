@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.WaterDrop
+import com.example.ui.icons.MihrabIcons
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -132,14 +133,23 @@ fun ToolsScreen(
             item {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val toolsTabs = if (isArabicUi) {
-                        listOf("الحاسبات الشرعية", strings.pilgrimGuide, strings.settingsPrivacy)
+                        listOf(
+                            "الحاسبات الشرعية" to MihrabIcons.Calculators,
+                            strings.pilgrimGuide to MihrabIcons.KaabaCube,
+                            strings.settingsPrivacy to MihrabIcons.Settings
+                        )
                     } else {
-                        listOf("Calculators", "${strings.pilgrimGuide} & Charity", strings.settingsPrivacy)
+                        listOf(
+                            "Calculators" to MihrabIcons.Calculators,
+                            "${strings.pilgrimGuide} & Charity" to MihrabIcons.KaabaCube,
+                            strings.settingsPrivacy to MihrabIcons.Settings
+                        )
                     }
-                    toolsTabs.forEachIndexed { idx, lbl ->
+                    toolsTabs.forEachIndexed { idx, (lbl, icon) ->
                         FilterChip(
                             selected = activeSection == idx,
                             onClick = { activeSection = idx },
+                            leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
                             label = { Text(lbl) },
                             modifier = Modifier.testTag("tools_tab_$idx")
                         )
@@ -464,7 +474,10 @@ private fun SettingsAndPrivacySection(
         // 1. Arabic-first Language & RTL Switcher
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(strings.languageToggleTitle, style = MaterialTheme.typography.titleLarge)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(MihrabIcons.Language, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text(strings.languageToggleTitle, style = MaterialTheme.typography.titleLarge)
+                }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     AppLanguage.entries.forEach { lang ->
                         FilterChip(
@@ -489,7 +502,10 @@ private fun SettingsAndPrivacySection(
         // 2. Persistent 3-Mode Theme Engine + Typography Scale + Mushaf Paper
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(strings.themeModeTitle, style = MaterialTheme.typography.titleLarge)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(MihrabIcons.ThemePalette, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text(strings.themeModeTitle, style = MaterialTheme.typography.titleLarge)
+                }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
