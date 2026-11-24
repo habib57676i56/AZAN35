@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Mihrab</string>
+    <string name="shortcut_prayer_short">Prayer</string>
+    <string name="shortcut_prayer_long">Prayer &amp; Qibla</string>
+    <string name="shortcut_quran_short">Mushaf</string>
+    <string name="shortcut_quran_long">Open Quran Mushaf</string>
+    <string name="shortcut_tasbih_short">Tasbih</string>
+    <string name="shortcut_tasbih_long">Digital Tasbih &amp; Adhkar</string>
+</resources>

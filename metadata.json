@@ -1,0 +1,6 @@
+{
+  "name": "Mihrab",
+  "description": "Comprehensive Islamic companion for prayer times, Qibla, Quran, adhkar, Hijri calendar, knowledge, and spiritual tools.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,177 @@
+{
+  "entities": {
+    "UserSettings": {
+      "title": "UserSettings",
+      "description": "User preferences, prayer location/method, Qada counters, and Khatmah summary",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID" },
+        "displayName": { "type": "string", "description": "Display name" },
+        "preferredLanguage": { "type": "string", "enum": ["en", "ar", "tr", "ur"] },
+        "calculationMethod": { "type": "string", "enum": ["MWL", "ISNA", "UMM_AL_QURA", "EGYPTIAN", "KARACHI"] },
+        "city": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "hijriOffset": { "type": "integer" },
+        "travelerMode": { "type": "boolean" },
+        "ramadanMode": { "type": "boolean" },
+        "kidsMode": { "type": "boolean" },
+        "qadaFajr": { "type": "integer" },
+        "qadaDhuhr": { "type": "integer" },
+        "qadaAsr": { "type": "integer" },
+        "qadaMaghrib": { "type": "integer" },
+        "qadaIsha": { "type": "integer" },
+        "streakDays": { "type": "integer" },
+        "khatmahPagesRead": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["userId", "displayName", "preferredLanguage", "calculationMethod", "city", "latitude", "longitude", "hijriOffset", "travelerMode", "ramadanMode", "kidsMode", "qadaFajr", "qadaDhuhr", "qadaAsr", "qadaMaghrib", "qadaIsha", "streakDays", "khatmahPagesRead", "createdAt", "updatedAt"]
+    },
+    "PrayerLog": {
+      "title": "PrayerLog",
+      "description": "Daily prayer, Sunnah, fasting, and Khushu rating record",
+      "type": "object",
+      "properties": {
+        "dateKey": { "type": "string" },
+        "fajr": { "type": "boolean" },
+        "dhuhr": { "type": "boolean" },
+        "asr": { "type": "boolean" },
+        "maghrib": { "type": "boolean" },
+        "isha": { "type": "boolean" },
+        "sunnahRawatib": { "type": "boolean" },
+        "duha": { "type": "boolean" },
+        "witr": { "type": "boolean" },
+        "qiyam": { "type": "boolean" },
+        "fastingType": { "type": "string", "enum": ["NONE", "VOLUNTARY", "RAMADAN", "QADA"] },
+        "khushuRating": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["dateKey", "fajr", "dhuhr", "asr", "maghrib", "isha", "sunnahRawatib", "duha", "witr", "qiyam", "fastingType", "khushuRating", "createdAt", "updatedAt"]
+    },
+    "JournalEntry": {
+      "title": "JournalEntry",
+      "description": "Personal Dua journal, verse reflection notes, and gratitude entries",
+      "type": "object",
+      "properties": {
+        "entryType": { "type": "string", "enum": ["DUA", "VERSE_NOTE", "GRATITUDE"] },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "reference": { "type": "string" },
+        "answered": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["entryType", "title", "body", "answered", "createdAt", "updatedAt"]
+    },
+    "QuranBookmark": {
+      "title": "QuranBookmark",
+      "description": "Saved Quran verse bookmarks and custom verse collections",
+      "type": "object",
+      "properties": {
+        "surahNumber": { "type": "integer" },
+        "ayahNumber": { "type": "integer" },
+        "collectionName": { "type": "string" },
+        "note": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["surahNumber", "ayahNumber", "collectionName", "createdAt", "updatedAt"]
+    },
+    "TasbihCounter": {
+      "title": "TasbihCounter",
+      "description": "Custom and cumulative Dhikr/Tasbih counter",
+      "type": "object",
+      "properties": {
+        "label": { "type": "string" },
+        "arabicText": { "type": "string" },
+        "count": { "type": "integer" },
+        "target": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["label", "arabicText", "count", "target", "createdAt", "updatedAt"]
+    },
+    "ObligationRecord": {
+      "title": "ObligationRecord",
+      "description": "Charity/Sadaqah, debts, and Wasiyyah obligation tracker",
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["CHARITY", "DEBT", "WASIYYAH"] },
+        "title": { "type": "string" },
+        "amount": { "type": "number" },
+        "settled": { "type": "boolean" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["kind", "title", "amount", "settled", "createdAt", "updatedAt"]
+    },
+    "DuaWallPost": {
+      "title": "DuaWallPost",
+      "description": "Anonymous community prayer request on the Dua Wall",
+      "type": "object",
+      "properties": {
+        "authorUid": { "type": "string" },
+        "alias": { "type": "string" },
+        "category": { "type": "string", "enum": ["HEALING", "GUIDANCE", "SUSTENANCE", "FAMILY", "DECEASED", "GENERAL"] },
+        "requestText": { "type": "string" },
+        "visibility": { "type": "string", "enum": ["COMMUNITY"] },
+        "ameenCount": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["authorUid", "alias", "category", "requestText", "visibility", "ameenCount", "createdAt", "updatedAt"]
+    },
+    "KhatmahGroup": {
+      "title": "KhatmahGroup",
+      "description": "Shared family or friends Khatmah challenge",
+      "type": "object",
+      "properties": {
+        "ownerUid": { "type": "string" },
+        "title": { "type": "string" },
+        "joinCode": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "completedJuz": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerUid", "title", "joinCode", "memberUids", "completedJuz", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserSettings",
+      "description": "Per-user worship settings and counters"
+    },
+    "/users/{userId}/prayerLogs/{dateKey}": {
+      "schema": "PrayerLog",
+      "description": "Daily prayer and fasting checklist logs"
+    },
+    "/users/{userId}/duaJournal/{entryId}": {
+      "schema": "JournalEntry",
+      "description": "Private Dua journal and verse reflections"
+    },
+    "/users/{userId}/bookmarks/{bookmarkId}": {
+      "schema": "QuranBookmark",
+      "description": "Quran verse bookmarks and custom collections"
+    },
+    "/users/{userId}/tasbihCounters/{counterId}": {
+      "schema": "TasbihCounter",
+      "description": "Saved Tasbih and Dhikr counters"
+    },
+    "/users/{userId}/obligations/{itemId}": {
+      "schema": "ObligationRecord",
+      "description": "Personal charity, debt, and Wasiyyah obligation records"
+    },
+    "/duaWall/{postId}": {
+      "schema": "DuaWallPost",
+      "description": "Community anonymous Dua Wall requests"
+    },
+    "/khatmahGroups/{groupId}": {
+      "schema": "KhatmahGroup",
+      "description": "Shared Family Khatmah groups"
+    }
+  }
+}
