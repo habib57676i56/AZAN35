@@ -3,23 +3,28 @@ package com.example.domain
 import com.example.data.local.AdhanVoiceEntity
 import com.example.data.local.AdhkarEntity
 
+import com.example.core.i18n.AppLanguage
+
 enum class AdhkarCategoryMeta(
     val id: String,
     val titleAr: String,
-    val titleEn: String
+    val titleEn: String,
+    val titleUz: String
 ) {
-    MORNING("MORNING", "أذكار الصباح", "Morning"),
-    EVENING("EVENING", "أذكار المساء", "Evening"),
-    AFTER_PRAYER("AFTER_PRAYER", "بعد الصلاة", "After Prayer"),
-    SLEEP("SLEEP", "أذكار النوم", "Sleep"),
-    WAKING_UP("WAKING_UP", "الاستيقاظ", "Waking Up"),
-    MOSQUE("MOSQUE", "المسجد والوضوء", "Mosque & Wudu"),
-    TRAVEL("TRAVEL", "أذكار السفر", "Travel"),
-    HOME_FOOD("HOME_FOOD", "المنزل والطعام", "Home & Food"),
-    RUQYAH("RUQYAH", "الرقية الشرعية", "Ruqyah Shariah"),
-    QURANIC_DUAS("QURANIC_DUAS", "أدعية قرآنية", "Quranic Duas"),
-    PROPHETIC_DUAS("PROPHETIC_DUAS", "أدعية نبوية", "Prophetic Duas"),
-    GENERAL_DUAS("GENERAL_DUAS", "أدعية عامة", "General Duas");
+    MORNING("MORNING", "أذكار الصباح", "Morning", "Tonggi zikrlar"),
+    EVENING("EVENING", "أذكار المساء", "Evening", "Kechki zikrlar"),
+    AFTER_PRAYER("AFTER_PRAYER", "بعد الصلاة", "After Prayer", "Namozdan keyingi"),
+    SLEEP("SLEEP", "أذكار النوم", "Sleep", "Uyqu oldidan"),
+    WAKING_UP("WAKING_UP", "الاستيقاظ", "Waking Up", "Uyg'onganda"),
+    MOSQUE("MOSQUE", "المسجد والوضوء", "Mosque & Wudu", "Masjid va tahorat"),
+    TRAVEL("TRAVEL", "أذكار السفر", "Travel", "Safar duolari"),
+    HOME_FOOD("HOME_FOOD", "المنزل والطعام", "Home & Food", "Uy va taom"),
+    RUQYAH("RUQYAH", "الرقية الشرعية", "Ruqyah Shariah", "Shar'iy ruqya"),
+    QURANIC_DUAS("QURANIC_DUAS", "أدعية قرآنية", "Quranic Duas", "Qur'oniy duolar"),
+    PROPHETIC_DUAS("PROPHETIC_DUAS", "أدعية نبوية", "Prophetic Duas", "Nabaviy duolar"),
+    GENERAL_DUAS("GENERAL_DUAS", "أدعية عامة", "General Duas", "Umumiy duolar");
+
+    fun titleFor(language: AppLanguage): String = language.pick(titleAr, titleEn, titleUz)
 
     companion object {
         fun fromId(id: String): AdhkarCategoryMeta =

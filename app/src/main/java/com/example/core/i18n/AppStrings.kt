@@ -9,8 +9,18 @@ enum class AppLanguage(
 ) {
     ARABIC("ar", "العربية", LayoutDirection.Rtl),
     ENGLISH("en", "English", LayoutDirection.Ltr),
+    UZBEK("uz", "Oʻzbekcha", LayoutDirection.Ltr),
     TURKISH("tr", "Türkçe", LayoutDirection.Ltr),
     URDU("ur", "اردو", LayoutDirection.Rtl);
+
+    val isArabicUi: Boolean
+        get() = this == ARABIC || this == URDU
+
+    fun pick(ar: String, en: String, uz: String = en): String = when (this) {
+        ARABIC, URDU -> ar
+        UZBEK -> uz
+        ENGLISH, TURKISH -> en
+    }
 
     companion object {
         fun fromCode(code: String): AppLanguage =
@@ -117,7 +127,17 @@ data class LocalizedStrings(
     val adminImportBackup: String,
     val aiRateLimitReached: String,
     val maintenanceNoticeTitle: String,
-    val maintenanceNoticeBody: String
+    val maintenanceNoticeBody: String,
+    // Phase 4 Location, Persistent Bar, Live Verses, Smart Shortcuts, App Check Strings
+    val detectMyLocation: String,
+    val locatingGps: String,
+    val nearbyMosquesTitle: String,
+    val liveVersesTitle: String,
+    val smartShortcutsTitle: String,
+    val persistentPrayerBarTitle: String,
+    val persistentPrayerBarDesc: String,
+    val pinShortcutsTitle: String,
+    val appCheckDebugTitle: String
 )
 
 fun stringsFor(language: AppLanguage): LocalizedStrings = when (language) {
@@ -217,8 +237,18 @@ fun stringsFor(language: AppLanguage): LocalizedStrings = when (language) {
         adminImportBackup = "استيراد نسخة JSON",
         aiRateLimitReached = "بلغت الحد اليومي المسموح لطلبات المساعد الذكي. حاول غداً.",
         maintenanceNoticeTitle = "صيانة مجدولة",
-        maintenanceNoticeBody = "بعض الخدمات السحابية في وضع الصيانة حالياً مع بقاء المصحف والأذكار المحلية متاحة."
+        maintenanceNoticeBody = "بعض الخدمات السحابية في وضع الصيانة حالياً مع بقاء المصحف والأذكار المحلية متاحة.",
+        detectMyLocation = "تحديد موقعي الآن",
+        locatingGps = "جارٍ تحديد الموقع بدقة...",
+        nearbyMosquesTitle = "المساجد القريبة منك",
+        liveVersesTitle = "آيات وأحاديث متجددة",
+        smartShortcutsTitle = "اختصاراتك الذكية",
+        persistentPrayerBarTitle = "مواقيت الصلاة الدائمة في الإشعارات",
+        persistentPrayerBarDesc = "عرض أوقات الصلوات الخمس والصلاة القادمة باستمرار في لوحة إشعارات الهاتف",
+        pinShortcutsTitle = "تثبيت اختصارات الشاشة الرئيسية",
+        appCheckDebugTitle = "رمز تصحيح Firebase App Check"
     )
+
     AppLanguage.ENGLISH -> LocalizedStrings(
         appTitle = "Mihrab",
         tabPrayer = "Prayer",
@@ -315,8 +345,126 @@ fun stringsFor(language: AppLanguage): LocalizedStrings = when (language) {
         adminImportBackup = "Import DB Backup (JSON)",
         aiRateLimitReached = "Daily AI request limit reached. Please try again tomorrow.",
         maintenanceNoticeTitle = "Maintenance Mode",
-        maintenanceNoticeBody = "Cloud operations are temporarily in maintenance mode; offline Mushaf and Adhkar remain available."
+        maintenanceNoticeBody = "Cloud operations are temporarily in maintenance mode; offline Mushaf and Adhkar remain available.",
+        detectMyLocation = "Detect My GPS Location",
+        locatingGps = "Locating accurately...",
+        nearbyMosquesTitle = "Nearby Mosques",
+        liveVersesTitle = "Live Ayahs & Hadiths",
+        smartShortcutsTitle = "Smart Frequent Shortcuts",
+        persistentPrayerBarTitle = "Permanent Prayer Times in Control Shade",
+        persistentPrayerBarDesc = "Keep live next-prayer countdown and all 5 daily times pinned in your notification panel",
+        pinShortcutsTitle = "Pin Home Screen Shortcuts",
+        appCheckDebugTitle = "Firebase App Check Debug Token"
     )
+
+    AppLanguage.UZBEK -> LocalizedStrings(
+        appTitle = "Mihrob",
+        tabPrayer = "Namoz",
+        tabQuran = "Qur'on",
+        tabDhikr = "Zikr",
+        tabLearn = "Ilm",
+        tabTools = "Asboblar",
+        nextPrayer = "Keyingi namoz",
+        qiblaCompass = "Qibla va AR",
+        prayerTracker = "Kunlik namoz nazorati",
+        qiyamLastThird = "Kechaning oxirgi uchdan biri",
+        travelerMode = "Musofir rejimi (Qasr va Jam)",
+        qadaCounter = "Qazo namozlari",
+        mushafReader = "Madina Mushafi",
+        alMusammi = "Musammi' (Tekshiruvchi)",
+        khatmahPlan = "Xatma rejasi",
+        bookmarksLabel = "Xatcho'plar",
+        morningEveningAdhkar = "Zikrlar to'plami",
+        digitalTasbih = "Raqamli Tasbeh",
+        namesOfAllah = "Asmo ul-Husno",
+        duaJournal = "Duo kundaligi",
+        communityDuaWall = "Umumiy duo devori",
+        hijriCalendar = "Hijriy taqvim",
+        ramadanMode = "Ramazon rejimi",
+        knowledgeHub = "Ilmiy kutubxona",
+        askAiCompanion = "Islomiy AI yordamchi",
+        zakatCalculator = "Zakot hisoblagich",
+        inheritanceCalculator = "Meros hisoblagich",
+        pilgrimGuide = "Haj va Umra",
+        settingsPrivacy = "Sozlamalar va maxfiylik",
+        signInWithGoogle = "Google orqali kirish",
+        signOut = "Chiqish",
+        ameen = "Omin",
+        save = "Saqlash",
+        cancel = "Bekor qilish",
+        themeModeTitle = "Ilova mavzusi",
+        themeLight = "Yorug'",
+        themeDark = "Qorong'u",
+        themeSystem = "Tizim (Avto)",
+        languageToggleTitle = "Til va yo'nalish",
+        paperWhite = "Oq qog'oz",
+        paperSepia = "Iliq sepiya",
+        paperDark = "Tungi qog'oz",
+        searchQuranHint = "Qur'ondan qidirish (arabcha matn)...",
+        surahIndex = "Suralar",
+        juzIndex = "Juzlar",
+        pageLabel = "Sahifa",
+        juzLabel = "Juz",
+        hizbLabel = "Hizb",
+        rubLabel = "Rub'",
+        sajdahMarker = "Tilovat sajdasi",
+        playFromAyah = "Shu oyatdan tinglash",
+        askAiTafsir = "AI dan tafsir so'rash",
+        copyAyah = "Nusxa olish",
+        shareAyah = "Ulashish",
+        bookmarkAyah = "Xatcho'pga saqlash",
+        addNoteAyah = "Eslatma qo'shish",
+        reciterLabel = "Qori",
+        chooseReciter = "Qorini tanlang",
+        loopAB = "Takrorlash (A-B)",
+        speedLabel = "Tezlik",
+        downloadOfflineQuran = "604 sahifani oflayn yuklab olish",
+        offlineCachedBadge = "Oflayn saqlangan",
+        focusModeLabel = "Tinch o'qish rejimi",
+        exitFocusMode = "Tugmalarni ko'rsatish",
+        fontScaleLabel = "Shrift o'lchami",
+        copiedToast = "Oyat nusxalandi",
+        networkErrorFallback = "Sahifani tarmoqdan yuklab bo'lmadi. Internetni tekshiring yoki oflayn saqlang.",
+        resumeLastRead = "Davom ettirish",
+        aiAssistantTitle = "Islomiy AI yordamchi",
+        aiChatTab = "Tafsir va savol-javob",
+        aiQuizTab = "Hifz va mutashobihot testi",
+        aiClearHistory = "Tarixni tozalash",
+        aiDisabledNotice = "AI yordamchi administrator tomonidan vaqtincha o'chirilgan.",
+        adhanSettingsTitle = "Azon va muazzinlar",
+        chooseAdhanVoice = "Muazzin ovozini tanlang",
+        uploadCustomAdhan = "Qurilmadan azon fayli tanlash",
+        previewAdhan = "Tinglab ko'rish",
+        stopAdhan = "To'xtatish",
+        customTargetLabel = "Maxsus maqsad",
+        dailyAdhkarStats = "Kunlik zikrlar natijasi",
+        adminDashboardTitle = "Boshqaruv paneli (Admin)",
+        adminBadgeLabel = "Super Admin",
+        adminAccessDenied = "Kirish faqat tasdiqlangan Super Admin hisobi uchun ruxsat etilgan.",
+        adminTabDefaults = "Qur'on va sozlamalar",
+        adminTabReciters = "Qorilar",
+        adminTabAdhkar = "Zikrlar",
+        adminTabAdhan = "Azon",
+        adminTabAiControl = "AI boshqaruvi",
+        adminTabOperations = "Operatsiyalar",
+        adminSaveChanges = "Bulutga saqlash",
+        adminSeedDefaults = "Standartlarni yuklash",
+        adminExportBackup = "To'liq JSON eksport",
+        adminImportBackup = "JSON zaxirani tiklash",
+        aiRateLimitReached = "Kunlik AI so'rov limiti tugadi. Ertaga qayta urinib ko'ring.",
+        maintenanceNoticeTitle = "Texnik xizmat rejimi",
+        maintenanceNoticeBody = "Bulutli xizmatlar vaqtincha texnik ko'rikda; oflayn Mushaf va zikrlar ishlamoqda.",
+        detectMyLocation = "Joylashuvimni aniqlash (GPS)",
+        locatingGps = "Aniq joylashuv aniqlanmoqda...",
+        nearbyMosquesTitle = "Yaqin atrofdagi masjidlar",
+        liveVersesTitle = "Jonli oyatlar va hadislar",
+        smartShortcutsTitle = "Aqlli tezkor yorliqlar",
+        persistentPrayerBarTitle = "Bildirishnomada doimiy namoz vaqtlari",
+        persistentPrayerBarDesc = "Telefon boshqaruv pardasida 5 vaqt namoz va keyingi namoz vaqtini doimiy ko'rsatish",
+        pinShortcutsTitle = "Bosh ekranga yorliqlar qo'shish",
+        appCheckDebugTitle = "Firebase App Check Debug Token"
+    )
+
     AppLanguage.TURKISH -> stringsFor(AppLanguage.ENGLISH).copy(
         appTitle = "Mihrab",
         tabPrayer = "Namaz",
@@ -330,6 +478,7 @@ fun stringsFor(language: AppLanguage): LocalizedStrings = when (language) {
         save = "Kaydet",
         cancel = "İptal"
     )
+
     AppLanguage.URDU -> stringsFor(AppLanguage.ARABIC).copy(
         appTitle = "محراب",
         tabPrayer = "نماز",

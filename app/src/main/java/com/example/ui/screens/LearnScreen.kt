@@ -33,12 +33,14 @@ import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Quiz
 import androidx.compose.material.icons.rounded.RecordVoiceOver
+import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -54,6 +56,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -66,8 +69,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -78,8 +85,11 @@ import com.example.core.hardware.QuranTtsAudioPlayer
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
 import com.example.core.i18n.formatNumerals
+import com.example.core.preferences.FeatureUsageTracker
+import com.example.core.preferences.SmartFeatureId
 import com.example.data.firebase.AppOperationsConfig
 import com.example.data.firebase.UserSettingsDoc
+import com.example.data.firebase.getAppCheckDebugSecret
 import com.example.domain.HijriCalendarEngine
 import com.example.domain.IslamicLibraryData
 import com.example.ui.icons.MihrabIcons
@@ -107,28 +117,51 @@ fun LearnScreen(
     strings: LocalizedStrings,
     useIndic: Boolean,
     initialSubTab: Int = 0,
+    subTabTriggerNonce: Int = 0,
+    prefilledAiQuestion: String? = null,
+    onConsumePrefilledQuestion: () -> Unit = {},
     appOperations: AppOperationsConfig = AppOperationsConfig()
 ) {
+    val context = LocalContext.current
     val glass = LocalLiquidGlassPalette.current
     val settingsState by viewModel.settingsState.collectAsStateWithLifecycle()
     val logsState by viewModel.prayerLogsState.collectAsStateWithLifecycle()
     val manualOffsets by viewModel.manualOffsets.collectAsStateWithLifecycle()
 
-    val isArabicUi = appLanguage == AppLanguage.ARABIC || appLanguage == AppLanguage.URDU
+    val isArabicUi = appLanguage.isArabicUi
+    val useArabicDigits = useIndic && isArabicUi
     val settings = (settingsState as? UiState.Success)?.data ?: UserSettingsDoc()
     val logs = (logsState as? UiState.Success)?.data ?: emptyList()
     val todayLog = logs.firstOrNull { it.dateKey == viewModel.todayDateKey() }
     val hijriToday = remember(settings) { viewModel.computeHijriToday(settings) }
-    val sunnahFast = remember(hijriToday) { HijriCalendarEngine.isSunnahFastingDay(Calendar.getInstance(), hijriToday) }
-    val occasions = remember(hijriToday) { HijriCalendarEngine.upcomingOccasions(hijriToday) }
+    val sunnahFast = remember(hijriToday, appLanguage) {
+        HijriCalendarEngine.isSunnahFastingDay(Calendar.getInstance(), hijriToday, appLanguage)
+    }
+    val occasions = remember(hijriToday, appLanguage) {
+        HijriCalendarEngine.upcomingOccasions(hijriToday, appLanguage)
+    }
     val schedule = remember(settings, manualOffsets) { viewModel.computeSchedule(settings, manualOffsets) }
 
-    var activeSection by remember(initialSubTab) { mutableIntStateOf(initialSubTab) } // 0=Calendar&Ramadan, 1=Knowledge, 2=Noorania, 3=AskAI
+    var activeSection by remember { mutableIntStateOf(initialSubTab) } // 0=Calendar&Ramadan, 1=Knowledge, 2=Noorania, 3=AskAI
+    LaunchedEffect(initialSubTab, subTabTriggerNonce) {
+        activeSection = initialSubTab
+    }
+    LaunchedEffect(prefilledAiQuestion) {
+        if (!prefilledAiQuestion.isNullOrBlank()) {
+            activeSection = 3
+        }
+    }
+    LaunchedEffect(activeSection) {
+        when (activeSection) {
+            0 -> FeatureUsageTracker.recordUsage(context, SmartFeatureId.HIJRI)
+            3 -> FeatureUsageTracker.recordUsage(context, SmartFeatureId.AI_COMPANION)
+        }
+    }
 
     val learnTabs = listOf(
         Triple("${strings.hijriCalendar} & ${strings.ramadanMode}", Icons.Rounded.CalendarMonth, 0),
         Triple(strings.knowledgeHub, MihrabIcons.ScholarBook, 1),
-        Triple(if (isArabicUi) "القاعدة النورانية" else "Al-Noorania", Icons.Rounded.RecordVoiceOver, 2),
+        Triple(appLanguage.pick("القاعدة النورانية", "Al-Noorania", "Al-Nuroniyya"), Icons.Rounded.RecordVoiceOver, 2),
         Triple(strings.askAiCompanion, Icons.Rounded.Psychology, 3)
     )
 
@@ -175,11 +208,17 @@ fun LearnScreen(
                                 Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text(formatNumerals(hijriToday.formattedEn(), useIndic), style = MaterialTheme.typography.headlineMedium.withTabularNums(), fontWeight = FontWeight.Bold)
-                                            Text(hijriToday.formattedAr(), fontFamily = AmiriFontFamily, fontSize = 21.sp, color = MaterialTheme.colorScheme.primary)
+                                            Text(
+                                                formatNumerals(hijriToday.formattedFor(appLanguage), useArabicDigits),
+                                                style = MaterialTheme.typography.headlineMedium.withTabularNums(),
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            if (!isArabicUi) {
+                                                Text(hijriToday.formattedAr(), fontFamily = AmiriFontFamily, fontSize = 21.sp, color = MaterialTheme.colorScheme.primary)
+                                            }
                                         }
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(if (isArabicUi) "تعديل:" else "Adj:", style = MaterialTheme.typography.labelLarge)
+                                            Text(appLanguage.pick("تعديل:", "Adj:", "Tuzatish:"), style = MaterialTheme.typography.labelLarge)
                                             TextButton(onClick = {
                                                 viewModel.updateSettings(mapOf("hijriOffset" to (settings.hijriOffset - 1L).coerceIn(-2L, 2L)))
                                             }) { Text("-1") }
@@ -197,20 +236,28 @@ fun LearnScreen(
                                             border = BorderStroke(1.dp, BurnishedGold.copy(alpha = 0.45f))
                                         ) {
                                             Text(
-                                                text = if (isArabicUi) "صيام مستحب اليوم: $sunnahFast" else "Today's Fasting Virtue: $sunnahFast",
+                                                text = appLanguage.pick(
+                                                    "صيام مستحب اليوم: $sunnahFast",
+                                                    "Today's Fasting Virtue: $sunnahFast",
+                                                    "Bugungi ro'za fazilati: $sunnahFast"
+                                                ),
                                                 style = MaterialTheme.typography.labelLarge,
                                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                                             )
                                         }
                                     }
 
-                                    Text(if (isArabicUi) "متابعة الصيام اليومي" else "Today's Fasting Tracker", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        appLanguage.pick("متابعة الصيام اليومي", "Today's Fasting Tracker", "Bugungi ro'za kuzatuvi"),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         listOf(
-                                            "NONE" to (if (isArabicUi) "غير صائم" else "Not Fasting"),
-                                            "VOLUNTARY" to (if (isArabicUi) "صيام سنة" else "Sunnah"),
-                                            "RAMADAN" to (if (isArabicUi) "رمضان" else "Ramadan"),
-                                            "QADA" to (if (isArabicUi) "قضاء" else "Qada")
+                                            "NONE" to appLanguage.pick("غير صائم", "Not Fasting", "Ro'za emas"),
+                                            "VOLUNTARY" to appLanguage.pick("صيام سنة", "Sunnah", "Nafl / Sunnat"),
+                                            "RAMADAN" to appLanguage.pick("رمضان", "Ramadan", "Ramazon"),
+                                            "QADA" to appLanguage.pick("قضاء", "Qada", "Qazo")
                                         ).forEach { (key, label) ->
                                             LiquidGlassPill(
                                                 selected = (todayLog?.fastingType ?: "NONE") == key,
@@ -259,17 +306,21 @@ fun LearnScreen(
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
-                                                if (isArabicUi) "وضع رمضان والتحدي الإيماني" else "Ramadan Mode & Challenge",
+                                                appLanguage.pick(
+                                                    "وضع رمضان والتحدي الإيماني",
+                                                    "Ramadan Mode & Challenge",
+                                                    "Ramazon rejimi va kundalik maqsadlar"
+                                                ),
                                                 style = MaterialTheme.typography.titleLarge,
                                                 fontWeight = FontWeight.Bold,
                                                 color = Color.White
                                             )
                                             Text(
-                                                if (isArabicUi) {
-                                                    "الإمساك ${schedule.imsak.formattedTime} • الإفطار ${schedule.maghrib.formattedTime}"
-                                                } else {
-                                                    "Suhoor ends ${schedule.imsak.formattedTime} • Iftar ${schedule.maghrib.formattedTime}"
-                                                },
+                                                appLanguage.pick(
+                                                    "الإمساك ${schedule.imsak.formattedTime} • الإفطار ${schedule.maghrib.formattedTime}",
+                                                    "Suhoor ends ${schedule.imsak.formattedTime} • Iftar ${schedule.maghrib.formattedTime}",
+                                                    "Saharlik ${schedule.imsak.formattedTime} • Iftorlik ${schedule.maghrib.formattedTime}"
+                                                ),
                                                 style = MaterialTheme.typography.bodyMedium.withTabularNums(),
                                                 color = Color(0xFFE2B95B)
                                             )
@@ -288,15 +339,20 @@ fun LearnScreen(
                                             fontSize = 18.sp,
                                             color = Color.White
                                         )
-                                        val tasks = if (isArabicUi) {
-                                            listOf(
+                                        val tasks = when {
+                                            isArabicUi -> listOf(
                                                 "قراءة جزء أو الورد القرآني اليومي",
                                                 "صدقة يومية أو تفطير صائم",
                                                 "صلاة التراويح والقيام",
                                                 "سحور مبارك مع تمر وماء"
                                             )
-                                        } else {
-                                            listOf(
+                                            appLanguage == AppLanguage.UZBEK -> listOf(
+                                                "Kundalik 1 juz Qur'on tilovati",
+                                                "Kunlik sadaqa / ro'zadorga iftorlik",
+                                                "Taroveh va tungi namoz",
+                                                "Barakali saharlik (xurmo va suv)"
+                                            )
+                                            else -> listOf(
                                                 "1 Juz' / Wird Quran Reading",
                                                 "Daily Sadaqah / Feeding someone",
                                                 "Taraweeh & Qiyam Prayer",
@@ -320,7 +376,11 @@ fun LearnScreen(
 
                     item {
                         Text(
-                            if (isArabicUi) "المناسبات الإسلامية القادمة" else "Upcoming Islamic Occasions",
+                            appLanguage.pick(
+                                "المناسبات الإسلامية القادمة",
+                                "Upcoming Islamic Occasions",
+                                "Yaqinlashib kelayotgan islomiy kunlar"
+                            ),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
@@ -347,7 +407,14 @@ fun LearnScreen(
                                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
                                 ) {
                                     Text(
-                                        text = if (occ.daysRemaining == 0) (if (isArabicUi) "اليوم" else "Today") else "${occ.daysRemaining}d",
+                                        text = if (occ.daysRemaining == 0) {
+                                            appLanguage.pick("اليوم", "Today", "Bugun")
+                                        } else {
+                                            formatNumerals(
+                                                appLanguage.pick("${occ.daysRemaining} ي", "${occ.daysRemaining}d", "${occ.daysRemaining} kun"),
+                                                useArabicDigits
+                                            )
+                                        },
                                         style = MaterialTheme.typography.labelLarge.withTabularNums(),
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary,
@@ -359,14 +426,15 @@ fun LearnScreen(
                     }
                 }
 
-                1 -> item { KnowledgeHubContent(audioPlayer = audioPlayer, isArabicUi = isArabicUi) }
-                2 -> item { NooraniaContent(audioPlayer = audioPlayer, isArabicUi = isArabicUi) }
+                1 -> item { KnowledgeHubContent(audioPlayer = audioPlayer, appLanguage = appLanguage) }
+                2 -> item { NooraniaContent(audioPlayer = audioPlayer, appLanguage = appLanguage) }
                 3 -> item {
                     AskAiAndKhutbahContent(
                         aiViewModel = aiViewModel,
                         appLanguage = appLanguage,
                         strings = strings,
-                        isArabicUi = isArabicUi,
+                        prefilledAiQuestion = prefilledAiQuestion,
+                        onConsumePrefilledQuestion = onConsumePrefilledQuestion,
                         globalAiFlagEnabled = appOperations.aiAssistantEnabled
                     )
                 }
@@ -376,15 +444,18 @@ fun LearnScreen(
 }
 
 @Composable
-private fun KnowledgeHubContent(audioPlayer: QuranTtsAudioPlayer, isArabicUi: Boolean) {
+private fun KnowledgeHubContent(audioPlayer: QuranTtsAudioPlayer, appLanguage: AppLanguage) {
     var topicTab by remember { mutableIntStateOf(0) } // 0=Hadith, 1=Prophets, 2=NewMuslim, 3=Quiz
     var quizIdx by remember { mutableIntStateOf(0) }
     var quizScore by remember { mutableIntStateOf(0) }
     var quizExplanation by remember { mutableStateOf<String?>(null) }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        val labels = if (isArabicUi) listOf("الأربعون النووية", "قصص الأنبياء", "المسلم الجديد", "اختبار المعرفة")
-        else listOf("40 Hadith", "Prophets", "New Muslim", "Quiz")
+        val labels = when {
+            appLanguage.isArabicUi -> listOf("الأربعون النووية", "قصص الأنبياء", "المسلم الجديد", "اختبار المعرفة")
+            appLanguage == AppLanguage.UZBEK -> listOf("40 Hadis", "Payg'ambarlar", "Yangi musulmon", "Viktorina")
+            else -> listOf("40 Hadith", "Prophets", "New Muslim", "Quiz")
+        }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             items(labels.size) { idx ->
                 LiquidGlassPill(selected = topicTab == idx, onClick = { topicTab = idx }, label = labels[idx])
@@ -417,14 +488,18 @@ private fun KnowledgeHubContent(audioPlayer: QuranTtsAudioPlayer, isArabicUi: Bo
                             selected = false,
                             onClick = { audioPlayer.speak(p.name, "${p.name}. ${p.summary}. ${p.keyLesson}", preferArabic = false) },
                             icon = Icons.Rounded.PlayArrow,
-                            label = if (isArabicUi) "استماع للقصة" else "Listen to Story"
+                            label = appLanguage.pick("استماع للقصة", "Listen to Story", "Qissani tinglash")
                         )
                     }
                 }
             }
             2 -> {
                 LiquidGlassCard(shape = RoundedCornerShape(24.dp)) {
-                    Text(if (isArabicUi) "مسار المسلم الجديد (٣٠ يوماً)" else "New Muslim 30-Day Path", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(
+                        appLanguage.pick("مسار المسلم الجديد (٣٠ يوماً)", "New Muslim 30-Day Path", "Yangi musulmon uchun 30 kunlik yo'l"),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
                     IslamicLibraryData.newMuslimPath.forEach { (step, desc) ->
                         Text(step, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         Text(desc, style = MaterialTheme.typography.bodyMedium)
@@ -437,8 +512,17 @@ private fun KnowledgeHubContent(audioPlayer: QuranTtsAudioPlayer, isArabicUi: Bo
                 val q = questions[quizIdx % questions.size]
                 LiquidGlassCard(shape = RoundedCornerShape(24.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (isArabicUi) "اختبار الثقافة الإسلامية" else "Islamic Knowledge Trivia", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        Text("${if (isArabicUi) "النتيجة" else "Score"}: $quizScore", style = MaterialTheme.typography.titleMedium.withTabularNums(), color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            appLanguage.pick("اختبار الثقافة الإسلامية", "Islamic Knowledge Trivia", "Islomiy bilimlar viktorinasi"),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            "${appLanguage.pick("النتيجة", "Score", "Ball")}: $quizScore",
+                            style = MaterialTheme.typography.titleMedium.withTabularNums(),
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                     Text(q.question, style = MaterialTheme.typography.titleMedium)
                     q.options.forEachIndexed { idx, opt ->
@@ -456,7 +540,7 @@ private fun KnowledgeHubContent(audioPlayer: QuranTtsAudioPlayer, isArabicUi: Bo
                     if (quizExplanation != null) {
                         Text(quizExplanation!!, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                         Button(onClick = { quizIdx = (quizIdx + 1) % questions.size; quizExplanation = null }) {
-                            Text(if (isArabicUi) "السؤال التالي" else "Next Question")
+                            Text(appLanguage.pick("السؤال التالي", "Next Question", "Keyingi savol"))
                         }
                     }
                 }
@@ -466,16 +550,24 @@ private fun KnowledgeHubContent(audioPlayer: QuranTtsAudioPlayer, isArabicUi: Bo
 }
 
 @Composable
-private fun NooraniaContent(audioPlayer: QuranTtsAudioPlayer, isArabicUi: Boolean) {
+private fun NooraniaContent(audioPlayer: QuranTtsAudioPlayer, appLanguage: AppLanguage) {
     val glass = LocalLiquidGlassPalette.current
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
-            if (isArabicUi) "القاعدة النورانية • تأسيس النطق العربي" else "Al-Qaida Al-Noorania • Arabic Reading Foundations",
+            appLanguage.pick(
+                "القاعدة النورانية • تأسيس النطق العربي",
+                "Al-Qaida Al-Noorania • Arabic Reading Foundations",
+                "Al-Qoida An-Nuroniyya • Arabcha o'qish asoslari"
+            ),
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
         Text(
-            if (isArabicUi) "اضغط استماع لسماع مخرج كل حرف بالحركات." else "Tap listen to hear each letter & vowelized Harakat pronunciation.",
+            appLanguage.pick(
+                "اضغط استماع لسماع مخرج كل حرف بالحركات.",
+                "Tap listen to hear each letter & vowelized Harakat pronunciation.",
+                "Har bir harf va harakat talaffuzini eshitish uchun tinglash tugmasini bosing."
+            ),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -549,9 +641,11 @@ private fun AskAiAndKhutbahContent(
     aiViewModel: AiViewModel,
     appLanguage: AppLanguage,
     strings: LocalizedStrings,
-    isArabicUi: Boolean,
+    prefilledAiQuestion: String?,
+    onConsumePrefilledQuestion: () -> Unit,
     globalAiFlagEnabled: Boolean
 ) {
+    val context = LocalContext.current
     val glass = LocalLiquidGlassPalette.current
     val companionState by aiViewModel.companionState.collectAsStateWithLifecycle()
     val chatHistory by aiViewModel.chatHistoryState.collectAsStateWithLifecycle()
@@ -562,9 +656,25 @@ private fun AskAiAndKhutbahContent(
 
     var aiSubMode by remember { mutableIntStateOf(0) } // 0 = Tafsir & Q&A Chat, 1 = Hifz & Mutashabihat Coach
     var questionInput by remember { mutableStateOf("") }
-    var hifzTopicInput by remember { mutableStateOf(if (isArabicUi) "جزء عمّ وسورة الكهف" else "Juz Amma & Surah Al-Kahf") }
+    var hifzTopicInput by remember(appLanguage) {
+        mutableStateOf(
+            appLanguage.pick(
+                "جزء عمّ وسورة الكهف",
+                "Juz Amma & Surah Al-Kahf",
+                "Amma porasi va Kahf surasi"
+            )
+        )
+    }
     var selectedQuizOption by remember { mutableIntStateOf(-1) }
     var khutbahTopic by remember { mutableStateOf("") }
+
+    LaunchedEffect(prefilledAiQuestion) {
+        if (!prefilledAiQuestion.isNullOrBlank()) {
+            aiSubMode = 0
+            questionInput = prefilledAiQuestion
+            onConsumePrefilledQuestion()
+        }
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         LiquidGlassCard(
@@ -603,7 +713,13 @@ private fun AskAiAndKhutbahContent(
                             Column {
                                 Text(strings.aiAssistantTitle, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                                 Text(
-                                    text = "${aiConfig.modelName} • ${if (isArabicUi) "محفوظ تلقائياً في سحابتك" else "History synced to cloud"}",
+                                    text = "${aiConfig.modelName} • ${
+                                        appLanguage.pick(
+                                            "محفوظ تلقائياً في سحابتك",
+                                            "History synced to cloud",
+                                            "Tarix bulutda saqlanadi"
+                                        )
+                                    }",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -649,15 +765,20 @@ private fun AskAiAndKhutbahContent(
                     }
 
                     if (aiSubMode == 0) {
-                        val starterPrompts = if (isArabicUi) {
-                            listOf(
+                        val starterPrompts = when {
+                            appLanguage.isArabicUi -> listOf(
                                 "اشرح معاني المفردات الغريبة في سورة العاديات",
                                 "ما فضل أذكار الصباح والمساء؟",
                                 "كيف أزيد الخشوع في الصلاة؟",
                                 "أمثلة على المتشابهات في سورة البقرة وآل عمران"
                             )
-                        } else {
-                            listOf(
+                            appLanguage == AppLanguage.UZBEK -> listOf(
+                                "Odiyot surasidagi noyob so'zlar ma'nosini tushuntiring",
+                                "Tonggi va kechki zikrlarning fazilati qanday?",
+                                "Namozda xushu'ni qanday oshirish mumkin?",
+                                "Baqara va Oli Imron suralaridagi mutashobih oyatlar"
+                            )
+                            else -> listOf(
                                 "Explain the rare words in Surah Al-Adiyat",
                                 "Virtues of Morning & Evening Adhkar",
                                 "How to build Khushu' in Salah?",
@@ -699,9 +820,9 @@ private fun AskAiAndKhutbahContent(
                                             ) {
                                                 Text(
                                                     text = if (isUser) {
-                                                        if (isArabicUi) "سؤالك" else "You"
+                                                        appLanguage.pick("سؤالك", "You", "Savolingiz")
                                                     } else {
-                                                        if (isArabicUi) "المساعد الإسلامي" else "Mihrab AI"
+                                                        appLanguage.pick("المساعد الإسلامي", "Mihrab AI", "Mihrob AI")
                                                     },
                                                     style = MaterialTheme.typography.labelMedium,
                                                     fontWeight = FontWeight.Bold,
@@ -747,7 +868,11 @@ private fun AskAiAndKhutbahContent(
                                 ) {
                                     AiPulsingDotsIndicator()
                                     Text(
-                                        if (isArabicUi) "جارٍ استحضار الجواب الموثق..." else "Preparing authentic response...",
+                                        appLanguage.pick(
+                                            "جارٍ استحضار الجواب الموثق...",
+                                            "Preparing authentic response...",
+                                            "Ishonchli javob tayyorlanmoqda..."
+                                        ),
                                         style = MaterialTheme.typography.bodyMedium
                                     )
                                 }
@@ -761,12 +886,23 @@ private fun AskAiAndKhutbahContent(
                                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         AiPulsingDotsIndicator()
-                                        Text(if (isArabicUi) "يكتب الآن..." else "Streaming...", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                        Text(
+                                            appLanguage.pick("يكتب الآن...", "Streaming...", "Yozilmoqda..."),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
                                     }
                                     Text(s.text, style = MaterialTheme.typography.bodyLarge)
                                 }
                             }
-                            is AiUiState.Error -> Text(s.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                            is AiUiState.Error -> {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(s.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                                    if (isAppCheckTokenError(s.message)) {
+                                        AppCheckInlineDiagnosticCard(appLanguage = appLanguage)
+                                    }
+                                }
+                            }
                             else -> Unit
                         }
 
@@ -775,8 +911,11 @@ private fun AskAiAndKhutbahContent(
                             onValueChange = { questionInput = it },
                             label = {
                                 Text(
-                                    if (isArabicUi) "اسأل عن تفسير آية، معنى كلمة قرآنية، أو الأذكار..."
-                                    else "Ask about Tafsir, Quranic vocabulary, Adhkar, or rulings..."
+                                    appLanguage.pick(
+                                        "اسأل عن تفسير آية، معنى كلمة قرآنية، أو الأذكار...",
+                                        "Ask about Tafsir, Quranic vocabulary, Adhkar, or rulings...",
+                                        "Oyat tafsiri, Qur'on so'zlari ma'nosi yoki zikrlar haqida so'rang..."
+                                    )
                                 )
                             },
                             modifier = Modifier.fillMaxWidth().testTag("ai_question_input"),
@@ -786,6 +925,7 @@ private fun AskAiAndKhutbahContent(
                             onClick = {
                                 val q = questionInput
                                 questionInput = ""
+                                FeatureUsageTracker.recordUsage(context, SmartFeatureId.AI_COMPANION)
                                 aiViewModel.askCompanion(q, appLanguage.nativeLabel)
                             },
                             enabled = effectiveAiEnabled && questionInput.isNotBlank() &&
@@ -795,22 +935,30 @@ private fun AskAiAndKhutbahContent(
                         ) {
                             Icon(Icons.AutoMirrored.Rounded.Send, null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text(if (isArabicUi) "إرسال للمساعد الذكي" else "Ask Islamic AI")
+                            Text(appLanguage.pick("إرسال للمساعد الذكي", "Ask Islamic AI", "Islomiy AI dan so'rash"))
                         }
                     } else {
                         Text(
-                            text = if (isArabicUi) {
-                                "اختبر حفظك للقرآن الكريم عبر إكمال الآيات مع تنبيهات دقيقة لمواضع المتشابهات."
-                            } else {
-                                "Practice Quran memorization with verse-completion challenges and Mutashabihat alerts."
-                            },
+                            text = appLanguage.pick(
+                                "اختبر حفظك للقرآن الكريم عبر إكمال الآيات مع تنبيهات دقيقة لمواضع المتشابهات.",
+                                "Practice Quran memorization with verse-completion challenges and Mutashabihat alerts.",
+                                "Mutashobih oyatlar eslatmasi bilan oyatlarni davom ettirib Qur'on hifzingizni sinang."
+                            ),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         OutlinedTextField(
                             value = hifzTopicInput,
                             onValueChange = { hifzTopicInput = it },
-                            label = { Text(if (isArabicUi) "السورة أو الجزء (مثال: سورة الكهف، جزء تبارك)" else "Surah or Juz scope") },
+                            label = {
+                                Text(
+                                    appLanguage.pick(
+                                        "السورة أو الجزء (مثال: سورة الكهف، جزء تبارك)",
+                                        "Surah or Juz scope",
+                                        "Sura yoki pora (masalan: Kahf surasi)"
+                                    )
+                                )
+                            },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -825,15 +973,32 @@ private fun AskAiAndKhutbahContent(
                         ) {
                             Icon(Icons.Rounded.Quiz, null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text(if (isArabicUi) "توليد سؤال حفظ ومتشابهات" else "Generate Hifz & Mutashabihat Quiz")
+                            Text(
+                                appLanguage.pick(
+                                    "توليد سؤال حفظ ومتشابهات",
+                                    "Generate Hifz & Mutashabihat Quiz",
+                                    "Hifz va mutashobih savolini yaratish"
+                                )
+                            )
                         }
 
                         when (val qs = hifzQuizState) {
                             is UiState.Loading -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 AiPulsingDotsIndicator()
-                                Text(if (isArabicUi) "جارٍ إعداد السؤال..." else "Generating memorization challenge...")
+                                Text(
+                                    appLanguage.pick(
+                                        "جارٍ إعداد السؤال...",
+                                        "Generating memorization challenge...",
+                                        "Savol tayyorlanmoqda..."
+                                    )
+                                )
                             }
-                            is UiState.Error -> Text(qs.message, color = MaterialTheme.colorScheme.error)
+                            is UiState.Error -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(qs.message, color = MaterialTheme.colorScheme.error)
+                                if (isAppCheckTokenError(qs.message)) {
+                                    AppCheckInlineDiagnosticCard(appLanguage = appLanguage)
+                                }
+                            }
                             is UiState.Success -> qs.data?.let { quiz ->
                                 LiquidGlassCard(shape = RoundedCornerShape(22.dp), borderColor = BurnishedGold.copy(alpha = 0.45f)) {
                                     Text(quiz.surahRef, style = MaterialTheme.typography.labelLarge, color = BurnishedGold)
@@ -882,7 +1047,7 @@ private fun AskAiAndKhutbahContent(
                                         ) {
                                             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 Text(
-                                                    text = if (isArabicUi) "تنبيه المتشابهات" else "Mutashabihat Alert",
+                                                    text = appLanguage.pick("تنبيه المتشابهات", "Mutashabihat Alert", "Mutashobih oyat eslatmasi"),
                                                     style = MaterialTheme.typography.titleSmall,
                                                     fontWeight = FontWeight.Bold,
                                                     color = MaterialTheme.colorScheme.primary
@@ -909,7 +1074,11 @@ private fun AskAiAndKhutbahContent(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(MihrabIcons.Guides, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Text(
-                    if (isArabicUi) "ملخّص خطبة الجمعة والورد اليومي" else "Friday Khutbah & Daily Wird Summarizer",
+                    appLanguage.pick(
+                        "ملخّص خطبة الجمعة والورد اليومي",
+                        "Friday Khutbah & Daily Wird Summarizer",
+                        "Juma xutbasi va kunlik vird xulosasi"
+                    ),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
@@ -919,8 +1088,11 @@ private fun AskAiAndKhutbahContent(
                 onValueChange = { khutbahTopic = it },
                 label = {
                     Text(
-                        if (isArabicUi) "اكتب موضوع الخطبة أو ملاحظاتك (مثل: الصبر والشكر)"
-                        else "Enter Khutbah notes or topic (e.g., Patience & Gratitude)"
+                        appLanguage.pick(
+                            "اكتب موضوع الخطبة أو ملاحظاتك (مثل: الصبر والشكر)",
+                            "Enter Khutbah notes or topic (e.g., Patience & Gratitude)",
+                            "Xutba mavzusi yoki qaydlaringizni yozing (masalan: Sabr va shukr)"
+                        )
                     )
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -930,12 +1102,17 @@ private fun AskAiAndKhutbahContent(
                 enabled = effectiveAiEnabled && khutbahTopic.isNotBlank() && khutbahState !is UiState.Loading,
                 shape = RoundedCornerShape(18.dp)
             ) {
-                Text(if (isArabicUi) "توليد ملخص عملي" else "Generate Actionable Summary")
+                Text(appLanguage.pick("توليد ملخص عملي", "Generate Actionable Summary", "Amaliy xulosa yaratish"))
             }
 
             when (val ks = khutbahState) {
                 is UiState.Loading -> CircularProgressIndicator(modifier = Modifier.size(26.dp))
-                is UiState.Error -> Text(ks.message, color = MaterialTheme.colorScheme.error)
+                is UiState.Error -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(ks.message, color = MaterialTheme.colorScheme.error)
+                    if (isAppCheckTokenError(ks.message)) {
+                        AppCheckInlineDiagnosticCard(appLanguage = appLanguage)
+                    }
+                }
                 is UiState.Success -> ks.data?.let { summary ->
                     Surface(
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
@@ -950,6 +1127,89 @@ private fun AskAiAndKhutbahContent(
                             Text(summary.reflectionVerse, style = MaterialTheme.typography.labelSmall, color = BurnishedGold)
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+private fun isAppCheckTokenError(message: String): Boolean {
+    val lower = message.lowercase()
+    return lower.contains("app check") ||
+        lower.contains("appcheck") ||
+        lower.contains("token") ||
+        lower.contains("403") ||
+        lower.contains("unauthenticated") ||
+        lower.contains("attestation")
+}
+
+@Composable
+private fun AppCheckInlineDiagnosticCard(appLanguage: AppLanguage) {
+    val context = LocalContext.current
+    @Suppress("DEPRECATION")
+    val clipboard = LocalClipboardManager.current
+    val debugToken = remember { getAppCheckDebugSecret(context) }
+    var copied by remember { mutableStateOf(false) }
+
+    Surface(
+        color = BurnishedGold.copy(alpha = 0.14f),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, BurnishedGold.copy(alpha = 0.48f)),
+        modifier = Modifier.fillMaxWidth().testTag("ai_appcheck_diagnostic_card")
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Rounded.VerifiedUser, contentDescription = null, tint = BurnishedGold)
+                Text(
+                    text = appLanguage.pick(
+                        "حل خطأ توكن Firebase App Check (نسخة التصحيح)",
+                        "Fix Firebase App Check Token Error (Debug APK)",
+                        "Firebase App Check token xatosini tuzatish (Debug APK)"
+                    ),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                text = appLanguage.pick(
+                    "انسخ رمز التصحيح أدناه وأضفه في Firebase Console ← App Check ← Apps ← Manage debug tokens، ثم أعد المحاولة (أو استخدم تبويب الإعدادات لتعديله).",
+                    "Copy the Debug Token below and register it in Firebase Console -> App Check -> Apps -> Manage debug tokens, then retry.",
+                    "Quyidagi Debug Token ni nusxalab, Firebase Console -> App Check -> Apps -> Manage debug tokens bo'limiga qo'shing va qayta urinib ko'ring."
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Surface(
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = debugToken ?: appLanguage.pick(
+                        "لم يتولد الرمز بعد — افتح الإعدادات للعرض أو التخصيص",
+                        "Token not generated yet — open Settings to inspect or set custom UUID",
+                        "Token hali yaratilmadi — ko'rish yoki kiritish uchun Sozlamalarni oching"
+                    ),
+                    fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(10.dp)
+                )
+            }
+            if (!debugToken.isNullOrBlank()) {
+                OutlinedButton(
+                    onClick = {
+                        clipboard.setText(AnnotatedString(debugToken))
+                        copied = true
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.testTag("ai_copy_appcheck_token")
+                ) {
+                    Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        if (copied) appLanguage.pick("تم نسخ الرمز ✓", "Token Copied ✓", "Token nusxalandi ✓")
+                        else appLanguage.pick("نسخ Debug Token", "Copy Debug Token", "Debug Token nusxalash")
+                    )
                 }
             }
         }

@@ -19,11 +19,19 @@ object AdminAccess {
     }
 }
 
-enum class AdhanAlertMode(val id: String, val labelAr: String, val labelEn: String) {
-    FULL_ADHAN("FULL_ADHAN", "أذان كامل", "Full Adhan"),
-    TAKBIR_ONLY("TAKBIR_ONLY", "تكبير فقط", "Takbir Only"),
-    GENTLE_CHIME("GENTLE_CHIME", "نغمة هادئة", "Gentle Chime"),
-    SILENT("SILENT", "صامت", "Silent");
+enum class AdhanAlertMode(
+    val id: String,
+    val labelAr: String,
+    val labelEn: String,
+    val labelUz: String
+) {
+    FULL_ADHAN("FULL_ADHAN", "أذان كامل", "Full Adhan", "To'liq azon"),
+    TAKBIR_ONLY("TAKBIR_ONLY", "تكبير فقط", "Takbir Only", "Faqat takbir"),
+    GENTLE_CHIME("GENTLE_CHIME", "نغمة هادئة", "Gentle Chime", "Yengil ohang"),
+    SILENT("SILENT", "صامت", "Silent", "Jimjit");
+
+    fun labelFor(language: com.example.core.i18n.AppLanguage): String =
+        language.pick(labelAr, labelEn, labelUz)
 
     companion object {
         fun fromId(id: String?): AdhanAlertMode =
@@ -253,8 +261,15 @@ data class AppOperationsConfig(
     val bannerEnabled: Boolean = false,
     val bannerTitleAr: String = "",
     val bannerTitleEn: String = "",
+    val bannerTitleUz: String = "",
     val bannerBodyAr: String = "",
     val bannerBodyEn: String = "",
+    val bannerBodyUz: String = "",
+    val bannerImageUrl: String = "",
+    val bannerLinkUrl: String = "",
+    val bannerCtaAr: String = "",
+    val bannerCtaEn: String = "",
+    val bannerCtaUz: String = "",
     val bannerTone: String = "INFO",
     val aiAssistantEnabled: Boolean = true,
     val quranAudioEnabled: Boolean = true,
@@ -263,6 +278,10 @@ data class AppOperationsConfig(
     val arQiblaEnabled: Boolean = true,
     val kidsModeEnabled: Boolean = true,
     val customAdhanUploadEnabled: Boolean = true,
+    val smartShortcutsEnabled: Boolean = true,
+    val liveVersesCardEnabled: Boolean = true,
+    val nearbyMosquesEnabled: Boolean = true,
+    val persistentPrayerNotificationAllowed: Boolean = true,
     val maintenanceMode: Boolean = false
 )
 

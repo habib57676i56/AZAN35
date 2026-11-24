@@ -107,6 +107,8 @@ import com.example.core.hardware.shareDesignedVerseTextOrCard
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
 import com.example.core.i18n.formatNumerals
+import com.example.core.preferences.FeatureUsageTracker
+import com.example.core.preferences.SmartFeatureId
 import com.example.data.firebase.AppOperationsConfig
 import com.example.domain.AdhkarCategoryMeta
 import com.example.domain.IslamicLibraryData
@@ -138,7 +140,8 @@ fun DhikrScreen(
 ) {
     val context = LocalContext.current
     val glass = LocalLiquidGlassPalette.current
-    val isArabicUi = appLanguage == AppLanguage.ARABIC || appLanguage == AppLanguage.URDU
+    val isArabicUi = appLanguage.isArabicUi
+    val useArabicDigits = useIndic && isArabicUi
     val tasbihState by viewModel.tasbihState.collectAsStateWithLifecycle()
     val journalState by viewModel.journalState.collectAsStateWithLifecycle()
     val duaWallState by viewModel.duaWallState.collectAsStateWithLifecycle()
@@ -148,6 +151,12 @@ fun DhikrScreen(
     var activeSection by remember { mutableIntStateOf(initialSubTab) } // 0=Adhkar, 1=Tasbih, 2=99Names, 3=Journal/Wall
     LaunchedEffect(initialSubTab, subTabTriggerNonce) {
         activeSection = initialSubTab
+    }
+    LaunchedEffect(activeSection) {
+        when (activeSection) {
+            0 -> FeatureUsageTracker.recordUsage(context, SmartFeatureId.ADHKAR)
+            1 -> FeatureUsageTracker.recordUsage(context, SmartFeatureId.TASBIH)
+        }
     }
 
     var selectedCategory by remember { mutableStateOf(AdhkarCategoryMeta.MORNING) }
@@ -261,7 +270,7 @@ fun DhikrScreen(
                                                 )
                                             }
                                             Text(
-                                                formatNumerals("$completedInCat/${activeCategoryItems.size}", useIndic),
+                                                formatNumerals("$completedInCat/${activeCategoryItems.size}", useArabicDigits),
                                                 style = MaterialTheme.typography.labelLarge.withTabularNums(),
                                                 fontWeight = FontWeight.Bold
                                             )
@@ -275,7 +284,7 @@ fun DhikrScreen(
                                                     modifier = Modifier.size(20.dp)
                                                 )
                                                 Text(
-                                                    text = if (isArabicUi) selectedCategory.titleAr else selectedCategory.titleEn,
+                                                    text = selectedCategory.titleFor(appLanguage),
                                                     style = MaterialTheme.typography.titleLarge,
                                                     fontWeight = FontWeight.Bold,
                                                     maxLines = 1,
@@ -283,11 +292,11 @@ fun DhikrScreen(
                                                 )
                                             }
                                             Text(
-                                                text = if (isArabicUi) {
-                                                    "حصن المسلم الشامل (${AdhkarCategoryMeta.entries.size} باباً) • اضغط على البطاقة للتسبيح والعد وحفظ الإنجاز اليومي."
-                                                } else {
-                                                    "Comprehensive Hisn al-Muslim (${AdhkarCategoryMeta.entries.size} categories) • Tap cards to count & sync daily progress."
-                                                },
+                                                text = appLanguage.pick(
+                                                    "حصن المسلم الشامل (${AdhkarCategoryMeta.entries.size} باباً) • اضغط على البطاقة للتسبيح والعد وحفظ الإنجاز اليومي.",
+                                                    "Comprehensive Hisn al-Muslim (${AdhkarCategoryMeta.entries.size} categories) • Tap cards to count & sync daily progress.",
+                                                    "To'liq Hisnul Muslim (${AdhkarCategoryMeta.entries.size} bo'lim) • Sanash va kunlik natijani saqlash uchun kartani bosing."
+                                                ),
                                                 style = MaterialTheme.typography.bodyMedium,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -305,7 +314,7 @@ fun DhikrScreen(
                                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                                 Text(strings.dailyAdhkarStats, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                                                 Text(
-                                                    text = formatNumerals("$totalDailyCompleted / $totalDailyTarget", useIndic),
+                                                    text = formatNumerals("$totalDailyCompleted / $totalDailyTarget", useArabicDigits),
                                                     style = MaterialTheme.typography.labelLarge.withTabularNums(),
                                                     fontWeight = FontWeight.Bold,
                                                     color = MaterialTheme.colorScheme.primary
@@ -344,7 +353,13 @@ fun DhikrScreen(
                                     }
                                 },
                                 label = {
-                                    Text(if (isArabicUi) "ابحث في جميع الأذكار والأدعية..." else "Search all 12 Adhkar categories...")
+                                    Text(
+                                        appLanguage.pick(
+                                            "ابحث في جميع الأذكار والأدعية...",
+                                            "Search all 12 Adhkar categories...",
+                                            "Barcha 12 zikr bo'limidan qidirish..."
+                                        )
+                                    )
                                 },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
@@ -368,7 +383,7 @@ fun DhikrScreen(
                                         selectedCategory = cat
                                     },
                                     icon = if (catDone) Icons.Rounded.CheckCircle else MihrabIcons.iconForAdhkarCategory(cat.id),
-                                    label = if (isArabicUi) cat.titleAr else cat.titleEn,
+                                    label = cat.titleFor(appLanguage),
                                     activeColor = if (catDone) LuminousMintEmerald else MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.testTag("adhkar_cat_${cat.id}")
                                 )
@@ -421,7 +436,7 @@ fun DhikrScreen(
                                         }
                                     }
                                     Text(
-                                        text = if (isArabicUi) dhikr.titleAr else "${dhikr.titleEn} • ${catMeta.titleEn}",
+                                        text = if (isArabicUi) dhikr.titleAr else "${dhikr.titleEn} • ${catMeta.titleFor(appLanguage)}",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 2,
@@ -441,7 +456,7 @@ fun DhikrScreen(
                                         ) {
                                             Icon(
                                                 Icons.Rounded.Refresh,
-                                                contentDescription = if (isArabicUi) "إعادة" else "Reset",
+                                                contentDescription = appLanguage.pick("إعادة", "Reset", "Nolga tushirish"),
                                                 modifier = Modifier.size(16.dp)
                                             )
                                         }
@@ -455,7 +470,7 @@ fun DhikrScreen(
                                         )
                                     ) {
                                         Text(
-                                            text = formatNumerals("$doneCount/${dhikr.targetCount}", useIndic),
+                                            text = formatNumerals("$doneCount/${dhikr.targetCount}", useArabicDigits),
                                             color = if (finished) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
                                             style = MaterialTheme.typography.labelLarge.withTabularNums(),
                                             fontWeight = FontWeight.Bold,
@@ -490,7 +505,7 @@ fun DhikrScreen(
                                         audioPlayer.speak(dhikr.titleAr, dhikr.arabic, preferArabic = true)
                                     },
                                     icon = Icons.Rounded.PlayArrow,
-                                    label = if (isArabicUi) "استماع" else "Listen"
+                                    label = appLanguage.pick("استماع", "Listen", "Tinglash")
                                 )
                                 LiquidGlassPill(
                                     selected = false,
@@ -503,7 +518,7 @@ fun DhikrScreen(
                                         )
                                     },
                                     icon = Icons.Rounded.Share,
-                                    label = if (isArabicUi) "هدية حسنات" else "Hasanat Gift"
+                                    label = appLanguage.pick("هدية حسنات", "Hasanat Gift", "Savob hadyasi")
                                 )
                             }
                         }
@@ -513,17 +528,18 @@ fun DhikrScreen(
                 1 -> item {
                     TasbihSection(
                         tasbihState = tasbihState,
-                        isArabicUi = isArabicUi,
+                        appLanguage = appLanguage,
                         strings = strings,
-                        useIndic = useIndic,
+                        useArabicDigits = useArabicDigits,
                         onSaveCounter = { id, label, arabic, count, target ->
+                            FeatureUsageTracker.recordUsage(context, SmartFeatureId.TASBIH)
                             viewModel.saveTasbihCounter(id, label, arabic, count, target)
                         }
                     )
                 }
 
                 2 -> item {
-                    NamesOfAllahSection(isArabicUi = isArabicUi, useIndic = useIndic)
+                    NamesOfAllahSection(appLanguage = appLanguage, useArabicDigits = useArabicDigits)
                 }
 
                 3 -> item {
@@ -531,8 +547,9 @@ fun DhikrScreen(
                         journalState = journalState,
                         duaWallState = duaWallState,
                         currentUserId = currentUserId,
-                        isArabicUi = isArabicUi,
+                        appLanguage = appLanguage,
                         strings = strings,
+                        useArabicDigits = useArabicDigits,
                         communityDuaWallEnabled = appOperations.communityDuaWallEnabled,
                         viewModel = viewModel
                     )
@@ -546,11 +563,12 @@ fun DhikrScreen(
 @Composable
 private fun TasbihSection(
     tasbihState: UiState<List<com.example.data.firebase.TasbihCounterDoc>>,
-    isArabicUi: Boolean,
+    appLanguage: AppLanguage,
     strings: LocalizedStrings,
-    useIndic: Boolean,
+    useArabicDigits: Boolean,
     onSaveCounter: (String, String, String, Long, Long) -> Unit
 ) {
+    val isArabicUi = appLanguage.isArabicUi
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val glass = LocalLiquidGlassPalette.current
@@ -606,21 +624,26 @@ private fun TasbihSection(
 
     fun startVoiceTasbih() {
         if (recognizer == null) {
-            voiceStatus = if (isArabicUi) {
-                "التعرف الصوتي غير متوفر على هذا الجهاز؛ اضغط على السبحة للعد."
-            } else {
-                "Speech recognizer unavailable on this device; tap the Tasbih orb to count."
-            }
+            voiceStatus = appLanguage.pick(
+                "التعرف الصوتي غير متوفر على هذا الجهاز؛ اضغط على السبحة للعد.",
+                "Speech recognizer unavailable on this device; tap the Tasbih orb to count.",
+                "Bu qurilmada ovozli tanish mavjud emas; sanash uchun tasbeh doirasini bosing."
+            )
             return
+        }
+        val speechLang = when (appLanguage) {
+            AppLanguage.ARABIC, AppLanguage.URDU -> "ar-SA"
+            AppLanguage.UZBEK -> "uz-UZ"
+            else -> "en-US"
         }
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (isArabicUi) "ar-SA" else "en-US")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, speechLang)
         }
         recognizer.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
                 voiceListening = true
-                voiceStatus = if (isArabicUi) "انطق الذكر الآن..." else "Speak your Dhikr now..."
+                voiceStatus = appLanguage.pick("انطق الذكر الآن...", "Speak your Dhikr now...", "Endi zikrni ayting...")
             }
             override fun onBeginningOfSpeech() = Unit
             override fun onRmsChanged(rmsdB: Float) = Unit
@@ -628,20 +651,29 @@ private fun TasbihSection(
             override fun onEndOfSpeech() { voiceListening = false }
             override fun onError(error: Int) {
                 voiceListening = false
-                voiceStatus = if (isArabicUi) "توقف الاستماع. اضغط السبحة أو أعد المحاولة." else "Voice capture ended. Tap orb or retry."
+                voiceStatus = appLanguage.pick(
+                    "توقف الاستماع. اضغط السبحة أو أعد المحاولة.",
+                    "Voice capture ended. Tap orb or retry.",
+                    "Tinglash to'xtadi. Doirani bosing yoki qayta urining."
+                )
             }
             override fun onResults(results: Bundle?) {
                 voiceListening = false
                 val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty().lowercase()
                 val matches = text.split(" ").count {
                     it.contains("subhan") || it.contains("hamd") || it.contains("akbar") || it.contains("allah") ||
+                        it.contains("alloh") || it.contains("astag") ||
                         it.contains("سبحان") || it.contains("الحمد") || it.contains("أكبر") || it.contains("أستغفر")
                 }.coerceAtLeast(if (text.isNotBlank()) 1 else 0)
                 if (matches > 0) {
                     localCount += matches
                     triggerHaptic(context)
                     onSaveCounter(activePreset.first, activePreset.second, activePreset.third, localCount.toLong(), target.toLong())
-                    voiceStatus = if (isArabicUi) "تم احتساب +$matches (\"$text\")" else "Counted +$matches (\"$text\")"
+                    voiceStatus = appLanguage.pick(
+                        "تم احتساب +$matches (\"$text\")",
+                        "Counted +$matches (\"$text\")",
+                        "+$matches qo'shildi (\"$text\")"
+                    )
                 }
             }
             override fun onPartialResults(partialResults: Bundle?) = Unit
@@ -652,7 +684,11 @@ private fun TasbihSection(
 
     val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) startVoiceTasbih()
-        else voiceStatus = if (isArabicUi) "تم رفض إذن الميكروفون؛ استخدم اللمس للعد." else "Microphone permission denied; tap the orb to count."
+        else voiceStatus = appLanguage.pick(
+            "تم رفض إذن الميكروفون؛ استخدم اللمس للعد.",
+            "Microphone permission denied; tap the orb to count.",
+            "Mikrofon ruxsati berilmadi; sanash uchun doirani bosing."
+        )
     }
 
     LiquidGlassCard(
@@ -688,7 +724,7 @@ private fun TasbihSection(
                         selected = false,
                         onClick = { showNewDhikrDialog = true },
                         icon = Icons.Rounded.Add,
-                        label = if (isArabicUi) "ذكر مخصص" else "Add Custom"
+                        label = appLanguage.pick("ذكر مخصص", "Add Custom", "Maxsus zikr")
                     )
                 }
 
@@ -796,16 +832,16 @@ private fun TasbihSection(
                             }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(
-                                    text = formatNumerals(localCount.toString(), useIndic),
+                                    text = formatNumerals(localCount.toString(), useArabicDigits),
                                     style = MaterialTheme.typography.displayLarge.withTabularNums(),
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = if (isArabicUi) {
-                                        "الهدف ${formatNumerals(target.toString(), useIndic)} • اضغط"
-                                    } else {
-                                        "Goal ${formatNumerals(target.toString(), useIndic)} • Tap"
-                                    },
+                                    text = appLanguage.pick(
+                                        "الهدف ${formatNumerals(target.toString(), useArabicDigits)} • اضغط",
+                                        "Goal ${formatNumerals(target.toString(), useArabicDigits)} • Tap",
+                                        "Maqsad ${formatNumerals(target.toString(), useArabicDigits)} • Bosing"
+                                    ),
                                     style = MaterialTheme.typography.labelLarge.withTabularNums(),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -825,7 +861,7 @@ private fun TasbihSection(
                                 target = goal
                                 onSaveCounter(activePreset.first, activePreset.second, activePreset.third, localCount.toLong(), target.toLong())
                             },
-                            label = formatNumerals(goal.toString(), useIndic)
+                            label = formatNumerals(goal.toString(), useArabicDigits)
                         )
                     }
                     LiquidGlassPill(
@@ -855,9 +891,9 @@ private fun TasbihSection(
                         Spacer(Modifier.width(6.dp))
                         Text(
                             if (voiceListening) {
-                                if (isArabicUi) "جارٍ الاستماع..." else "Listening..."
+                                appLanguage.pick("جارٍ الاستماع...", "Listening...", "Tinglanmoqda...")
                             } else {
-                                if (isArabicUi) "تسبيح صوتي" else "Voice Tasbih"
+                                appLanguage.pick("تسبيح صوتي", "Voice Tasbih", "Ovozli tasbeh")
                             }
                         )
                     }
@@ -868,7 +904,7 @@ private fun TasbihSection(
                             onSaveCounter(activePreset.first, activePreset.second, activePreset.third, 0L, target.toLong())
                         },
                         icon = Icons.Rounded.Refresh,
-                        label = if (isArabicUi) "تصفير" else "Reset"
+                        label = appLanguage.pick("تصفير", "Reset", "Nolga tushirish")
                     )
                 }
 
@@ -888,7 +924,15 @@ private fun TasbihSection(
                     value = customTargetInput,
                     onValueChange = { customTargetInput = it.filter { ch -> ch.isDigit() }.take(5) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    label = { Text(if (isArabicUi) "العدد المطلوب (١ - ١٠٠٠٠٠)" else "Target count (1 - 100000)") },
+                    label = {
+                        Text(
+                            appLanguage.pick(
+                                "العدد المطلوب (١ - ١٠٠٠٠٠)",
+                                "Target count (1 - 100000)",
+                                "Maqsadli son (1 - 100000)"
+                            )
+                        )
+                    },
                     singleLine = true
                 )
             },
@@ -909,19 +953,27 @@ private fun TasbihSection(
     if (showNewDhikrDialog) {
         AlertDialog(
             onDismissRequest = { showNewDhikrDialog = false },
-            title = { Text(if (isArabicUi) "إضافة ذكر مخصص" else "Create Custom Dhikr") },
+            title = { Text(appLanguage.pick("إضافة ذكر مخصص", "Create Custom Dhikr", "Maxsus zikr qo'shish")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = newDhikrLabel,
                         onValueChange = { newDhikrLabel = it },
-                        label = { Text(if (isArabicUi) "العنوان (مثل: لا حول ولا قوة إلا بالله)" else "Short label") },
+                        label = {
+                            Text(
+                                appLanguage.pick(
+                                    "العنوان (مثل: لا حول ولا قوة إلا بالله)",
+                                    "Short label",
+                                    "Qisqa nom"
+                                )
+                            )
+                        },
                         singleLine = true
                     )
                     OutlinedTextField(
                         value = newDhikrArabic,
                         onValueChange = { newDhikrArabic = it },
-                        label = { Text(if (isArabicUi) "النص العربي" else "Arabic text") },
+                        label = { Text(appLanguage.pick("النص العربي", "Arabic text", "Arabcha matn")) },
                         minLines = 2
                     )
                 }
@@ -949,7 +1001,7 @@ private fun TasbihSection(
 }
 
 @Composable
-private fun NamesOfAllahSection(isArabicUi: Boolean, useIndic: Boolean) {
+private fun NamesOfAllahSection(appLanguage: AppLanguage, useArabicDigits: Boolean) {
     val glass = LocalLiquidGlassPalette.current
     var query by remember { mutableStateOf("") }
     var quizMode by remember { mutableStateOf(false) }
@@ -968,7 +1020,7 @@ private fun NamesOfAllahSection(isArabicUi: Boolean, useIndic: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(
-                if (isArabicUi) "أسماء الله الحسنى (٩٩ اسماً)" else "Asma al-Husna (99 Names)",
+                appLanguage.pick("أسماء الله الحسنى (٩٩ اسماً)", "Asma al-Husna (99 Names)", "Allohning 99 go'zal ismi"),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f)
@@ -977,7 +1029,8 @@ private fun NamesOfAllahSection(isArabicUi: Boolean, useIndic: Boolean) {
                 selected = quizMode,
                 onClick = { quizMode = !quizMode; quizFeedback = null },
                 icon = Icons.Rounded.Stars,
-                label = if (quizMode) (if (isArabicUi) "عرض القائمة" else "Browse List") else (if (isArabicUi) "اختبار" else "Flashcard Quiz")
+                label = if (quizMode) appLanguage.pick("عرض القائمة", "Browse List", "Ro'yxat")
+                else appLanguage.pick("اختبار", "Flashcard Quiz", "Viktorina")
             )
         }
 
@@ -1000,7 +1053,14 @@ private fun NamesOfAllahSection(isArabicUi: Boolean, useIndic: Boolean) {
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        formatNumerals("Score: $quizScore • #${current.number}/99", useIndic),
+                        formatNumerals(
+                            appLanguage.pick(
+                                "النتيجة: $quizScore • #${current.number}/99",
+                                "Score: $quizScore • #${current.number}/99",
+                                "Ball: $quizScore • #${current.number}/99"
+                            ),
+                            useArabicDigits
+                        ),
                         style = MaterialTheme.typography.labelLarge.withTabularNums(),
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -1034,7 +1094,7 @@ private fun NamesOfAllahSection(isArabicUi: Boolean, useIndic: Boolean) {
                     value = query,
                     onValueChange = { query = it },
                     leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                    label = { Text(if (isArabicUi) "ابحث في الأسماء الحسنى..." else "Search 99 Names...") },
+                    label = { Text(appLanguage.pick("ابحث في الأسماء الحسنى...", "Search 99 Names...", "99 ismdan qidirish...")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1052,7 +1112,7 @@ private fun NamesOfAllahSection(isArabicUi: Boolean, useIndic: Boolean) {
                     ) {
                         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(
-                                "${formatNumerals(name.number.toString(), useIndic)}. ${name.transliteration}",
+                                "${formatNumerals(name.number.toString(), useArabicDigits)}. ${name.transliteration}",
                                 style = MaterialTheme.typography.titleMedium.withTabularNums(),
                                 fontWeight = FontWeight.Bold
                             )
@@ -1073,8 +1133,9 @@ private fun JournalAndDuaWallSection(
     journalState: UiState<List<com.example.data.firebase.JournalEntryDoc>>,
     duaWallState: UiState<List<com.example.data.firebase.DuaWallPostDoc>>,
     currentUserId: String,
-    isArabicUi: Boolean,
+    appLanguage: AppLanguage,
     strings: LocalizedStrings,
+    useArabicDigits: Boolean,
     communityDuaWallEnabled: Boolean,
     viewModel: MihrabViewModel
 ) {
@@ -1084,7 +1145,9 @@ private fun JournalAndDuaWallSection(
     var bodyInput by remember { mutableStateOf("") }
     var entryType by remember { mutableStateOf("DUA") }
 
-    var wallAlias by remember { mutableStateOf(if (isArabicUi) "طالب دعاء" else "Anonymous Believer") }
+    var wallAlias by remember {
+        mutableStateOf(appLanguage.pick("طالب دعاء", "Anonymous Believer", "Duo so'rovchi"))
+    }
     var wallCategory by remember { mutableStateOf("HEALING") }
     var wallRequest by remember { mutableStateOf("") }
 
@@ -1101,15 +1164,35 @@ private fun JournalAndDuaWallSection(
                 Text(strings.duaJournal, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(
-                        "DUA" to (if (isArabicUi) "دعاء خاص" else "Personal Dua"),
-                        "GRATITUDE" to (if (isArabicUi) "شكر ونعمة" else "Gratitude"),
-                        "VERSE_NOTE" to (if (isArabicUi) "تأمل" else "Reflection")
+                        "DUA" to appLanguage.pick("دعاء خاص", "Personal Dua", "Shaxsiy duo"),
+                        "GRATITUDE" to appLanguage.pick("شكر ونعمة", "Gratitude", "Shukrona"),
+                        "VERSE_NOTE" to appLanguage.pick("تأمل", "Reflection", "Tafakkur")
                     ).forEach { (k, lbl) ->
                         LiquidGlassPill(selected = entryType == k, onClick = { entryType = k }, label = lbl)
                     }
                 }
-                OutlinedTextField(value = titleInput, onValueChange = { titleInput = it }, label = { Text(if (isArabicUi) "العنوان" else "Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = bodyInput, onValueChange = { bodyInput = it }, label = { Text(if (isArabicUi) "اكتب دعاءك أو تأملك الخاص..." else "Write your private prayer or gratitude...") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = titleInput,
+                    onValueChange = { titleInput = it },
+                    label = { Text(appLanguage.pick("العنوان", "Title", "Sarlavha")) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = bodyInput,
+                    onValueChange = { bodyInput = it },
+                    label = {
+                        Text(
+                            appLanguage.pick(
+                                "اكتب دعاءك أو تأملك الخاص...",
+                                "Write your private prayer or gratitude...",
+                                "Shaxsiy duongiz yoki shukronangizni yozing..."
+                            )
+                        )
+                    },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Button(
                     onClick = {
                         viewModel.addJournalEntry(entryType, titleInput, bodyInput, null)
@@ -1140,18 +1223,22 @@ private fun JournalAndDuaWallSection(
                                 IconButton(onClick = { viewModel.toggleJournalAnswered(entry) }) {
                                     Icon(
                                         Icons.Rounded.CheckCircle,
-                                        contentDescription = "Mark answered",
+                                        contentDescription = appLanguage.pick("تمت الاستجابة", "Mark answered", "Ijobat bo'ldi"),
                                         tint = if (entry.answered) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                                     )
                                 }
                                 IconButton(onClick = { viewModel.deleteJournalEntry(entry.id) }) {
-                                    Icon(Icons.Rounded.Delete, contentDescription = "Delete entry")
+                                    Icon(Icons.Rounded.Delete, contentDescription = appLanguage.pick("حذف", "Delete entry", "O'chirish"))
                                 }
                             }
                             Text(entry.body, style = MaterialTheme.typography.bodyMedium)
                             if (entry.answered) {
                                 Text(
-                                    if (isArabicUi) "الحمد لله — تم استجابة الدعاء" else "Alhamdulillah — Marked as Answered",
+                                    appLanguage.pick(
+                                        "الحمد لله — تم استجابة الدعاء",
+                                        "Alhamdulillah — Marked as Answered",
+                                        "Alhamdulillah — Duo ijobat bo'ldi deb belgilandi"
+                                    ),
                                     style = MaterialTheme.typography.labelLarge,
                                     color = MaterialTheme.colorScheme.primary
                                 )
@@ -1164,17 +1251,48 @@ private fun JournalAndDuaWallSection(
             LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
                 Text(strings.communityDuaWall, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
-                    if (isArabicUi) "شارك طلب دعاء مجهول الهوية ليؤمّن عليه المسلمون." else "Share a prayer request anonymously. Your real identity is never shown.",
+                    appLanguage.pick(
+                        "شارك طلب دعاء مجهول الهوية ليؤمّن عليه المسلمون.",
+                        "Share a prayer request anonymously. Your real identity is never shown.",
+                        "Anonim tarzda duo so'rang. Haqiqiy ismingiz ko'rsatilmaydi."
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("HEALING", "GUIDANCE", "SUSTENANCE", "FAMILY", "DECEASED", "GENERAL").forEach { cat ->
-                        LiquidGlassPill(selected = wallCategory == cat, onClick = { wallCategory = cat }, label = cat)
+                    listOf(
+                        "HEALING" to appLanguage.pick("شفاء", "Healing", "Shifo"),
+                        "GUIDANCE" to appLanguage.pick("هداية", "Guidance", "Hidoyat"),
+                        "SUSTENANCE" to appLanguage.pick("رزق", "Sustenance", "Rizq"),
+                        "FAMILY" to appLanguage.pick("عائلة", "Family", "Oila"),
+                        "DECEASED" to appLanguage.pick("رحمة", "Deceased", "Marhumlar"),
+                        "GENERAL" to appLanguage.pick("عام", "General", "Umumiy")
+                    ).forEach { (cat, catLabel) ->
+                        LiquidGlassPill(selected = wallCategory == cat, onClick = { wallCategory = cat }, label = catLabel)
                     }
                 }
-                OutlinedTextField(value = wallAlias, onValueChange = { wallAlias = it }, label = { Text(if (isArabicUi) "الاسم المستعار" else "Pen name (anonymous)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = wallRequest, onValueChange = { wallRequest = it }, label = { Text(if (isArabicUi) "طلب الدعاء (٥ أحرف على الأقل)" else "Dua request (min 5 chars)") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = wallAlias,
+                    onValueChange = { wallAlias = it },
+                    label = { Text(appLanguage.pick("الاسم المستعار", "Pen name (anonymous)", "Taxallus (anonim)")) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = wallRequest,
+                    onValueChange = { wallRequest = it },
+                    label = {
+                        Text(
+                            appLanguage.pick(
+                                "طلب الدعاء (٥ أحرف على الأقل)",
+                                "Dua request (min 5 chars)",
+                                "Duo matni (kamida 5 ta harf)"
+                            )
+                        )
+                    },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Button(
                     onClick = {
                         viewModel.postDuaWall(wallAlias, wallCategory, wallRequest)
@@ -1183,7 +1301,7 @@ private fun JournalAndDuaWallSection(
                     enabled = wallRequest.trim().length >= 5,
                     shape = RoundedCornerShape(18.dp)
                 ) {
-                    Text(if (isArabicUi) "مشاركة في حائط الدعاء" else "Share on Dua Wall")
+                    Text(appLanguage.pick("مشاركة في حائط الدعاء", "Share on Dua Wall", "Duo devorida ulashish"))
                 }
             }
 
@@ -1193,7 +1311,11 @@ private fun JournalAndDuaWallSection(
                 is UiState.Success -> {
                     if (duaWallState.data.isEmpty()) {
                         Text(
-                            if (isArabicUi) "لا توجد طلبات دعاء بعد. كن أول من يطلب الدعاء." else "No community requests yet.",
+                            appLanguage.pick(
+                                "لا توجد طلبات دعاء بعد. كن أول من يطلب الدعاء.",
+                                "No community requests yet.",
+                                "Hozircha duo so'rovlari yo'q. Birinchi bo'ling."
+                            ),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     } else {
@@ -1206,7 +1328,7 @@ private fun JournalAndDuaWallSection(
                                     Text("${post.alias} • ${post.category}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                                     if (post.authorUid == currentUserId) {
                                         IconButton(onClick = { viewModel.deleteMyDuaPost(post.id) }, modifier = Modifier.size(28.dp)) {
-                                            Icon(Icons.Rounded.Delete, contentDescription = "Delete my post", modifier = Modifier.size(18.dp))
+                                            Icon(Icons.Rounded.Delete, contentDescription = appLanguage.pick("حذف", "Delete my post", "O'chirish"), modifier = Modifier.size(18.dp))
                                         }
                                     }
                                 }
@@ -1215,7 +1337,7 @@ private fun JournalAndDuaWallSection(
                                     selected = false,
                                     onClick = { viewModel.sayAmeen(post.id) },
                                     icon = Icons.Rounded.Favorite,
-                                    label = "${strings.ameen} (${post.ameenCount})"
+                                    label = "${strings.ameen} (${formatNumerals(post.ameenCount.toString(), useArabicDigits)})"
                                 )
                             }
                         }

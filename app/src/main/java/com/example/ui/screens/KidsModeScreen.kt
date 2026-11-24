@@ -33,10 +33,14 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.core.hardware.QuranTtsAudioPlayer
+import com.example.core.i18n.AppLanguage
+import com.example.core.i18n.LocalizedStrings
+import com.example.core.i18n.stringsFor
 import com.example.domain.IslamicLibraryData
 import com.example.ui.theme.AmiriFontFamily
 import com.example.ui.theme.IslamicGeometricPatternCanvas
@@ -47,6 +51,8 @@ import com.example.ui.theme.LocalLiquidGlassPalette
 @Composable
 fun KidsModeScreen(
     audioPlayer: QuranTtsAudioPlayer,
+    appLanguage: AppLanguage = AppLanguage.ARABIC,
+    strings: LocalizedStrings = stringsFor(appLanguage),
     onExitKidsMode: () -> Unit
 ) {
     val starsEarned = remember { mutableStateListOf(true, false, false, false) }
@@ -84,10 +90,16 @@ fun KidsModeScreen(
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                                     Icon(Icons.Rounded.ChildCare, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
                                     Spacer(Modifier.width(8.dp))
-                                    Text("Mihrab Kids Sanctuary", style = MaterialTheme.typography.headlineMedium)
+                                    Text(
+                                        text = appLanguage.pick("واحة محراب للصغار", "Mihrab Kids Sanctuary", "Mihrob Bolalar Bog'i"),
+                                        style = MaterialTheme.typography.headlineMedium
+                                    )
                                 }
-                                OutlinedButton(onClick = onExitKidsMode) {
-                                    Text("Exit Kids Mode")
+                                OutlinedButton(
+                                    onClick = onExitKidsMode,
+                                    modifier = Modifier.testTag("kids_exit_button")
+                                ) {
+                                    Text(appLanguage.pick("خروج", "Exit Kids Mode", "Chiqish"))
                                 }
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -95,7 +107,15 @@ fun KidsModeScreen(
                                     Icon(Icons.Rounded.Star, null, tint = glass.accentGold, modifier = Modifier.size(28.dp))
                                 }
                                 Spacer(Modifier.width(8.dp))
-                                Text("$countStars / 4 Stars Earned Today!", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = appLanguage.pick(
+                                        "حصلت على $countStars / 4 نجوم اليوم!",
+                                        "$countStars / 4 Stars Earned Today!",
+                                        "Bugun $countStars / 4 ta yulduz oldingiz!"
+                                    ),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
                     }
@@ -104,13 +124,30 @@ fun KidsModeScreen(
 
             item {
                 LiquidGlassCard(modifier = Modifier.fillMaxWidth()) {
-                    Text("My Daily Good Deeds", style = MaterialTheme.typography.titleLarge)
-                    val deeds = listOf(
-                        "Said Bismillah before eating",
-                        "Prayed with family",
-                        "Recited Surah Al-Ikhlas",
-                        "Spoke kindly to parents"
+                    Text(
+                        text = appLanguage.pick("أعمالي الصالحة اليوم", "My Daily Good Deeds", "Bugungi yaxshi ishlarim"),
+                        style = MaterialTheme.typography.titleLarge
                     )
+                    val deeds = when {
+                        appLanguage.isArabicUi -> listOf(
+                            "قلت بسم الله قبل الطعام",
+                            "صليت مع عائلتي",
+                            "قرأت سورة الإخلاص",
+                            "تحدثت بلطف مع والديّ"
+                        )
+                        appLanguage == AppLanguage.UZBEK -> listOf(
+                            "Ovqatdan oldin Bismillah dedim",
+                            "Oilam bilan namoz o'qidim",
+                            "Ixlos surasini o'qidim",
+                            "Ota-onamga muloyim gapirdim"
+                        )
+                        else -> listOf(
+                            "Said Bismillah before eating",
+                            "Prayed with family",
+                            "Recited Surah Al-Ikhlas",
+                            "Spoke kindly to parents"
+                        )
+                    }
                     deeds.forEachIndexed { idx, deed ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = starsEarned[idx], onCheckedChange = { starsEarned[idx] = it })
@@ -122,7 +159,10 @@ fun KidsModeScreen(
 
             item {
                 LiquidGlassCard(modifier = Modifier.fillMaxWidth()) {
-                    Text("Tap Arabic Letters to Hear!", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        text = appLanguage.pick("اضغط على الحروف العربية للاستماع!", "Tap Arabic Letters to Hear!", "Eshitish uchun arab harflarini bosing!"),
+                        style = MaterialTheme.typography.titleLarge
+                    )
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         IslamicLibraryData.nooraniaLessons.forEach { l ->
                             Surface(
@@ -146,7 +186,10 @@ fun KidsModeScreen(
 
             item {
                 LiquidGlassCard(modifier = Modifier.fillMaxWidth()) {
-                    Text("Bedtime Prophet Stories", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        text = appLanguage.pick("قصص الأنبياء قبل النوم", "Bedtime Prophet Stories", "Uyqu oldidan Payg'ambarlar qissasi"),
+                        style = MaterialTheme.typography.titleLarge
+                    )
                     IslamicLibraryData.prophetsStories.take(4).forEach { story ->
                         Row(
                             Modifier.fillMaxWidth(),
@@ -154,7 +197,11 @@ fun KidsModeScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(story.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = if (appLanguage.isArabicUi) story.arabicName else story.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
                                 Text(story.keyLesson, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Button(onClick = {
@@ -162,7 +209,7 @@ fun KidsModeScreen(
                             }) {
                                 Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("Listen")
+                                Text(appLanguage.pick("استماع", "Listen", "Tinglash"))
                             }
                         }
                     }

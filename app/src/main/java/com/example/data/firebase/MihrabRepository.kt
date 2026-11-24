@@ -482,8 +482,15 @@ class MihrabRepository(
                                 bannerEnabled = obj.optBoolean("bannerEnabled", false),
                                 bannerTitleAr = obj.optString("bannerTitleAr", ""),
                                 bannerTitleEn = obj.optString("bannerTitleEn", ""),
+                                bannerTitleUz = obj.optString("bannerTitleUz", ""),
                                 bannerBodyAr = obj.optString("bannerBodyAr", ""),
                                 bannerBodyEn = obj.optString("bannerBodyEn", ""),
+                                bannerBodyUz = obj.optString("bannerBodyUz", ""),
+                                bannerImageUrl = obj.optString("bannerImageUrl", ""),
+                                bannerLinkUrl = obj.optString("bannerLinkUrl", ""),
+                                bannerCtaAr = obj.optString("bannerCtaAr", ""),
+                                bannerCtaEn = obj.optString("bannerCtaEn", ""),
+                                bannerCtaUz = obj.optString("bannerCtaUz", ""),
                                 bannerTone = obj.optString("bannerTone", "INFO"),
                                 aiAssistantEnabled = obj.optBoolean("aiAssistantEnabled", true),
                                 quranAudioEnabled = obj.optBoolean("quranAudioEnabled", true),
@@ -492,6 +499,10 @@ class MihrabRepository(
                                 arQiblaEnabled = obj.optBoolean("arQiblaEnabled", true),
                                 kidsModeEnabled = obj.optBoolean("kidsModeEnabled", true),
                                 customAdhanUploadEnabled = obj.optBoolean("customAdhanUploadEnabled", true),
+                                smartShortcutsEnabled = obj.optBoolean("smartShortcutsEnabled", true),
+                                liveVersesCardEnabled = obj.optBoolean("liveVersesCardEnabled", true),
+                                nearbyMosquesEnabled = obj.optBoolean("nearbyMosquesEnabled", true),
+                                persistentPrayerNotificationAllowed = obj.optBoolean("persistentPrayerNotificationAllowed", true),
                                 maintenanceMode = obj.optBoolean("maintenanceMode", false)
                             )
                         } catch (_: Exception) {

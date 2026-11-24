@@ -15,6 +15,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.example.core.i18n.AppLanguage
 
 enum class AppThemeMode(val id: String) {
     LIGHT("LIGHT"),
@@ -66,11 +67,17 @@ enum class MushafPaperTheme(
     }
 }
 
-enum class MihrabThemePreset(val label: String, val labelAr: String) {
-    EMERALD_SANCTUARY("Emerald Sanctuary", "الزمرد المقدس"),
-    ROYAL_GOLD("Royal Gold", "الذهب الملكي"),
-    MOSQUE_BLUE("Mosque Sapphire", "ياقوت المسجد"),
-    WARM_PARCHMENT("Warm Parchment", "الرق الدافئ")
+enum class MihrabThemePreset(
+    val label: String,
+    val labelAr: String,
+    val labelUz: String
+) {
+    EMERALD_SANCTUARY("Emerald Sanctuary", "الزمرد المقدس", "Zumrad Mehrob"),
+    ROYAL_GOLD("Royal Gold", "الذهب الملكي", "Qirollik Oltini"),
+    MOSQUE_BLUE("Mosque Sapphire", "ياقوت المسجد", "Masjid Moviysi"),
+    WARM_PARCHMENT("Warm Parchment", "الرق الدافئ", "Iliq Qog'oz");
+
+    fun labelFor(language: AppLanguage): String = language.pick(labelAr, label, labelUz)
 }
 
 @Immutable

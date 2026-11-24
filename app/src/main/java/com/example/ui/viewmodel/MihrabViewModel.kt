@@ -1,8 +1,11 @@
 package com.example.ui.viewmodel
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.core.hardware.LocationAndMosqueLocator
+import com.example.core.i18n.AppLanguage
 import com.example.data.firebase.AdhanAlertMode
 import com.example.data.firebase.AdhkarLogDoc
 import com.example.data.firebase.AiRuntimeConfig
@@ -29,6 +32,7 @@ import com.example.domain.CityPreset
 import com.example.domain.DailyPrayerSchedule
 import com.example.domain.HijriCalendarEngine
 import com.example.domain.HijriDate
+import com.example.domain.MosquePlace
 import com.example.domain.MushafPageModel
 import com.example.domain.PrayerTimesEngine
 import com.google.firebase.firestore.FirebaseFirestoreException
@@ -86,8 +90,22 @@ class MihrabViewModel(
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
 
+    // Phase 4: GPS Location & Real OSM Nearby Mosques
+    private val _nearbyMosques = MutableStateFlow<List<MosquePlace>>(emptyList())
+    val nearbyMosques: StateFlow<List<MosquePlace>> = _nearbyMosques.asStateFlow()
+
+    private val _nearbyMosquesLoading = MutableStateFlow(false)
+    val nearbyMosquesLoading: StateFlow<Boolean> = _nearbyMosquesLoading.asStateFlow()
+
+    private val _isLocatingGps = MutableStateFlow(false)
+    val isLocatingGps: StateFlow<Boolean> = _isLocatingGps.asStateFlow()
+
+    private val _locationNotice = MutableStateFlow<String?>(null)
+    val locationNotice: StateFlow<String?> = _locationNotice.asStateFlow()
+
     private var savePositionJob: Job? = null
     private var searchJob: Job? = null
+    private var mosqueFetchJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -342,6 +360,78 @@ class MihrabViewModel(
                 "calculationMethod" to preset.defaultMethod.id
             )
         )
+    }
+
+    fun clearLocationNotice() {
+        _locationNotice.value = null
+    }
+
+    fun detectGpsAndMosques(
+        context: Context,
+        language: AppLanguage,
+        offsets: Map<String, Int> = _manualOffsets.value,
+        currentSettings: UserSettingsDoc = (settingsState.value as? UiState.Success)?.data ?: UserSettingsDoc()
+    ) {
+        if (_isLocatingGps.value) return
+        viewModelScope.launch {
+            _isLocatingGps.value = true
+            _locationNotice.value = null
+            if (!LocationAndMosqueLocator.isLocationEnabled(context)) {
+                _isLocatingGps.value = false
+                _locationNotice.value = language.pick(
+                    "خدمة الموقع (GPS) متوقفة في الهاتف؛ فعّلها لتحديد موقعك بدقة.",
+                    "Device Location (GPS) is turned off. Please enable GPS to locate accurately.",
+                    "Qurilma joylashuvi (GPS) o'chirilgan. Aniq aniqlash uchun GPS ni yoqing."
+                )
+                return@launch
+            }
+
+            val detected = LocationAndMosqueLocator.detectCurrentLocation(context)
+            if (detected == null) {
+                _isLocatingGps.value = false
+                _locationNotice.value = language.pick(
+                    "تعذر التقاط إشارة GPS حالياً؛ تأكد من التغطية أو اختر المدينة يدوياً.",
+                    "Unable to obtain GPS fix right now; try outdoors or choose a city preset.",
+                    "Hozircha GPS signali topilmadi; ochiqroq joyda urinib ko'ring yoki shaharni tanlang."
+                )
+                return@launch
+            }
+
+            val updatedSettings = currentSettings.copy(
+                city = detected.cityLabel,
+                latitude = detected.latitude,
+                longitude = detected.longitude
+            )
+            updateLocationCoordinates(detected.cityLabel, detected.latitude, detected.longitude)
+            _locationNotice.value = language.pick(
+                "تم تحديد موقعك: ${detected.cityLabel} وحساب أوقات الصلاة بدقة.",
+                "Located: ${detected.cityLabel} — prayer times & Qibla updated.",
+                "Manzil aniqlandi: ${detected.cityLabel} — namoz vaqtlari va Qibla yangilandi."
+            )
+            _isLocatingGps.value = false
+            refreshNearbyMosques(updatedSettings, offsets, language)
+        }
+    }
+
+    fun refreshNearbyMosques(
+        settings: UserSettingsDoc,
+        offsets: Map<String, Int>,
+        language: AppLanguage
+    ) {
+        mosqueFetchJob?.cancel()
+        mosqueFetchJob = viewModelScope.launch {
+            _nearbyMosquesLoading.value = true
+            val schedule = computeSchedule(settings, offsets)
+            val result = LocationAndMosqueLocator.fetchNearbyMosques(
+                latitude = settings.latitude,
+                longitude = settings.longitude,
+                cityLabel = settings.city,
+                schedule = schedule,
+                language = language
+            )
+            _nearbyMosques.value = result
+            _nearbyMosquesLoading.value = false
+        }
     }
 
     fun updateLocationCoordinates(cityLabel: String, lat: Double, lng: Double) {

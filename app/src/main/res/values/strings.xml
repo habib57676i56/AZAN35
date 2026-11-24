@@ -6,4 +6,6 @@
     <string name="shortcut_quran_long">Open Quran Mushaf</string>
     <string name="shortcut_tasbih_short">Tasbih</string>
     <string name="shortcut_tasbih_long">Digital Tasbih &amp; Adhkar</string>
+    <string name="shortcut_ai_short">Islamic AI</string>
+    <string name="shortcut_ai_long">Ask Islamic AI Assistant</string>
 </resources>

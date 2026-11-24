@@ -1,5 +1,10 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -27,19 +32,26 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AppShortcut
 import androidx.compose.material.icons.rounded.BrightnessAuto
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.MyLocation
+import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -64,18 +76,33 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.core.hardware.LauncherShortcutHelper
+import com.example.core.hardware.LauncherShortcutTarget
+import com.example.core.hardware.LocationAndMosqueLocator
+import com.example.core.hardware.PrayerStatusNotificationManager
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
+import com.example.core.i18n.formatNumerals
+import com.example.core.preferences.FeatureUsageTracker
+import com.example.core.preferences.SmartFeatureId
 import com.example.data.firebase.AppOperationsConfig
 import com.example.data.firebase.UserSettingsDoc
+import com.example.data.firebase.clearCustomAppCheckDebugToken
+import com.example.data.firebase.getAppCheckDebugSecret
+import com.example.data.firebase.getCustomAppCheckOverride
+import com.example.data.firebase.saveCustomAppCheckDebugToken
 import com.example.domain.CalculatorsEngine
 import com.example.domain.IslamicLibraryData
 import com.example.ui.icons.MihrabIcons
@@ -91,6 +118,7 @@ import com.example.ui.theme.MushafPaperTheme
 import com.example.ui.theme.withTabularNums
 import com.example.ui.viewmodel.MihrabViewModel
 import com.example.ui.viewmodel.UiState
+import java.util.Locale
 import kotlin.math.roundToInt
 
 @Composable
@@ -105,6 +133,8 @@ fun ToolsScreen(
     onToggleIndic: (Boolean) -> Unit,
     isSuperAdmin: Boolean = false,
     onOpenAdminDashboard: () -> Unit = {},
+    initialSection: Int = 0,
+    sectionNonce: Int = 0,
     appOperations: AppOperationsConfig = AppOperationsConfig(),
     onSignOut: () -> Unit
 ) {
@@ -114,8 +144,12 @@ fun ToolsScreen(
     val exportedJson by viewModel.exportedJson.collectAsStateWithLifecycle()
 
     val settings = (settingsState as? UiState.Success)?.data ?: UserSettingsDoc()
-    val isArabicUi = appLanguage == AppLanguage.ARABIC || appLanguage == AppLanguage.URDU
-    var activeSection by remember { mutableIntStateOf(0) } // 0=Calculators, 1=Pilgrim&Charity, 2=Settings
+    val isArabicUi = appLanguage.isArabicUi
+    val useArabicDigits = useIndic && isArabicUi
+    var activeSection by remember { mutableIntStateOf(initialSection) } // 0=Calculators, 1=Pilgrim&Charity, 2=Settings
+    LaunchedEffect(initialSection, sectionNonce) {
+        activeSection = initialSection
+    }
 
     val createDocLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -138,19 +172,11 @@ fun ToolsScreen(
         }
     }
 
-    val toolsTabs = if (isArabicUi) {
-        listOf(
-            "الحاسبات الشرعية" to MihrabIcons.Calculators,
-            strings.pilgrimGuide to MihrabIcons.KaabaCube,
-            strings.settingsPrivacy to MihrabIcons.Settings
-        )
-    } else {
-        listOf(
-            "Calculators" to MihrabIcons.Calculators,
-            "${strings.pilgrimGuide} & Charity" to MihrabIcons.KaabaCube,
-            strings.settingsPrivacy to MihrabIcons.Settings
-        )
-    }
+    val toolsTabs = listOf(
+        appLanguage.pick("الحاسبات الشرعية", "Calculators", "Hisoblagichlar") to MihrabIcons.Calculators,
+        appLanguage.pick(strings.pilgrimGuide, "${strings.pilgrimGuide} & Charity", "Haj va Sadaqa") to MihrabIcons.KaabaCube,
+        strings.settingsPrivacy to MihrabIcons.Settings
+    )
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
@@ -179,13 +205,21 @@ fun ToolsScreen(
             }
 
             when (activeSection) {
-                0 -> item { CalculatorsSection() }
-                1 -> item { PilgrimAndObligationsSection(obligationsState = obligationsState, viewModel = viewModel) }
+                0 -> item { CalculatorsSection(appLanguage = appLanguage, useArabicDigits = useArabicDigits) }
+                1 -> item {
+                    PilgrimAndObligationsSection(
+                        obligationsState = obligationsState,
+                        appLanguage = appLanguage,
+                        strings = strings,
+                        useArabicDigits = useArabicDigits,
+                        viewModel = viewModel
+                    )
+                }
                 2 -> item {
                     SettingsAndPrivacySection(
                         settings = settings,
                         strings = strings,
-                        isArabicUi = isArabicUi,
+                        appLanguage = appLanguage,
                         currentThemePreset = currentThemePreset,
                         onChangeThemePreset = onChangeThemePreset,
                         currentThemeMode = currentThemeMode,
@@ -193,7 +227,7 @@ fun ToolsScreen(
                         onToggleIndic = onToggleIndic,
                         isSuperAdmin = isSuperAdmin,
                         onOpenAdminDashboard = onOpenAdminDashboard,
-                        kidsModeEnabledFlag = appOperations.kidsModeEnabled,
+                        appOperations = appOperations,
                         viewModel = viewModel,
                         onSignOut = onSignOut
                     )
@@ -205,9 +239,19 @@ fun ToolsScreen(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CalculatorsSection() {
+private fun CalculatorsSection(
+    appLanguage: AppLanguage,
+    useArabicDigits: Boolean
+) {
+    val context = LocalContext.current
     val glass = LocalLiquidGlassPalette.current
     var calcTab by remember { mutableIntStateOf(0) } // 0=Zakat, 1=Inheritance, 2=Water
+
+    LaunchedEffect(calcTab) {
+        if (calcTab == 0) {
+            FeatureUsageTracker.recordUsage(context, SmartFeatureId.ZAKAT)
+        }
+    }
 
     // Zakat states
     var cashInput by remember { mutableStateOf("5000") }
@@ -233,7 +277,11 @@ private fun CalculatorsSection() {
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            val labels = listOf("Zakat", "Inheritance (Faraid)", "Wudu Water")
+            val labels = listOf(
+                appLanguage.pick("الزكاة", "Zakat", "Zakot"),
+                appLanguage.pick("المواريث (الفرائض)", "Inheritance (Faraid)", "Meros (Faroiz)"),
+                appLanguage.pick("ماء الوضوء", "Wudu Water", "Tahorat suvi")
+            )
             items(labels.size) { idx ->
                 LiquidGlassPill(selected = calcTab == idx, onClick = { calcTab = idx }, label = labels[idx])
             }
@@ -252,23 +300,98 @@ private fun CalculatorsSection() {
                     useSilverNisab = useSilverNisab
                 )
                 LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
-                    Text("Zakat & Nisab Calculator (2.5%)", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    OutlinedTextField(value = cashInput, onValueChange = { cashInput = it }, label = { Text("Cash & Bank Savings") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                    Text(
+                        appLanguage.pick(
+                            "حاسبة الزكاة والنصاب (٢.٥٪)",
+                            "Zakat & Nisab Calculator (2.5%)",
+                            "Zakot va Nisob hisoblagichi (2.5%)"
+                        ),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    OutlinedTextField(
+                        value = cashInput,
+                        onValueChange = { cashInput = it },
+                        label = { Text(appLanguage.pick("النقد والمدخرات البنكية", "Cash & Bank Savings", "Naqd pul va bank jamg'armalari")) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth()
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(value = goldGramsInput, onValueChange = { goldGramsInput = it }, label = { Text("Gold (g)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
-                        OutlinedTextField(value = goldPriceInput, onValueChange = { goldPriceInput = it }, label = { Text("Gold / g") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
+                        OutlinedTextField(
+                            value = goldGramsInput,
+                            onValueChange = { goldGramsInput = it },
+                            label = { Text(appLanguage.pick("الذهب (غ)", "Gold (g)", "Oltin (g)")) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = goldPriceInput,
+                            onValueChange = { goldPriceInput = it },
+                            label = { Text(appLanguage.pick("سعر الغرام", "Gold / g", "Oltin narxi / g")) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(value = tradeInput, onValueChange = { tradeInput = it }, label = { Text("Trade / Stocks") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
-                        OutlinedTextField(value = debtInput, onValueChange = { debtInput = it }, label = { Text("Immediate Debts") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
+                        OutlinedTextField(
+                            value = silverGramsInput,
+                            onValueChange = { silverGramsInput = it },
+                            label = { Text(appLanguage.pick("الفضة (غ)", "Silver (g)", "Kumush (g)")) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = silverPriceInput,
+                            onValueChange = { silverPriceInput = it },
+                            label = { Text(appLanguage.pick("الفضة / غ", "Silver / g", "Kumush / g")) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = tradeInput,
+                            onValueChange = { tradeInput = it },
+                            label = { Text(appLanguage.pick("عروض التجارة والأسهم", "Trade / Stocks", "Tijorat va aksiyalar")) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = debtInput,
+                            onValueChange = { debtInput = it },
+                            label = { Text(appLanguage.pick("الديون الحالة", "Immediate Debts", "Qisqa muddatli qarzlar")) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                        Text("Use Silver Nisab (595g — safer for poor)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        Text(
+                            appLanguage.pick(
+                                "اعتماد نصاب الفضة (٥٩٥ غ — الأحوط للفقراء)",
+                                "Use Silver Nisab (595g — safer for poor)",
+                                "Kumush nisobini qo'llash (595g — faqirlar uchun afzal)"
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f)
+                        )
                         Switch(checked = useSilverNisab, onCheckedChange = { useSilverNisab = it })
                     }
                     HorizontalDivider(color = glass.glassBorder)
-                    Text("Net Zakatable Wealth: ${String.format("%.2f", res.netZakatableWealth)}", style = MaterialTheme.typography.titleMedium.withTabularNums())
-                    Text("Active Nisab Threshold: ${String.format("%.2f", res.activeNisabValue)}", style = MaterialTheme.typography.bodyMedium.withTabularNums(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        formatNumerals(
+                            "${appLanguage.pick("صافي المال الزكوي", "Net Zakatable Wealth", "Sof zakot mulki")}: ${String.format(Locale.US, "%.2f", res.netZakatableWealth)}",
+                            useArabicDigits
+                        ),
+                        style = MaterialTheme.typography.titleMedium.withTabularNums()
+                    )
+                    Text(
+                        formatNumerals(
+                            "${appLanguage.pick("قيمة النصاب", "Active Nisab Threshold", "Faol nisob miqdori")}: ${String.format(Locale.US, "%.2f", res.activeNisabValue)}",
+                            useArabicDigits
+                        ),
+                        style = MaterialTheme.typography.bodyMedium.withTabularNums(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Surface(
                         color = if (res.isZakatDue) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else glass.glassFill,
                         shape = RoundedCornerShape(16.dp),
@@ -279,8 +402,18 @@ private fun CalculatorsSection() {
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = if (res.isZakatDue) "Zakat Payable (after 1 lunar Hawl): ${String.format("%.2f", res.zakatPayable)}"
-                            else "Below Nisab threshold — Zakat is not obligatory.",
+                            text = if (res.isZakatDue) {
+                                formatNumerals(
+                                    "${appLanguage.pick("الزكاة الواجبة (بعد حولٍ قمري)", "Zakat Payable (after 1 lunar Hawl)", "To'lanadigan zakot (1 qamariy yildan so'ng)")}: ${String.format(Locale.US, "%.2f", res.zakatPayable)}",
+                                    useArabicDigits
+                                )
+                            } else {
+                                appLanguage.pick(
+                                    "أقل من النصاب — لا تجب الزكاة بعد.",
+                                    "Below Nisab threshold — Zakat is not obligatory.",
+                                    "Nisobdan kam — hozircha zakot farz emas."
+                                )
+                            },
                             style = MaterialTheme.typography.titleMedium.withTabularNums(),
                             fontWeight = FontWeight.Bold,
                             color = if (res.isZakatDue) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
@@ -296,33 +429,62 @@ private fun CalculatorsSection() {
                     hasFather = hasFather,
                     hasMother = hasMother,
                     sons = sonsCount,
-                    daughters = daughtersCount
+                    daughters = daughtersCount,
+                    language = appLanguage
                 )
                 LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
-                    Text("Islamic Inheritance (Mawarith / Faraid)", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    OutlinedTextField(value = estateInput, onValueChange = { estateInput = it }, label = { Text("Net Estate Value (after debts & Wasiyyah <= 1/3)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                    Text(
+                        appLanguage.pick("حاسبة المواريث الشرعية (الفرائض)", "Islamic Inheritance (Mawarith / Faraid)", "Islomiy meros hisoblagichi (Faroiz)"),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    OutlinedTextField(
+                        value = estateInput,
+                        onValueChange = { estateInput = it },
+                        label = {
+                            Text(
+                                appLanguage.pick(
+                                    "صافي التركة (بعد الديون والوصية في الثلث)",
+                                    "Net Estate Value (after debts & Wasiyyah <= 1/3)",
+                                    "Sof meros qiymati (qarzlar va 1/3 vasiyatdan keyin)"
+                                )
+                            )
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth()
+                    )
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("NONE" to "No Spouse", "HUSBAND" to "Husband", "WIFE" to "Wife").forEach { (k, l) ->
+                        listOf(
+                            "NONE" to appLanguage.pick("بدون زوج/ة", "No Spouse", "Juftsiz"),
+                            "HUSBAND" to appLanguage.pick("الزوج", "Husband", "Er"),
+                            "WIFE" to appLanguage.pick("الزوجة", "Wife", "Xotin")
+                        ).forEach { (k, l) ->
                             LiquidGlassPill(selected = spouseType == k, onClick = { spouseType = k }, label = l)
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = hasFather, onCheckedChange = { hasFather = it })
-                            Text("Father")
+                            Text(appLanguage.pick("الأب", "Father", "Ota"))
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = hasMother, onCheckedChange = { hasMother = it })
-                            Text("Mother")
+                            Text(appLanguage.pick("الأم", "Mother", "Ona"))
                         }
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("Sons: $sonsCount", style = MaterialTheme.typography.bodyLarge.withTabularNums())
+                        Text(
+                            formatNumerals("${appLanguage.pick("الأبناء", "Sons", "O'g'illar")}: $sonsCount", useArabicDigits),
+                            style = MaterialTheme.typography.bodyLarge.withTabularNums()
+                        )
                         Row {
                             TextButton(onClick = { sonsCount = (sonsCount - 1).coerceAtLeast(0) }) { Text("-") }
                             TextButton(onClick = { sonsCount = (sonsCount + 1).coerceAtMost(12) }) { Text("+") }
                         }
-                        Text("Daughters: $daughtersCount", style = MaterialTheme.typography.bodyLarge.withTabularNums())
+                        Text(
+                            formatNumerals("${appLanguage.pick("البنات", "Daughters", "Qizlar")}: $daughtersCount", useArabicDigits),
+                            style = MaterialTheme.typography.bodyLarge.withTabularNums()
+                        )
                         Row {
                             TextButton(onClick = { daughtersCount = (daughtersCount - 1).coerceAtLeast(0) }) { Text("-") }
                             TextButton(onClick = { daughtersCount = (daughtersCount + 1).coerceAtMost(12) }) { Text("+") }
@@ -333,7 +495,10 @@ private fun CalculatorsSection() {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("${share.heirLabel} (${share.fractionLabel})", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                             Text(
-                                "${String.format("%.1f", share.percentage)}% • ${String.format("%.2f", share.amount)}",
+                                formatNumerals(
+                                    "${String.format(Locale.US, "%.1f", share.percentage)}% • ${String.format(Locale.US, "%.2f", share.amount)}",
+                                    useArabicDigits
+                                ),
                                 style = MaterialTheme.typography.titleMedium.withTabularNums(),
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
@@ -343,21 +508,54 @@ private fun CalculatorsSection() {
                 }
             }
             2 -> {
-                val water = CalculatorsEngine.estimateAblutionWater(isGhusl, tapSeconds)
+                val water = CalculatorsEngine.estimateAblutionWater(isGhusl, tapSeconds, appLanguage)
                 LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.WaterDrop, null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(8.dp))
-                        Text("Prophetic Water Conservation (Mudd & Sa')", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text(
+                            appLanguage.pick(
+                                "مقياس ترشيد ماء الوضوء (المُد والصاع)",
+                                "Prophetic Water Conservation (Mudd & Sa')",
+                                "Tahoratda suvni tejash (Mud va So')"
+                            ),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        LiquidGlassPill(selected = !isGhusl, onClick = { isGhusl = false }, label = "Wudu (1 Mudd ~ 0.75L)")
-                        LiquidGlassPill(selected = isGhusl, onClick = { isGhusl = true }, label = "Ghusl (1 Sa' ~ 3L)")
+                        LiquidGlassPill(
+                            selected = !isGhusl,
+                            onClick = { isGhusl = false },
+                            label = appLanguage.pick("وضوء (مُد ~ ٠.٧٥ لتر)", "Wudu (1 Mudd ~ 0.75L)", "Tahorat (1 mud ~ 0.75L)")
+                        )
+                        LiquidGlassPill(
+                            selected = isGhusl,
+                            onClick = { isGhusl = true },
+                            label = appLanguage.pick("غسل (صاع ~ ٣ لتر)", "Ghusl (1 Sa' ~ 3L)", "G'usl (1 so' ~ 3L)")
+                        )
                     }
-                    Text("Tap open duration: $tapSeconds seconds", style = MaterialTheme.typography.labelLarge.withTabularNums())
+                    Text(
+                        formatNumerals(
+                            appLanguage.pick(
+                                "مدة فتح الصنبور: $tapSeconds ثانية",
+                                "Tap open duration: $tapSeconds seconds",
+                                "Jo'mrak ochiq vaqti: $tapSeconds soniya"
+                            ),
+                            useArabicDigits
+                        ),
+                        style = MaterialTheme.typography.labelLarge.withTabularNums()
+                    )
                     Slider(value = tapSeconds.toFloat(), onValueChange = { tapSeconds = it.roundToInt() }, valueRange = 5f..180f)
                     Text(
-                        "Estimated usage: ${String.format("%.1f", water.estimatedLiters)} L (~${water.ratio}x Prophetic amount)",
+                        formatNumerals(
+                            appLanguage.pick(
+                                "الاستهلاك التقديري: ${String.format(Locale.US, "%.1f", water.estimatedLiters)} لتر (~${water.ratio}x الهدي النبوي)",
+                                "Estimated usage: ${String.format(Locale.US, "%.1f", water.estimatedLiters)} L (~${water.ratio}x Prophetic amount)",
+                                "Taxminiy sarf: ${String.format(Locale.US, "%.1f", water.estimatedLiters)} L (~${water.ratio}x sunnat me'yori)"
+                            ),
+                            useArabicDigits
+                        ),
                         style = MaterialTheme.typography.titleMedium.withTabularNums(),
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -373,6 +571,9 @@ private fun CalculatorsSection() {
 @Composable
 private fun PilgrimAndObligationsSection(
     obligationsState: UiState<List<com.example.data.firebase.ObligationDoc>>,
+    appLanguage: AppLanguage,
+    strings: LocalizedStrings,
+    useArabicDigits: Boolean,
     viewModel: MihrabViewModel
 ) {
     val glass = LocalLiquidGlassPalette.current
@@ -386,24 +587,47 @@ private fun PilgrimAndObligationsSection(
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
-            Text("Hajj & Umrah Pilgrim Guide", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(strings.pilgrimGuide, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 LiquidGlassCard(shape = RoundedCornerShape(20.dp), contentPadding = 12.dp, modifier = Modifier.weight(1f)) {
                     Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Tawaf", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("$tawafRounds / 7", style = MaterialTheme.typography.headlineMedium.withTabularNums(), color = MaterialTheme.colorScheme.primary)
-                        Button(onClick = { tawafRounds = (tawafRounds + 1) % 8 }, shape = RoundedCornerShape(14.dp)) { Text("+1 Round") }
+                        Text(appLanguage.pick("الطواف", "Tawaf", "Tavof"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(formatNumerals("$tawafRounds / 7", useArabicDigits), style = MaterialTheme.typography.headlineMedium.withTabularNums(), color = MaterialTheme.colorScheme.primary)
+                        Button(onClick = { tawafRounds = (tawafRounds + 1) % 8 }, shape = RoundedCornerShape(14.dp)) {
+                            Text(appLanguage.pick("+١ شوط", "+1 Round", "+1 davra"))
+                        }
                     }
                 }
                 LiquidGlassCard(shape = RoundedCornerShape(20.dp), contentPadding = 12.dp, modifier = Modifier.weight(1f)) {
                     Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Sa'i", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("$saiRounds / 7", style = MaterialTheme.typography.headlineMedium.withTabularNums(), color = MaterialTheme.colorScheme.primary)
-                        Button(onClick = { saiRounds = (saiRounds + 1) % 8 }, shape = RoundedCornerShape(14.dp)) { Text("+1 Lap") }
+                        Text(appLanguage.pick("السعي", "Sa'i", "Sa'y"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(formatNumerals("$saiRounds / 7", useArabicDigits), style = MaterialTheme.typography.headlineMedium.withTabularNums(), color = MaterialTheme.colorScheme.primary)
+                        Button(onClick = { saiRounds = (saiRounds + 1) % 8 }, shape = RoundedCornerShape(14.dp)) {
+                            Text(appLanguage.pick("+١ شوط", "+1 Lap", "+1 yurish"))
+                        }
                     }
                 }
             }
-            val prepItems = listOf("Ihram garments & Niyyah at Miqat", "Travel Dua & Talbiyah", "Comfortable sandals & hydration", "Updated Wasiyyah & settled debts")
+            val prepItems = when {
+                appLanguage.isArabicUi -> listOf(
+                    "ملابس الإحرام والنية من الميقات",
+                    "دعاء السفر والتلبية",
+                    "حذاء مريح وترطيب مستمر",
+                    "تحديث الوصية وسداد الديون"
+                )
+                appLanguage == AppLanguage.UZBEK -> listOf(
+                    "Miqotdan ehrom kiyimi va niyat",
+                    "Safar duosi va Talbiya",
+                    "Qulay poyabzal va suv",
+                    "Vasiyatni yangilash va qarzlarni uzish"
+                )
+                else -> listOf(
+                    "Ihram garments & Niyyah at Miqat",
+                    "Travel Dua & Talbiyah",
+                    "Comfortable sandals & hydration",
+                    "Updated Wasiyyah & settled debts"
+                )
+            }
             prepItems.forEachIndexed { idx, label ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = checklist[idx], onCheckedChange = { checklist[idx] = it })
@@ -416,7 +640,11 @@ private fun PilgrimAndObligationsSection(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Translate, null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(8.dp))
-                Text("Travel & Umrah Phrasebook", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(
+                    appLanguage.pick("دليل عبارات السفر والعمرة", "Travel & Umrah Phrasebook", "Safar va Umra iboralari"),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
             }
             IslamicLibraryData.travelPhrases.forEach { p ->
                 Column(modifier = Modifier.padding(vertical = 4.dp)) {
@@ -429,14 +657,35 @@ private fun PilgrimAndObligationsSection(
         }
 
         LiquidGlassCard(shape = RoundedCornerShape(24.dp)) {
-            Text("Sadaqah, Debts & Wasiyyah Tracker", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(
+                appLanguage.pick("سجل الصدقات والديون والوصية", "Sadaqah, Debts & Wasiyyah Tracker", "Sadaqa, qarzlar va vasiyat daftari"),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("CHARITY" to "Charity", "DEBT" to "Debt", "WASIYYAH" to "Will Note").forEach { (k, l) ->
+                listOf(
+                    "CHARITY" to appLanguage.pick("صدقة", "Charity", "Sadaqa"),
+                    "DEBT" to appLanguage.pick("دين / أمانة", "Debt", "Qarz"),
+                    "WASIYYAH" to appLanguage.pick("وصية", "Will Note", "Vasiyat")
+                ).forEach { (k, l) ->
                     LiquidGlassPill(selected = obKind == k, onClick = { obKind = k }, label = l)
                 }
             }
-            OutlinedTextField(value = obTitle, onValueChange = { obTitle = it }, label = { Text("Description") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = obAmount, onValueChange = { obAmount = it }, label = { Text("Amount (0 if note)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                value = obTitle,
+                onValueChange = { obTitle = it },
+                label = { Text(appLanguage.pick("الوصف", "Description", "Tavsif")) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = obAmount,
+                onValueChange = { obAmount = it },
+                label = { Text(appLanguage.pick("المبلغ (٠ إذا كانت ملاحظة)", "Amount (0 if note)", "Miqdor (izoh bo'lsa 0)")) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
             Button(
                 onClick = {
                     viewModel.addObligation(obKind, obTitle, obAmount.toDoubleOrNull() ?: 0.0, null)
@@ -448,7 +697,7 @@ private fun PilgrimAndObligationsSection(
             ) {
                 Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Add Record")
+                Text(appLanguage.pick("إضافة سجل", "Add Record", "Yozuv qo'shish"))
             }
 
             if (obligationsState is UiState.Success) {
@@ -461,16 +710,26 @@ private fun PilgrimAndObligationsSection(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("${ob.kind}: ${ob.title}", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "${String.format("%.2f", ob.amount)} • ${if (ob.settled) "Fulfilled" else "Pending"}",
+                                formatNumerals(
+                                    "${String.format(Locale.US, "%.2f", ob.amount)} • ${
+                                        if (ob.settled) appLanguage.pick("مكتمل", "Fulfilled", "Bajarildi")
+                                        else appLanguage.pick("قيد المتابعة", "Pending", "Kutilmoqda")
+                                    }",
+                                    useArabicDigits
+                                ),
                                 style = MaterialTheme.typography.bodyMedium.withTabularNums(),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         IconButton(onClick = { viewModel.toggleObligation(ob) }) {
-                            Icon(Icons.Rounded.CheckCircle, "Toggle settled", tint = if (ob.settled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
+                            Icon(
+                                Icons.Rounded.CheckCircle,
+                                contentDescription = appLanguage.pick("تبديل الحالة", "Toggle settled", "Holatni almashtirish"),
+                                tint = if (ob.settled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                            )
                         }
                         IconButton(onClick = { viewModel.deleteObligation(ob.id) }) {
-                            Icon(Icons.Rounded.Delete, "Delete record")
+                            Icon(Icons.Rounded.Delete, contentDescription = appLanguage.pick("حذف", "Delete record", "O'chirish"))
                         }
                     }
                 }
@@ -505,7 +764,6 @@ private fun ThemeModePreviewCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Mini visual device swatch preview
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -562,7 +820,7 @@ private fun ThemeModePreviewCard(
 private fun SettingsAndPrivacySection(
     settings: UserSettingsDoc,
     strings: LocalizedStrings,
-    isArabicUi: Boolean,
+    appLanguage: AppLanguage,
     currentThemePreset: MihrabThemePreset,
     onChangeThemePreset: (MihrabThemePreset) -> Unit,
     currentThemeMode: AppThemeMode,
@@ -570,12 +828,53 @@ private fun SettingsAndPrivacySection(
     onToggleIndic: (Boolean) -> Unit,
     isSuperAdmin: Boolean,
     onOpenAdminDashboard: () -> Unit,
-    kidsModeEnabledFlag: Boolean,
+    appOperations: AppOperationsConfig,
     viewModel: MihrabViewModel,
     onSignOut: () -> Unit
 ) {
+    val context = LocalContext.current
+    @Suppress("DEPRECATION")
+    val clipboard = LocalClipboardManager.current
     val glass = LocalLiquidGlassPalette.current
     var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    val isLocatingGps by viewModel.isLocatingGps.collectAsStateWithLifecycle()
+    val locationNotice by viewModel.locationNotice.collectAsStateWithLifecycle()
+    val manualOffsets by viewModel.manualOffsets.collectAsStateWithLifecycle()
+
+    var persistentBarEnabled by remember { mutableStateOf(PrayerStatusNotificationManager.isEnabled(context)) }
+    var shortcutFeedback by remember { mutableStateOf<String?>(null) }
+
+    var activeDebugToken by remember { mutableStateOf(getAppCheckDebugSecret(context) ?: "") }
+    var customDebugTokenInput by remember { mutableStateOf(getCustomAppCheckOverride(context)) }
+    var tokenStatusMsg by remember { mutableStateOf<String?>(null) }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { perms ->
+        val granted = perms[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            perms[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (granted) {
+            viewModel.detectGpsAndMosques(context, appLanguage)
+        }
+    }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            persistentBarEnabled = true
+            PrayerStatusNotificationManager.setEnabled(
+                context = context,
+                enabled = true,
+                settings = settings,
+                offsets = manualOffsets,
+                language = appLanguage,
+                useIndic = useIndic && appLanguage.isArabicUi,
+                appOperations = appOperations
+            )
+        }
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         if (isSuperAdmin) {
@@ -624,14 +923,200 @@ private fun SettingsAndPrivacySection(
                         ) {
                             Icon(MihrabIcons.AdminShield, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text(if (isArabicUi) "فتح لوحة الإدارة الشاملة" else "Open Super Admin Dashboard")
+                            Text(
+                                appLanguage.pick(
+                                    "فتح لوحة الإدارة الشاملة",
+                                    "Open Super Admin Dashboard",
+                                    "Super Admin panelini ochish"
+                                )
+                            )
                         }
                     }
                 }
             }
         }
 
-        // 1. Arabic-first Language & RTL Switcher
+        // 1. GPS Location & Prayer Precision Control
+        LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Rounded.MyLocation, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text(
+                    appLanguage.pick(
+                        "الموقع الجغرافي ودقة المواقيت",
+                        "Location & Prayer Times Precision",
+                        "Joylashuv va namoz vaqtlari aniqligi"
+                    ),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                text = "${settings.city} (${String.format(Locale.US, "%.3f", settings.latitude)}, ${String.format(Locale.US, "%.3f", settings.longitude)})",
+                style = MaterialTheme.typography.bodyMedium.withTabularNums(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = {
+                        val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                        val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                        if (fine || coarse) {
+                            viewModel.detectGpsAndMosques(context, appLanguage)
+                        } else {
+                            locationPermissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION
+                                )
+                            )
+                        }
+                    },
+                    enabled = !isLocatingGps,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.weight(1f).testTag("settings_detect_gps_button")
+                ) {
+                    if (isLocatingGps) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        Spacer(Modifier.width(6.dp))
+                        Text(strings.locatingGps)
+                    } else {
+                        Icon(Icons.Rounded.MyLocation, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(strings.detectMyLocation)
+                    }
+                }
+                if (!LocationAndMosqueLocator.isLocationEnabled(context)) {
+                    OutlinedButton(
+                        onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }
+                        },
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text(appLanguage.pick("تفعيل GPS", "GPS Settings", "GPS yoqish"))
+                    }
+                }
+            }
+            if (!locationNotice.isNullOrBlank()) {
+                Text(
+                    text = locationNotice!!,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
+        // 2. Permanent Notification Shade Bar & Home Screen Launcher Shortcuts
+        LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
+            if (appOperations.persistentPrayerNotificationAllowed) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Rounded.NotificationsActive, null, tint = MaterialTheme.colorScheme.primary)
+                        Column {
+                            Text(strings.persistentPrayerBarTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(strings.persistentPrayerBarDesc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Switch(
+                        checked = persistentBarEnabled,
+                        onCheckedChange = { wantEnable ->
+                            if (wantEnable && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                persistentBarEnabled = wantEnable
+                                PrayerStatusNotificationManager.setEnabled(
+                                    context = context,
+                                    enabled = wantEnable,
+                                    settings = settings,
+                                    offsets = manualOffsets,
+                                    language = appLanguage,
+                                    useIndic = useIndic && appLanguage.isArabicUi,
+                                    appOperations = appOperations
+                                )
+                            }
+                        },
+                        modifier = Modifier.testTag("settings_persistent_shade_switch")
+                    )
+                }
+                if (persistentBarEnabled) {
+                    LiquidGlassPill(
+                        selected = false,
+                        onClick = {
+                            PrayerStatusNotificationManager.syncAndSchedule(
+                                context = context,
+                                settings = settings,
+                                offsets = manualOffsets,
+                                language = appLanguage,
+                                useIndic = useIndic && appLanguage.isArabicUi,
+                                appOperations = appOperations
+                            )
+                        },
+                        icon = Icons.Rounded.Refresh,
+                        label = appLanguage.pick("تحديث الإشعار الدائم الآن", "Refresh Prayer Shade Now", "Bildirishnomani yangilash")
+                    )
+                }
+                HorizontalDivider(color = glass.glassBorder)
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Rounded.AppShortcut, null, tint = MaterialTheme.colorScheme.primary)
+                Text(strings.pinShortcutsTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+            Text(
+                text = appLanguage.pick(
+                    "ثبّت اختصارات سريعة على الشاشة الرئيسية للهاتف للوصول بنقرة واحدة.",
+                    "Pin one-tap quick launch shortcuts directly onto your phone's home screen.",
+                    "Telefon bosh ekraniga bir bosishda ochiladigan yorliqlarni mahkamlang."
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                LauncherShortcutTarget.entries.forEach { target ->
+                    LiquidGlassPill(
+                        selected = false,
+                        onClick = {
+                            val ok = LauncherShortcutHelper.requestPinShortcut(context, target, appLanguage)
+                            shortcutFeedback = if (ok) {
+                                appLanguage.pick(
+                                    "تم إرسال طلب تثبيت اختصار: ${target.shortLabel(appLanguage)}",
+                                    "Shortcut request sent: ${target.shortLabel(appLanguage)}",
+                                    "Yorliq so'rovi yuborildi: ${target.shortLabel(appLanguage)}"
+                                )
+                            } else {
+                                appLanguage.pick(
+                                    "اضغط مطولاً على أيقونة التطبيق في الشاشة الرئيسية لاستخدام الاختصارات",
+                                    "Long-press the app icon on your home screen for quick shortcuts",
+                                    "Tezkor yorliqlar uchun ilova belgisini bosib turing"
+                                )
+                            }
+                        },
+                        icon = Icons.Rounded.AppShortcut,
+                        label = target.shortLabel(appLanguage),
+                        modifier = Modifier.testTag("settings_pin_shortcut_${target.id}")
+                    )
+                }
+            }
+            if (!shortcutFeedback.isNullOrBlank()) {
+                Text(shortcutFeedback!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+
+        // 3. Language & Numerals Switcher (AR, EN, UZ, TR, UR)
         LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(MihrabIcons.Language, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -652,12 +1137,19 @@ private fun SettingsAndPrivacySection(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(if (isArabicUi) "الأرقام العربية الشرقية (٠١٢٣)" else "Eastern Arabic Numerals (٠١٢٣)", modifier = Modifier.weight(1f))
+                Text(
+                    appLanguage.pick(
+                        "الأرقام العربية الشرقية (٠١٢٣)",
+                        "Eastern Arabic Numerals (٠١٢٣)",
+                        "Sharqiy arab raqamlari (٠١٢٣)"
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
                 Switch(checked = useIndic, onCheckedChange = onToggleIndic)
             }
         }
 
-        // 2. Persistent 3-Mode Theme Engine + Visual Previews + Typography Scale + Mushaf Paper
+        // 4. Persistent 3-Mode Theme Engine + Visual Previews + Typography Scale + Mushaf Paper
         LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(MihrabIcons.ThemePalette, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -708,7 +1200,7 @@ private fun SettingsAndPrivacySection(
                     LiquidGlassPill(
                         selected = currentThemePreset == preset,
                         onClick = { onChangeThemePreset(preset) },
-                        label = if (isArabicUi) preset.labelAr else preset.label,
+                        label = preset.labelFor(appLanguage),
                         activeColor = swatchColor
                     )
                 }
@@ -717,7 +1209,11 @@ private fun SettingsAndPrivacySection(
             HorizontalDivider(color = glass.glassBorder)
 
             Text(
-                text = if (isArabicUi) "ورق مصحف المدينة وحجم الخط" else "Madinah Mushaf Paper & Typography Scale",
+                text = appLanguage.pick(
+                    "ورق مصحف المدينة وحجم الخط",
+                    "Madinah Mushaf Paper & Typography Scale",
+                    "Madina Mushafi qog'ozi va shrift o'lchami"
+                ),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -756,11 +1252,15 @@ private fun SettingsAndPrivacySection(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        if (isArabicUi) "تنبيهات الأذان" else "Adhan Alerts",
+                        appLanguage.pick("تنبيهات الأذان", "Adhan Alerts", "Azon bildirishnomalari"),
                         style = MaterialTheme.typography.titleMedium
                     )
                     Text(
-                        if (isArabicUi) "تفعيل صوت الأذان وتنبيهات أوقات الصلاة" else "Enable Adhan audio & prayer alerts",
+                        appLanguage.pick(
+                            "تفعيل صوت الأذان وتنبيهات أوقات الصلاة",
+                            "Enable Adhan audio & prayer alerts",
+                            "Azon ovozi va namoz eslatmalarini yoqish"
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -771,7 +1271,7 @@ private fun SettingsAndPrivacySection(
                 )
             }
 
-            if (kidsModeEnabledFlag) {
+            if (appOperations.kidsModeEnabled) {
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -779,11 +1279,15 @@ private fun SettingsAndPrivacySection(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            if (isArabicUi) "وضع الأطفال" else "Kids Mode",
+                            appLanguage.pick("وضع الأطفال", "Kids Mode", "Bolalar rejimi"),
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            if (isArabicUi) "واجهة مبسطة وممتعة لتعليم القرآن والأذكار" else "Simplified joyful learning & star rewards",
+                            appLanguage.pick(
+                                "واجهة مبسطة وممتعة لتعليم القرآن والأذكار",
+                                "Simplified joyful learning & star rewards",
+                                "Bolalar uchun soddalashtirilgan Qur'on va zikrlar"
+                            ),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -796,15 +1300,110 @@ private fun SettingsAndPrivacySection(
             }
         }
 
-        // 3. Privacy, Export & Account Controls
+        // 5. Firebase App Check Debug Token Inspector & Custom Override (for Debug APKs & AI Studio/GitHub builds)
+        LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Rounded.VerifiedUser, null, tint = BurnishedGold)
+                Text(strings.appCheckDebugTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+            Text(
+                text = appLanguage.pick(
+                    "لحل خطأ (Firebase App Check token is invalid) عند تشغيل الذكاء الاصطناعي في نسخة التصحيح (Debug APK)، انسخ هذا الرمز وسجّله في Firebase Console ← App Check ← Apps ← Manage debug tokens.",
+                    "To fix 'Firebase App Check token is invalid' on Debug APKs, copy this token and register it under Firebase Console -> App Check -> Apps -> Manage debug tokens.",
+                    "Debug APK da 'Firebase App Check token is invalid' xatosini tuzatish uchun ushbu tokenni nusxalab, Firebase Console -> App Check -> Apps -> Manage debug tokens bo'limiga qo'shing."
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Surface(
+                color = glass.glassSubtleFill,
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, glass.glassBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = activeDebugToken.ifBlank {
+                            appLanguage.pick("غير متوفر بعد", "Not generated yet", "Hali yaratilmagan")
+                        },
+                        fontFamily = FontFamily.Monospace,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = {
+                            val current = getAppCheckDebugSecret(context) ?: activeDebugToken
+                            if (current.isNotBlank()) {
+                                activeDebugToken = current
+                                clipboard.setText(AnnotatedString(current))
+                                tokenStatusMsg = appLanguage.pick("تم نسخ التوكن ✓", "Copied to clipboard ✓", "Nusxalandi ✓")
+                            }
+                        },
+                        modifier = Modifier.testTag("settings_copy_appcheck_token")
+                    ) {
+                        Icon(Icons.Rounded.ContentCopy, contentDescription = appLanguage.pick("نسخ", "Copy", "Nusxalash"))
+                    }
+                }
+            }
+            OutlinedTextField(
+                value = customDebugTokenInput,
+                onValueChange = { customDebugTokenInput = it },
+                label = {
+                    Text(
+                        appLanguage.pick(
+                            "تخصيص Debug Token (UUID اختياري مسجّل في Firebase)",
+                            "Custom Debug Token Override (optional Firebase UUID)",
+                            "Maxsus Debug Token (ixtiyoriy Firebase UUID)"
+                        )
+                    )
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = {
+                        saveCustomAppCheckDebugToken(context, customDebugTokenInput)
+                        activeDebugToken = getAppCheckDebugSecret(context) ?: customDebugTokenInput.trim()
+                        tokenStatusMsg = appLanguage.pick("تم حفظ التوكن وتحديثه ✓", "Debug token applied ✓", "Token saqlandi ✓")
+                    },
+                    enabled = customDebugTokenInput.isNotBlank(),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(strings.save)
+                }
+                OutlinedButton(
+                    onClick = {
+                        clearCustomAppCheckDebugToken(context)
+                        customDebugTokenInput = ""
+                        activeDebugToken = getAppCheckDebugSecret(context) ?: ""
+                        tokenStatusMsg = appLanguage.pick("تمت إعادة الضبط للرمز التلقائي", "Reset to auto token", "Avto tokenga qaytarildi")
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(appLanguage.pick("إعادة ضبط", "Reset Auto", "Tiklash"))
+                }
+            }
+            if (!tokenStatusMsg.isNullOrBlank()) {
+                Text(tokenStatusMsg!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+
+        // 6. Privacy, Export & Account Controls
         LiquidGlassCard(shape = RoundedCornerShape(24.dp)) {
             Text(strings.settingsPrivacy, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(
-                text = if (isArabicUi) {
-                    "تطبيق محراب: مصحف المدينة التفاعلي بـ ٦٠٤ صفحات ونص عثماني كامل مع القراء والتخزين المحلي، مواقيت الصلاة والقبلة بالواقع المعزز، الأذكار، الزكاة والمواريث."
-                } else {
-                    "Mihrab: 604-page interactive Uthmani Madinah Mushaf with multi-reciter audio & offline SQLite+Cloud sync, Prayer & AR Qibla, Adhkar, Zakat & Mawarith tools."
-                },
+                text = appLanguage.pick(
+                    "تطبيق محراب: مصحف المدينة التفاعلي بـ ٦٠٤ صفحات ونص عثماني كامل مع القراء والتخزين المحلي، مواقيت الصلاة والقبلة بالواقع المعزز، الأذكار، الزكاة والمواريث.",
+                    "Mihrab: 604-page interactive Uthmani Madinah Mushaf with multi-reciter audio & offline SQLite+Cloud sync, Prayer & AR Qibla, Adhkar, Zakat & Mawarith tools.",
+                    "Mihrob: 604 sahifalik interaktiv Usmoniy Madina Mushafi, ko'p qorilar audiosi, GPS namoz vaqtlari va Qibla, zikrlar, zakot va meros hisoblagichi."
+                ),
                 style = MaterialTheme.typography.bodyMedium
             )
             OutlinedButton(
@@ -814,7 +1413,7 @@ private fun SettingsAndPrivacySection(
             ) {
                 Icon(Icons.Rounded.Download, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(if (isArabicUi) "تصدير بياناتي (JSON)" else "Export My Worship Data (JSON)")
+                Text(appLanguage.pick("تصدير بياناتي (JSON)", "Export My Worship Data (JSON)", "Ma'lumotlarni eksport qilish (JSON)"))
             }
             OutlinedButton(
                 onClick = onSignOut,
@@ -835,7 +1434,13 @@ private fun SettingsAndPrivacySection(
             ) {
                 Icon(Icons.Rounded.DeleteForever, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(if (isArabicUi) "حذف جميع البيانات السحابية وتسجيل الخروج" else "Delete All Cloud Data & Sign Out")
+                Text(
+                    appLanguage.pick(
+                        "حذف جميع البيانات السحابية وتسجيل الخروج",
+                        "Delete All Cloud Data & Sign Out",
+                        "Barcha bulut ma'lumotlarini o'chirish va chiqish"
+                    )
+                )
             }
         }
     }
@@ -843,14 +1448,14 @@ private fun SettingsAndPrivacySection(
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text(if (isArabicUi) "حذف جميع البيانات السحابية؟" else "Delete All Cloud Data?") },
+            title = { Text(appLanguage.pick("حذف جميع البيانات السحابية؟", "Delete All Cloud Data?", "Barcha bulut ma'lumotlarini o'chirasizmi?")) },
             text = {
                 Text(
-                    if (isArabicUi) {
-                        "سيتم حذف سجلات الصلوات ومفكرة الدعاء وعلامات المصحف وعدادات التسبيح نهائياً من السحابة."
-                    } else {
-                        "This permanently deletes your cloud prayer logs, Dua journal, bookmarks, Tasbih counters, and obligations from Firestore."
-                    }
+                    appLanguage.pick(
+                        "سيتم حذف سجلات الصلوات ومفكرة الدعاء وعلامات المصحف وعدادات التسبيح نهائياً من السحابة.",
+                        "This permanently deletes your cloud prayer logs, Dua journal, bookmarks, Tasbih counters, and obligations from Firestore.",
+                        "Bu bulutdagi namoz qaydlari, duo daftari, xatcho'plar, tasbeh va majburiyatlarni butunlay o'chiradi."
+                    )
                 )
             },
             confirmButton = {
@@ -860,7 +1465,7 @@ private fun SettingsAndPrivacySection(
                         viewModel.deleteAccountAndData(onComplete = onSignOut)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text(if (isArabicUi) "حذف الكل" else "Delete Everything") }
+                ) { Text(appLanguage.pick("حذف الكل", "Delete Everything", "Hammasini o'chirish")) }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = false }) { Text(strings.cancel) }

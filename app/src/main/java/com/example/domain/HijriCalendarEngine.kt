@@ -1,5 +1,6 @@
 package com.example.domain
 
+import com.example.core.i18n.AppLanguage
 import java.util.Calendar
 import kotlin.math.floor
 
@@ -8,10 +9,17 @@ data class HijriDate(
     val month: Int, // 1..12
     val day: Int,
     val monthNameEn: String,
-    val monthNameAr: String
+    val monthNameAr: String,
+    val monthNameUz: String
 ) {
     fun formattedEn(): String = "$day $monthNameEn $year AH"
     fun formattedAr(): String = "$day $monthNameAr $year هـ"
+    fun formattedUz(): String = "$day-$monthNameUz $year-hijriy"
+    fun formattedFor(language: AppLanguage): String = when (language) {
+        AppLanguage.ARABIC, AppLanguage.URDU -> formattedAr()
+        AppLanguage.UZBEK -> formattedUz()
+        AppLanguage.ENGLISH, AppLanguage.TURKISH -> formattedEn()
+    }
 }
 
 data class IslamicOccasion(
@@ -34,6 +42,12 @@ object HijriCalendarEngine {
         "محرم", "صفر", "ربيع الأول", "ربيع الآخر",
         "جمادى الأولى", "جمادى الآخرة", "رجب", "شعبان",
         "رمضان", "شوال", "ذو القعدة", "ذو الحجة"
+    )
+
+    private val monthsUz = listOf(
+        "Muharram", "Safar", "Rabiul-avval", "Rabiul-oxir",
+        "Jumodul-avval", "Jumodul-oxir", "Rajab", "Sha'bon",
+        "Ramazon", "Shavvol", "Zulqa'da", "Zulhijja"
     )
 
     fun gregorianToHijri(calendar: Calendar, offsetDays: Int = 0): HijriDate {
@@ -65,49 +79,127 @@ object HijriCalendarEngine {
             month = hMonth,
             day = hDay,
             monthNameEn = monthsEn[hMonth - 1],
-            monthNameAr = monthsAr[hMonth - 1]
+            monthNameAr = monthsAr[hMonth - 1],
+            monthNameUz = monthsUz[hMonth - 1]
         )
     }
 
     fun isWhiteDay(hijriDay: Int): Boolean = hijriDay in 13..15
 
-    fun isSunnahFastingDay(calendar: Calendar, hijri: HijriDate): String? {
+    fun isSunnahFastingDay(
+        calendar: Calendar,
+        hijri: HijriDate,
+        language: AppLanguage = AppLanguage.ENGLISH
+    ): String? {
         val dow = calendar.get(Calendar.DAY_OF_WEEK)
         return when {
-            hijri.month == 9 -> "Obligatory Ramadan Fast"
-            hijri.month == 12 && hijri.day == 9 -> "Day of Arafah Fast"
-            hijri.month == 1 && (hijri.day == 9 || hijri.day == 10) -> "Tasu'a / Ashura Fast"
-            isWhiteDay(hijri.day) -> "White Days (Ayyam al-Bid)"
-            dow == Calendar.MONDAY -> "Monday Sunnah Fast"
-            dow == Calendar.THURSDAY -> "Thursday Sunnah Fast"
+            hijri.month == 9 -> language.pick("صيام رمضان المبارك", "Obligatory Ramadan Fast", "Muborak Ramazon ro'zasi")
+            hijri.month == 12 && hijri.day == 9 -> language.pick("صيام يوم عرفة", "Day of Arafah Fast", "Arafa kuni ro'zasi")
+            hijri.month == 1 && (hijri.day == 9 || hijri.day == 10) -> language.pick("صيام تاسوعاء / عاشوراء", "Tasu'a / Ashura Fast", "Tasu'a / Ashuro ro'zasi")
+            isWhiteDay(hijri.day) -> language.pick("الأيام البيض (١٣-١٥)", "White Days (Ayyam al-Bid)", "Oydin kunlar (13-15)")
+            dow == Calendar.MONDAY -> language.pick("صيام سنة الإثنين", "Monday Sunnah Fast", "Dushanba sunnat ro'zasi")
+            dow == Calendar.THURSDAY -> language.pick("صيام سنة الخميس", "Thursday Sunnah Fast", "Payshanba sunnat ro'zasi")
             else -> null
         }
     }
 
-    fun upcomingOccasions(todayHijri: HijriDate): List<IslamicOccasion> {
+    fun upcomingOccasions(
+        todayHijri: HijriDate,
+        language: AppLanguage = AppLanguage.ENGLISH
+    ): List<IslamicOccasion> {
+        data class OccasionSpec(
+            val titleAr: String,
+            val titleEn: String,
+            val titleUz: String,
+            val month: Int,
+            val day: Int,
+            val noteAr: String,
+            val noteEn: String,
+            val noteUz: String
+        )
         val milestones = listOf(
-            Triple("Islamic New Year (1 Muharram)", 1, 1) to "Beginning of the Hijri year; remember the Prophet's migration.",
-            Triple("Day of Ashura (10 Muharram)", 1, 10) to "Fasting Ashura expiates the sins of the previous year.",
-            Triple("1st of Rajab", 7, 1) to "One of the four sacred months; increase repentance & good deeds.",
-            Triple("Mid-Sha'ban (15 Sha'ban)", 8, 15) to "Prepare hearts and make up any missed Ramadan fasts.",
-            Triple("Start of Ramadan (1 Ramadan)", 9, 1) to "Month of the Quran, fasting, Taraweeh, and mercy.",
-            Triple("Last 10 Nights & Laylat al-Qadr", 9, 21) to "Seek Laylat al-Qadr in the odd nights; better than 1,000 months.",
-            Triple("Eid al-Fitr (1 Shawwal)", 10, 1) to "Day of gratitude, Takbirat, and Zakat al-Fitr before prayer.",
-            Triple("First 10 Days of Dhul-Hijjah", 12, 1) to "No days are more beloved to Allah for righteous deeds.",
-            Triple("Day of Arafah (9 Dhul-Hijjah)", 12, 9) to "Fasting expiates two years of sins; greatest day of Dua.",
-            Triple("Eid al-Adha (10 Dhul-Hijjah)", 12, 10) to "Day of Sacrifice (Udhiyah), joy, and Takbirat."
+            OccasionSpec(
+                "رأس السنة الهجرية (١ محرم)", "Islamic New Year (1 Muharram)", "Hijriy Yangi yil (1-Muharram)",
+                1, 1,
+                "بداية العام الهجري واستحضار دروس الهجرة النبوية.",
+                "Beginning of the Hijri year; remember the Prophet's migration.",
+                "Hijriy yilning boshlanishi va Payg'ambarimiz hijratlaridan ibrat."
+            ),
+            OccasionSpec(
+                "يوم عاشوراء (١٠ محرم)", "Day of Ashura (10 Muharram)", "Ashuro kuni (10-Muharram)",
+                1, 10,
+                "صيام عاشوراء يكفر ذنوب السنة الماضية.",
+                "Fasting Ashura expiates the sins of the previous year.",
+                "Ashuro ro'zasi o'tgan bir yillik gunohlarga kafforat bo'ladi."
+            ),
+            OccasionSpec(
+                "غرة رجب (١ رجب)", "1st of Rajab", "Rajab oyining boshlanishi",
+                7, 1,
+                "من الأشهر الحرم؛ موسم للتوبة والإكثار من الطاعات.",
+                "One of the four sacred months; increase repentance & good deeds.",
+                "Harom oylardan biri; tavba va solih amallarni ko'paytirish mavsumi."
+            ),
+            OccasionSpec(
+                "النصف من شعبان (١٥ شعبان)", "Mid-Sha'ban (15 Sha'ban)", "Baroat kechasi (15-Sha'bon)",
+                8, 15,
+                "تهيئة القلوب لرمضان وقضاء ما فات من الصيام.",
+                "Prepare hearts and make up any missed Ramadan fasts.",
+                "Qalblarni Ramazonga tayyorlash va qazo ro'zalarni tutish."
+            ),
+            OccasionSpec(
+                "غرة شهر رمضان (١ رمضان)", "Start of Ramadan (1 Ramadan)", "Ramazon oyi kirishi (1-Ramazon)",
+                9, 1,
+                "شهر القرآن والصيام والقيام والعتق من النيران.",
+                "Month of the Quran, fasting, Taraweeh, and mercy.",
+                "Qur'on, ro'za, tarovih va rahmat oyi."
+            ),
+            OccasionSpec(
+                "العشر الأواخر وليلة القدر", "Last 10 Nights & Laylat al-Qadr", "Oxirgi o'n kunlik va Qadr kechasi",
+                9, 21,
+                "تحرّ ليلة القدر في الأوتار؛ خير من ألف شهر.",
+                "Seek Laylat al-Qadr in the odd nights; better than 1,000 months.",
+                "Toq kechalarda Qadr kechasini izlang; ming oydan yaxshiroqdir."
+            ),
+            OccasionSpec(
+                "عيد الفطر المبارك (١ شوال)", "Eid al-Fitr (1 Shawwal)", "Ramazon hayiti (1-Shavvol)",
+                10, 1,
+                "يوم الشكر والتكبير وإخراج زكاة الفطر قبل الصلاة.",
+                "Day of gratitude, Takbirat, and Zakat al-Fitr before prayer.",
+                "Shukrona, takbirlar va hayit namozidan oldin fitr sadaqasi kuni."
+            ),
+            OccasionSpec(
+                "أوائل ذي الحجة (١ ذو الحجة)", "First 10 Days of Dhul-Hijjah", "Zulhijjaning dastlabki 10 kuni",
+                12, 1,
+                "أفضل أيام الدنيا وأحبها إلى الله للعمل الصالح.",
+                "No days are more beloved to Allah for righteous deeds.",
+                "Solih amallar Allohga eng mahbub bo'lgan muborak kunlar."
+            ),
+            OccasionSpec(
+                "يوم عرفة (٩ ذو الحجة)", "Day of Arafah (9 Dhul-Hijjah)", "Arafa kuni (9-Zulhijja)",
+                12, 9,
+                "صيامه يكفّر سنتين، وأعظم أيام الدعاء والعتق.",
+                "Fasting expiates two years of sins; greatest day of Dua.",
+                "Ro'zasi ikki yillik gunohlarga kafforat, duo qabul bo'ladigan eng ulug' kun."
+            ),
+            OccasionSpec(
+                "عيد الأضحى المبارك (١٠ ذو الحجة)", "Eid al-Adha (10 Dhul-Hijjah)", "Qurbon hayiti (10-Zulhijja)",
+                12, 10,
+                "يوم النحر والتكبير والبهجة وصلة الأرحام.",
+                "Day of Sacrifice (Udhiyah), joy, and Takbirat.",
+                "Qurbonlik, takbir, quvonch va silai rahm kuni."
+            )
         )
 
         val todayApproxDayOfYear = (todayHijri.month - 1) * 29.5 + todayHijri.day
-        return milestones.map { (meta, virtue) ->
-            val targetDayOfYear = (meta.second - 1) * 29.5 + meta.third
+        return milestones.map { spec ->
+            val targetDayOfYear = (spec.month - 1) * 29.5 + spec.day
             var diff = floor(targetDayOfYear - todayApproxDayOfYear).toInt()
             if (diff < 0) diff += 354
             IslamicOccasion(
-                title = meta.first,
-                hijriMonth = meta.second,
-                hijriDay = meta.third,
-                virtueNote = virtue,
+                title = language.pick(spec.titleAr, spec.titleEn, spec.titleUz),
+                hijriMonth = spec.month,
+                hijriDay = spec.day,
+                virtueNote = language.pick(spec.noteAr, spec.noteEn, spec.noteUz),
                 daysRemaining = diff
             )
         }.sortedBy { it.daysRemaining }

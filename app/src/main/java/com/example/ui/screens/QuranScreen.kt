@@ -27,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -42,6 +44,8 @@ import com.example.core.hardware.QuranRecitationPlayer
 import com.example.core.hardware.QuranTtsAudioPlayer
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
+import com.example.core.preferences.FeatureUsageTracker
+import com.example.core.preferences.SmartFeatureId
 import com.example.data.firebase.AppOperationsConfig
 import com.example.data.firebase.UserSettingsDoc
 import com.example.domain.ArabicTextNormalizer
@@ -63,16 +67,24 @@ fun QuranScreen(
     appLanguage: AppLanguage,
     strings: LocalizedStrings,
     appOperations: AppOperationsConfig = AppOperationsConfig(),
+    initialSubTab: Int = 0,
+    subTabTriggerNonce: Int = 0,
     onOpenAiAssistant: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     val settingsState by viewModel.settingsState.collectAsStateWithLifecycle()
     val bookmarksState by viewModel.bookmarksState.collectAsStateWithLifecycle()
     val groupsState by viewModel.khatmahGroupsState.collectAsStateWithLifecycle()
 
     val settings = (settingsState as? UiState.Success)?.data ?: UserSettingsDoc()
-    val isArabicUi = appLanguage == AppLanguage.ARABIC || appLanguage == AppLanguage.URDU
+    val isArabicUi = appLanguage.isArabicUi
 
-    var activeSection by remember { mutableIntStateOf(0) } // 0=Madinah Mushaf, 1=Al-Musammi', 2=Khatmah, 3=Bookmarks
+    var activeSection by remember { mutableIntStateOf(initialSubTab.coerceIn(0, 3)) } // 0=Mushaf, 1=Al-Musammi', 2=Khatmah, 3=Bookmarks
+    LaunchedEffect(subTabTriggerNonce, initialSubTab) {
+        if (subTabTriggerNonce > 0) {
+            activeSection = initialSubTab.coerceIn(0, 3)
+        }
+    }
     var externalTargetPage by remember { mutableStateOf<Int?>(null) }
 
     Column(
@@ -96,7 +108,13 @@ fun QuranScreen(
                 val (label, icon) = tabs[idx]
                 LiquidGlassPill(
                     selected = activeSection == idx,
-                    onClick = { activeSection = idx },
+                    onClick = {
+                        activeSection = idx
+                        when (idx) {
+                            0 -> FeatureUsageTracker.recordUsage(context, SmartFeatureId.MUSHAF)
+                            2 -> FeatureUsageTracker.recordUsage(context, SmartFeatureId.KHATMAH)
+                        }
+                    },
                     icon = icon,
                     label = label,
                     modifier = Modifier.testTag("quran_tab_$idx")
@@ -136,7 +154,11 @@ fun QuranScreen(
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         item {
-                            AlMusammiSection(aiViewModel = aiViewModel)
+                            AlMusammiSection(
+                                aiViewModel = aiViewModel,
+                                appLanguage = appLanguage,
+                                strings = strings
+                            )
                         }
                     }
                 }
@@ -154,7 +176,9 @@ fun QuranScreen(
                                 settings = settings,
                                 groupsState = groupsState,
                                 viewModel = viewModel,
-                                familyKhatmahEnabled = appOperations.familyKhatmahEnabled
+                                familyKhatmahEnabled = appOperations.familyKhatmahEnabled,
+                                appLanguage = appLanguage,
+                                strings = strings
                             )
                         }
                     }
@@ -170,7 +194,13 @@ fun QuranScreen(
                     ) {
                         when (val bm = bookmarksState) {
                             is UiState.Loading -> item {
-                                Text(if (isArabicUi) "جارٍ تحميل العلامات..." else "Loading bookmarks...")
+                                Text(
+                                    appLanguage.pick(
+                                        "جارٍ تحميل العلامات...",
+                                        "Loading bookmarks...",
+                                        "Xatcho'plar yuklanmoqda..."
+                                    )
+                                )
                             }
                             is UiState.Error -> item {
                                 Text(bm.message, color = MaterialTheme.colorScheme.error)
@@ -193,11 +223,11 @@ fun QuranScreen(
                                                     tint = MaterialTheme.colorScheme.primary
                                                 )
                                                 Text(
-                                                    text = if (isArabicUi) {
-                                                        "لا توجد علامات مرجعية بعد. اضغط على أي آية في مصحف المدينة لحفظ علامة أو ملاحظة والعودة إليها سريعاً."
-                                                    } else {
-                                                        "No verse bookmarks yet. Tap any Ayah in the Madinah Mushaf to save bookmarks or notes."
-                                                    },
+                                                    text = appLanguage.pick(
+                                                        "لا توجد علامات مرجعية بعد. اضغط على أي آية في مصحف المدينة لحفظ علامة أو ملاحظة والعودة إليها سريعاً.",
+                                                        "No verse bookmarks yet. Tap any Ayah in the Madinah Mushaf to save bookmarks or notes.",
+                                                        "Hali xatcho'plar yo'q. Xatcho'p yoki eslatma saqlash uchun Madina Mushafidagi istalgan oyatga bosing."
+                                                    ),
                                                     style = MaterialTheme.typography.bodyMedium
                                                 )
                                             }
@@ -222,11 +252,11 @@ fun QuranScreen(
                                             ) {
                                                 Column(modifier = Modifier.weight(1f)) {
                                                     Text(
-                                                        text = if (isArabicUi) {
-                                                            "سورة ${surahMeta.nameAr} • آية ${ArabicTextNormalizer.toArabicIndicDigits(item.ayahNumber.toInt())} (${strings.pageLabel} ${ArabicTextNormalizer.toArabicIndicDigits(targetPage)})"
-                                                        } else {
-                                                            "Surah ${surahMeta.nameEn} (${item.surahNumber}:${item.ayahNumber}) • ${strings.pageLabel} $targetPage"
-                                                        },
+                                                        text = appLanguage.pick(
+                                                            "سورة ${surahMeta.nameAr} • آية ${ArabicTextNormalizer.toArabicIndicDigits(item.ayahNumber.toInt())} (${strings.pageLabel} ${ArabicTextNormalizer.toArabicIndicDigits(targetPage)})",
+                                                            "Surah ${surahMeta.nameEn} (${item.surahNumber}:${item.ayahNumber}) • ${strings.pageLabel} $targetPage",
+                                                            "${surahMeta.nameEn} surasi (${item.surahNumber}:${item.ayahNumber}) • ${strings.pageLabel} $targetPage"
+                                                        ),
                                                         style = MaterialTheme.typography.titleMedium.withTabularNums(),
                                                         fontWeight = FontWeight.Bold
                                                     )
@@ -255,7 +285,7 @@ fun QuranScreen(
                                                     IconButton(onClick = { viewModel.deleteBookmark(item.id) }) {
                                                         Icon(
                                                             imageVector = Icons.Rounded.Delete,
-                                                            contentDescription = if (isArabicUi) "حذف العلامة" else "Delete bookmark"
+                                                            contentDescription = appLanguage.pick("حذف العلامة", "Delete bookmark", "O'chirish")
                                                         )
                                                     }
                                                 }

@@ -1,5 +1,6 @@
 package com.example.domain
 
+import com.example.core.i18n.AppLanguage
 import java.util.Calendar
 import java.util.TimeZone
 import kotlin.math.*
@@ -35,10 +36,16 @@ data class PrayerTimeEntry(
     val key: String,
     val nameEn: String,
     val nameAr: String,
+    val nameUz: String,
     val timeMinutes: Int, // minutes from midnight [0..1439]
     val formattedTime: String,
-    val sunnahInfo: String
-)
+    val sunnahInfo: String,
+    val sunnahInfoAr: String,
+    val sunnahInfoUz: String
+) {
+    fun nameFor(language: AppLanguage): String = language.pick(nameAr, nameEn, nameUz)
+    fun sunnahInfoFor(language: AppLanguage): String = language.pick(sunnahInfoAr, sunnahInfo, sunnahInfoUz)
+}
 
 data class DailyPrayerSchedule(
     val imsak: PrayerTimeEntry,
@@ -63,7 +70,11 @@ data class MosquePlace(
     val iqamahMaghrib: String,
     val iqamahIsha: String,
     val jummahKhutbah: String,
-    val facilities: List<String>
+    val facilities: List<String>,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val isRealOsmData: Boolean = false,
+    val address: String = ""
 )
 
 object PrayerTimesEngine {
@@ -74,15 +85,17 @@ object PrayerTimesEngine {
     val cityPresets: List<CityPreset> = listOf(
         CityPreset("Makkah", "Saudi Arabia", 21.4225, 39.8262, CalculationMethod.UMM_AL_QURA),
         CityPreset("Madinah", "Saudi Arabia", 24.4672, 39.6112, CalculationMethod.UMM_AL_QURA),
+        CityPreset("Tashkent", "Uzbekistan", 41.2995, 69.2401, CalculationMethod.MWL),
+        CityPreset("Samarkand", "Uzbekistan", 39.6542, 66.9597, CalculationMethod.MWL),
+        CityPreset("Istanbul", "Türkiye", 41.0082, 28.9784, CalculationMethod.MWL),
+        CityPreset("Cairo", "Egypt", 30.0444, 31.2357, CalculationMethod.EGYPTIAN),
+        CityPreset("Dubai", "UAE", 25.2048, 55.2708, CalculationMethod.UMM_AL_QURA),
         CityPreset("London", "United Kingdom", 51.5074, -0.1278, CalculationMethod.MWL),
         CityPreset("New York", "United States", 40.7128, -74.0060, CalculationMethod.ISNA),
         CityPreset("Los Angeles", "United States", 34.0522, -118.2437, CalculationMethod.ISNA),
-        CityPreset("Istanbul", "Türkiye", 41.0082, 28.9784, CalculationMethod.MWL),
-        CityPreset("Cairo", "Egypt", 30.0444, 31.2357, CalculationMethod.EGYPTIAN),
         CityPreset("Karachi", "Pakistan", 24.8607, 67.0011, CalculationMethod.KARACHI),
         CityPreset("Jakarta", "Indonesia", -6.2088, 106.8456, CalculationMethod.MWL),
         CityPreset("Kuala Lumpur", "Malaysia", 3.1390, 101.6869, CalculationMethod.MWL),
-        CityPreset("Dubai", "UAE", 25.2048, 55.2708, CalculationMethod.UMM_AL_QURA),
         CityPreset("Toronto", "Canada", 43.6532, -79.3832, CalculationMethod.ISNA)
     )
 
@@ -159,39 +172,87 @@ object PrayerTimesEngine {
         val maghribMin = applyOffset(hoursToMinutes(maghribHours), manualOffsetsMin["maghrib"] ?: 0)
         val ishaMin = applyOffset(hoursToMinutes(ishaHours), manualOffsetsMin["isha"] ?: 0)
 
-        // Night length from Maghrib to Fajr
         val nightDuration = ((fajrMin - maghribMin) + 1440) % 1440
         val midnightMin = (maghribMin + nightDuration / 2) % 1440
         val lastThirdMin = (fajrMin - nightDuration / 3 + 1440) % 1440
 
         return DailyPrayerSchedule(
-            imsak = PrayerTimeEntry("imsak", "Imsak (Suhoor End)", "الإمساك", imsakMin, formatMinutes(imsakMin), "Recommended pause before Fajr"),
-            fajr = PrayerTimeEntry("fajr", "Fajr", "الفجر", fajrMin, formatMinutes(fajrMin), "2 Sunnah before + 2 Fard"),
-            sunrise = PrayerTimeEntry("sunrise", "Sunrise (Shuruq)", "الشروق", sunriseMin, formatMinutes(sunriseMin), "Duha begins ~15 min after"),
+            imsak = PrayerTimeEntry(
+                key = "imsak",
+                nameEn = "Imsak",
+                nameAr = "الإمساك",
+                nameUz = "Imsok",
+                timeMinutes = imsakMin,
+                formattedTime = formatMinutes(imsakMin),
+                sunnahInfo = "Pause eating ~10 min before Fajr",
+                sunnahInfoAr = "يُستحب الإمساك قبل الفجر بنحو ١٠ دقائق",
+                sunnahInfoUz = "Bomdoddan ~10 daqiqa oldin saharlikni yakunlash"
+            ),
+            fajr = PrayerTimeEntry(
+                key = "fajr",
+                nameEn = "Fajr",
+                nameAr = "الفجر",
+                nameUz = "Bomdod",
+                timeMinutes = fajrMin,
+                formattedTime = formatMinutes(fajrMin),
+                sunnahInfo = "2 Sunnah before + 2 Fard",
+                sunnahInfoAr = "ركعتان سنة قبلية + ركعتان فرض",
+                sunnahInfoUz = "2 rakat sunnat + 2 rakat farz"
+            ),
+            sunrise = PrayerTimeEntry(
+                key = "sunrise",
+                nameEn = "Sunrise",
+                nameAr = "الشروق",
+                nameUz = "Quyosh",
+                timeMinutes = sunriseMin,
+                formattedTime = formatMinutes(sunriseMin),
+                sunnahInfo = "Duha begins ~15 min after",
+                sunnahInfoAr = "تبدأ صلاة الضحى بعده بنحو ١٥ دقيقة",
+                sunnahInfoUz = "Quyosh chiqqandan 15 daqiqa o'tgach Zuho vaqti kiradi"
+            ),
             dhuhr = PrayerTimeEntry(
-                "dhuhr",
-                if (travelerMode) "Dhuhr (Qasr: 2)" else "Dhuhr",
-                "الظهر",
-                dhuhrMin,
-                formatMinutes(dhuhrMin),
-                if (travelerMode) "2 Fard (Shortened; may combine w/ Asr)" else "4 Sunnah before + 4 Fard + 2 after"
+                key = "dhuhr",
+                nameEn = if (travelerMode) "Dhuhr (Qasr: 2)" else "Dhuhr",
+                nameAr = if (travelerMode) "الظهر (قصر: ٢)" else "الظهر",
+                nameUz = if (travelerMode) "Peshin (Qasr: 2)" else "Peshin",
+                timeMinutes = dhuhrMin,
+                formattedTime = formatMinutes(dhuhrMin),
+                sunnahInfo = if (travelerMode) "2 Fard (May combine w/ Asr)" else "4 Sunnah before + 4 Fard + 2 after",
+                sunnahInfoAr = if (travelerMode) "ركعتان قصراً (يجوز الجمع مع العصر)" else "٤ سنة قبلية + ٤ فرض + ٢ بعدية",
+                sunnahInfoUz = if (travelerMode) "2 rakat qasr (Asr bilan jamlash mumkin)" else "4 sunnat + 4 farz + 2 sunnat"
             ),
             asr = PrayerTimeEntry(
-                "asr",
-                if (travelerMode) "Asr (Qasr: 2)" else "Asr",
-                "العصر",
-                asrMin,
-                formatMinutes(asrMin),
-                if (travelerMode) "2 Fard (Shortened)" else "4 Fard (4 Sunnah Ghayr Mu'akkadah)"
+                key = "asr",
+                nameEn = if (travelerMode) "Asr (Qasr: 2)" else "Asr",
+                nameAr = if (travelerMode) "العصر (قصر: ٢)" else "العصر",
+                nameUz = if (travelerMode) "Asr (Qasr: 2)" else "Asr",
+                timeMinutes = asrMin,
+                formattedTime = formatMinutes(asrMin),
+                sunnahInfo = if (travelerMode) "2 Fard (Shortened)" else "4 Fard (4 Sunnah before recommended)",
+                sunnahInfoAr = if (travelerMode) "ركعتان قصراً" else "٤ فرض (ويُستحب ٤ سنة قبلها)",
+                sunnahInfoUz = if (travelerMode) "2 rakat qasr" else "4 rakat farz (oldin 4 sunnat mustahab)"
             ),
-            maghrib = PrayerTimeEntry("maghrib", "Maghrib", "المغرب", maghribMin, formatMinutes(maghribMin), "3 Fard + 2 Sunnah after"),
+            maghrib = PrayerTimeEntry(
+                key = "maghrib",
+                nameEn = "Maghrib",
+                nameAr = "المغرب",
+                nameUz = "Shom",
+                timeMinutes = maghribMin,
+                formattedTime = formatMinutes(maghribMin),
+                sunnahInfo = "3 Fard + 2 Sunnah after",
+                sunnahInfoAr = "٣ فرض + ٢ سنة بعدية",
+                sunnahInfoUz = "3 rakat farz + 2 rakat sunnat"
+            ),
             isha = PrayerTimeEntry(
-                "isha",
-                if (travelerMode) "Isha (Qasr: 2)" else "Isha",
-                "العشاء",
-                ishaMin,
-                formatMinutes(ishaMin),
-                if (travelerMode) "2 Fard + Witr (May combine w/ Maghrib)" else "4 Fard + 2 Sunnah + Witr"
+                key = "isha",
+                nameEn = if (travelerMode) "Isha (Qasr: 2)" else "Isha",
+                nameAr = if (travelerMode) "العشاء (قصر: ٢)" else "العشاء",
+                nameUz = if (travelerMode) "Xufton (Qasr: 2)" else "Xufton",
+                timeMinutes = ishaMin,
+                formattedTime = formatMinutes(ishaMin),
+                sunnahInfo = if (travelerMode) "2 Fard + Witr" else "4 Fard + 2 Sunnah + Witr",
+                sunnahInfoAr = if (travelerMode) "ركعتان قصراً + الوتر" else "٤ فرض + ٢ سنة + الوتر",
+                sunnahInfoUz = if (travelerMode) "2 rakat qasr + Vitr" else "4 farz + 2 sunnat + Vitr"
             ),
             nightMidnight = formatMinutes(midnightMin),
             lastThirdQiyam = formatMinutes(lastThirdMin),
@@ -200,41 +261,49 @@ object PrayerTimesEngine {
         )
     }
 
-    fun getMosquesForCity(city: String, schedule: DailyPrayerSchedule): List<MosquePlace> {
+    fun getMosquesForCity(
+        city: String,
+        schedule: DailyPrayerSchedule,
+        language: AppLanguage = AppLanguage.ARABIC
+    ): List<MosquePlace> {
         fun addMin(min: Int, delta: Int) = formatMinutes((min + delta) % 1440)
         return listOf(
             MosquePlace(
-                name = "Masjid Al-Noor ($city Central)",
-                distanceLabel = "0.6 km",
+                name = language.pick(
+                    "مسجد النور ($city)",
+                    "Masjid Al-Noor ($city Central)",
+                    "An-Nur masjidi ($city markazi)"
+                ),
+                distanceLabel = language.pick("٠.٦ كم (تقديري)", "0.6 km (est.)", "0.6 km (taxminiy)"),
                 iqamahFajr = addMin(schedule.fajr.timeMinutes, 20),
                 iqamahDhuhr = addMin(schedule.dhuhr.timeMinutes, 15),
                 iqamahAsr = addMin(schedule.asr.timeMinutes, 15),
                 iqamahMaghrib = addMin(schedule.maghrib.timeMinutes, 7),
                 iqamahIsha = addMin(schedule.isha.timeMinutes, 15),
                 jummahKhutbah = "1:15 PM",
-                facilities = listOf("Wudu Area", "Women's Section", "Wheelchair Access", "Parking")
+                facilities = listOf(
+                    language.pick("مواضئ", "Wudu Area", "Tahoratxona"),
+                    language.pick("مصلى نساء", "Women's Section", "Ayollar xonasi"),
+                    language.pick("موقف سيارات", "Parking", "Avtoturargoh")
+                )
             ),
             MosquePlace(
-                name = "Islamic Heritage Center",
-                distanceLabel = "1.4 km",
+                name = language.pick(
+                    "المركز الإسلامي الجامع ($city)",
+                    "Islamic Heritage Center ($city)",
+                    "Markaziy Jome Masjidi ($city)"
+                ),
+                distanceLabel = language.pick("١.٤ كم (تقديري)", "1.4 km (est.)", "1.4 km (taxminiy)"),
                 iqamahFajr = addMin(schedule.fajr.timeMinutes, 25),
                 iqamahDhuhr = addMin(schedule.dhuhr.timeMinutes, 20),
                 iqamahAsr = addMin(schedule.asr.timeMinutes, 20),
                 iqamahMaghrib = addMin(schedule.maghrib.timeMinutes, 5),
                 iqamahIsha = addMin(schedule.isha.timeMinutes, 20),
                 jummahKhutbah = "1:30 PM",
-                facilities = listOf("Wudu Area", "Women's Section", "Quran Halaqah")
-            ),
-            MosquePlace(
-                name = "Airport & Traveler Prayer Musalla",
-                distanceLabel = "4.8 km",
-                iqamahFajr = addMin(schedule.fajr.timeMinutes, 15),
-                iqamahDhuhr = addMin(schedule.dhuhr.timeMinutes, 10),
-                iqamahAsr = addMin(schedule.asr.timeMinutes, 10),
-                iqamahMaghrib = addMin(schedule.maghrib.timeMinutes, 5),
-                iqamahIsha = addMin(schedule.isha.timeMinutes, 10),
-                jummahKhutbah = "1:00 PM",
-                facilities = listOf("24/7 Open", "Qibla Markers", "Wudu Pods", "Step-Free")
+                facilities = listOf(
+                    language.pick("مواضئ", "Wudu Area", "Tahoratxona"),
+                    language.pick("حلقات تحفيظ", "Quran Halaqah", "Qur'on darslari")
+                )
             )
         )
     }

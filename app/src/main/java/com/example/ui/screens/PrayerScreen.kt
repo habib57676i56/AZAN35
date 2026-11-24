@@ -1,7 +1,16 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -31,24 +40,39 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AirplanemodeActive
 import androidx.compose.material.icons.rounded.AudioFile
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoStories
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Directions
+import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Mosque
+import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.VolunteerActivism
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -63,6 +87,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -89,18 +114,26 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.core.hardware.AdhanAudioPlayer
+import com.example.core.hardware.LauncherShortcutHelper
+import com.example.core.hardware.LauncherShortcutTarget
+import com.example.core.hardware.LocationAndMosqueLocator
+import com.example.core.hardware.PrayerStatusNotificationManager
 import com.example.core.hardware.shareDesignedVerseTextOrCard
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
 import com.example.core.i18n.formatNumerals
+import com.example.core.preferences.FeatureUsageTracker
+import com.example.core.preferences.SmartFeatureId
 import com.example.data.firebase.AdhanAlertMode
 import com.example.data.firebase.AppOperationsConfig
 import com.example.data.firebase.UserSettingsDoc
 import com.example.domain.CalculationMethod
 import com.example.domain.IslamicLibraryData
+import com.example.domain.LiveVersesAndHadithsCatalog
 import com.example.domain.PrayerTimeEntry
 import com.example.domain.PrayerTimesEngine
 import com.example.domain.QuranContentData
@@ -132,13 +165,19 @@ fun PrayerScreen(
     appOperations: AppOperationsConfig = AppOperationsConfig(),
     onOpenKhutbahAi: () -> Unit,
     onOpenMushaf: () -> Unit = {},
+    onOpenKhatmah: () -> Unit = {},
+    onOpenAdhkar: () -> Unit = {},
     onOpenTasbih: () -> Unit = {},
-    onOpenAi: () -> Unit = {}
+    onOpenAi: (String?) -> Unit = {},
+    onOpenHijri: () -> Unit = {},
+    onOpenZakat: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val glass = LocalLiquidGlassPalette.current
-    val isArabicUi = appLanguage == AppLanguage.ARABIC || appLanguage == AppLanguage.URDU
+    val isArabicUi = appLanguage.isArabicUi
+    val useArabicDigits = useIndic && isArabicUi
+    val listState = rememberLazyListState()
 
     val settingsState by viewModel.settingsState.collectAsStateWithLifecycle()
     val localPrefs by viewModel.localPrefsState.collectAsStateWithLifecycle()
@@ -148,6 +187,11 @@ fun PrayerScreen(
     val adhkarCatalog by viewModel.adhkarCatalogState.collectAsStateWithLifecycle()
     val todayAdhkarLogs by viewModel.todayAdhkarLogsState.collectAsStateWithLifecycle()
     val adhanState by adhanAudioPlayer.state.collectAsStateWithLifecycle()
+    val nearbyMosques by viewModel.nearbyMosques.collectAsStateWithLifecycle()
+    val nearbyMosquesLoading by viewModel.nearbyMosquesLoading.collectAsStateWithLifecycle()
+    val isLocatingGps by viewModel.isLocatingGps.collectAsStateWithLifecycle()
+    val locationNotice by viewModel.locationNotice.collectAsStateWithLifecycle()
+    val usageVersion by FeatureUsageTracker.countsVersion.collectAsStateWithLifecycle()
 
     val settings = (settingsState as? UiState.Success)?.data ?: UserSettingsDoc()
     val logs = (logsState as? UiState.Success)?.data ?: emptyList()
@@ -158,8 +202,87 @@ fun PrayerScreen(
         viewModel.computeSchedule(settings, manualOffsets)
     }
     val hijriToday = remember(settings) { viewModel.computeHijriToday(settings) }
-    val mosques = remember(settings.city, schedule) {
-        PrayerTimesEngine.getMosquesForCity(settings.city, schedule)
+    val mosques = remember(nearbyMosques, settings.city, schedule, appLanguage) {
+        nearbyMosques.ifEmpty { PrayerTimesEngine.getMosquesForCity(settings.city, schedule, appLanguage) }
+    }
+
+    LaunchedEffect(settings.city, settings.latitude, settings.longitude, appLanguage) {
+        if (appOperations.nearbyMosquesEnabled) {
+            viewModel.refreshNearbyMosques(settings, manualOffsets, appLanguage)
+        }
+    }
+
+    var persistentBarEnabled by remember(context) {
+        mutableStateOf(PrayerStatusNotificationManager.isEnabled(context))
+    }
+
+    val gpsPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val ok = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (ok) {
+            viewModel.detectGpsAndMosques(context, appLanguage, manualOffsets, settings)
+        } else {
+            viewModel.showMessage(
+                appLanguage.pick(
+                    "تم رفض إذن الموقع؛ يمكنك اختيار المدينة يدوياً.",
+                    "Location permission denied; you can choose a city manually.",
+                    "Joylashuv ruxsati berilmadi; shaharni qo'lda tanlashingiz mumkin."
+                )
+            )
+        }
+    }
+
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            persistentBarEnabled = true
+            PrayerStatusNotificationManager.setEnabled(
+                context, true, settings, manualOffsets, appLanguage, useIndic, appOperations
+            )
+        } else {
+            viewModel.showMessage(
+                appLanguage.pick(
+                    "اسمح بالإشعارات لتثبيت مواقيت الصلاة في لوحة الهاتف.",
+                    "Allow notifications to pin permanent prayer times in the shade.",
+                    "Bildirishnomada doimiy namoz vaqtlarini ko'rsatish uchun ruxsat bering."
+                )
+            )
+        }
+    }
+
+    fun requestGpsDetection() {
+        val fineOk = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarseOk = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (fineOk || coarseOk) {
+            viewModel.detectGpsAndMosques(context, appLanguage, manualOffsets, settings)
+        } else {
+            gpsPermissionLauncher.launch(
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            )
+        }
+    }
+
+    fun togglePersistentBar() {
+        if (persistentBarEnabled) {
+            persistentBarEnabled = false
+            PrayerStatusNotificationManager.setEnabled(
+                context, false, settings, manualOffsets, appLanguage, useIndic, appOperations
+            )
+        } else {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) {
+                notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                persistentBarEnabled = true
+                PrayerStatusNotificationManager.setEnabled(
+                    context, true, settings, manualOffsets, appLanguage, useIndic, appOperations
+                )
+            }
+        }
     }
 
     var nowSeconds by remember { mutableIntStateOf(0) }
@@ -230,7 +353,13 @@ fun PrayerScreen(
                         viewModel.saveCustomAdhanFile(localPath, displayName)
                     }
                     .onFailure { err ->
-                        viewModel.showMessage(err.localizedMessage ?: "تعذر استيراد ملف الأذان")
+                        viewModel.showMessage(
+                            err.localizedMessage ?: appLanguage.pick(
+                                "تعذر استيراد ملف الأذان",
+                                "Unable to import Adhan audio",
+                                "Azon faylini yuklab bo'lmadi"
+                            )
+                        )
                     }
             }
         }
@@ -238,6 +367,7 @@ fun PrayerScreen(
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .widthIn(max = 640.dp),
@@ -288,7 +418,7 @@ fun PrayerScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = if (isArabicUi) hijriToday.formattedAr() else formatNumerals(hijriToday.formattedEn(), useIndic),
+                                        text = formatNumerals(hijriToday.formattedFor(appLanguage), useArabicDigits),
                                         style = MaterialTheme.typography.labelLarge,
                                         color = Color(0xFFF6D98E),
                                         maxLines = 1,
@@ -304,7 +434,40 @@ fun PrayerScreen(
                                 }
                                 Spacer(Modifier.width(8.dp))
                                 Surface(
-                                    onClick = { showQiblaSheet = true },
+                                    onClick = { requestGpsDetection() },
+                                    color = Color.White.copy(alpha = 0.16f),
+                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
+                                    shape = CircleShape,
+                                    modifier = Modifier.testTag("hero_gps_locate_button")
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (isLocatingGps) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(14.dp),
+                                                strokeWidth = 2.dp,
+                                                color = Color(0xFFF6D98E)
+                                            )
+                                        } else {
+                                            Icon(Icons.Rounded.MyLocation, null, tint = Color(0xFFF6D98E), modifier = Modifier.size(15.dp))
+                                        }
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(
+                                            text = if (isLocatingGps) strings.locatingGps else appLanguage.pick("موقعي", "GPS", "GPS"),
+                                            color = Color.White,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.width(6.dp))
+                                Surface(
+                                    onClick = {
+                                        FeatureUsageTracker.recordUsage(context, SmartFeatureId.QIBLA)
+                                        showQiblaSheet = true
+                                    },
                                     color = Color.White.copy(alpha = 0.16f),
                                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
                                     shape = CircleShape,
@@ -317,11 +480,56 @@ fun PrayerScreen(
                                         Icon(MihrabIcons.KaabaCube, null, tint = Color(0xFFF6D98E), modifier = Modifier.size(16.dp))
                                         Spacer(Modifier.width(6.dp))
                                         Text(
-                                            text = "${formatNumerals("${schedule.qiblaBearingDegrees.toInt()}°", useIndic)} ${if (isArabicUi) "القبلة" else "Qibla"}",
+                                            text = "${formatNumerals("${schedule.qiblaBearingDegrees.toInt()}°", useArabicDigits)} ${appLanguage.pick("القبلة", "Qibla", "Qibla")}",
                                             color = Color.White,
                                             style = MaterialTheme.typography.labelLarge.withTabularNums(),
                                             maxLines = 1
                                         )
+                                    }
+                                }
+                            }
+
+                            if (!locationNotice.isNullOrBlank()) {
+                                Surface(
+                                    color = Color.Black.copy(alpha = 0.28f),
+                                    border = BorderStroke(1.dp, Color(0xFFF6D98E).copy(alpha = 0.45f)),
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = locationNotice!!,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color.White,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        if (!LocationAndMosqueLocator.isLocationEnabled(context)) {
+                                            TextButton(
+                                                onClick = {
+                                                    runCatching {
+                                                        context.startActivity(
+                                                            Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                        )
+                                                    }
+                                                }
+                                            ) {
+                                                Text(
+                                                    appLanguage.pick("تفعيل GPS", "Enable GPS", "GPS yoqish"),
+                                                    color = Color(0xFFF6D98E),
+                                                    style = MaterialTheme.typography.labelMedium
+                                                )
+                                            }
+                                        }
+                                        IconButton(
+                                            onClick = { viewModel.clearLocationNotice() },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.Close, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                        }
                                     }
                                 }
                             }
@@ -347,18 +555,18 @@ fun PrayerScreen(
                                         )
                                     }
                                     Text(
-                                        text = if (isArabicUi) nextPrayerEntry.nameAr else "${nextPrayerEntry.nameEn} • ${nextPrayerEntry.nameAr}",
+                                        text = if (isArabicUi) nextPrayerEntry.nameAr else "${nextPrayerEntry.nameFor(appLanguage)} • ${nextPrayerEntry.nameAr}",
                                         style = MaterialTheme.typography.displayMedium,
                                         color = Color.White,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        text = if (isArabicUi) {
-                                            "الأذان الساعة ${formatNumerals(nextPrayerEntry.formattedTime, useIndic)}"
-                                        } else {
-                                            "Adhan at ${formatNumerals(nextPrayerEntry.formattedTime, useIndic)}"
-                                        },
+                                        text = appLanguage.pick(
+                                            "الأذان الساعة ${formatNumerals(nextPrayerEntry.formattedTime, useArabicDigits)}",
+                                            "Adhan at ${formatNumerals(nextPrayerEntry.formattedTime, false)}",
+                                            "Azon vaqti: ${nextPrayerEntry.formattedTime}"
+                                        ),
                                         style = MaterialTheme.typography.bodyLarge.withTabularNums(),
                                         color = Color.White.copy(alpha = 0.90f)
                                     )
@@ -390,13 +598,13 @@ fun PrayerScreen(
                                     }
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Text(
-                                            text = formatNumerals(countdownStr, useIndic),
+                                            text = formatNumerals(countdownStr, useArabicDigits),
                                             style = MaterialTheme.typography.titleMedium.withTabularNums(),
                                             fontWeight = FontWeight.Bold,
                                             color = Color.White
                                         )
                                         Text(
-                                            text = if (isArabicUi) "المتبقي" else "Remaining",
+                                            text = appLanguage.pick("المتبقي", "Remaining", "Qoldi"),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = Color(0xFFF6D98E)
                                         )
@@ -409,18 +617,18 @@ fun PrayerScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 HeroTimePill(
-                                    label = if (isArabicUi) "الإمساك" else "Imsak",
-                                    value = formatNumerals(schedule.imsak.formattedTime, useIndic),
+                                    label = schedule.imsak.nameFor(appLanguage),
+                                    value = formatNumerals(schedule.imsak.formattedTime, useArabicDigits),
                                     modifier = Modifier.weight(1f)
                                 )
                                 HeroTimePill(
-                                    label = if (isArabicUi) "الشروق" else "Sunrise",
-                                    value = formatNumerals(schedule.sunrise.formattedTime, useIndic),
+                                    label = schedule.sunrise.nameFor(appLanguage),
+                                    value = formatNumerals(schedule.sunrise.formattedTime, useArabicDigits),
                                     modifier = Modifier.weight(1f)
                                 )
                                 HeroTimePill(
-                                    label = if (isArabicUi) "القيام ⅓" else "Qiyam ⅓",
-                                    value = formatNumerals(schedule.lastThirdQiyam, useIndic),
+                                    label = appLanguage.pick("القيام ⅓", "Qiyam ⅓", "Tahajjud ⅓"),
+                                    value = formatNumerals(schedule.lastThirdQiyam, useArabicDigits),
                                     highlight = true,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -439,19 +647,48 @@ fun PrayerScreen(
                     item {
                         LiquidGlassPill(
                             selected = true,
-                            onClick = onOpenMushaf,
+                            onClick = {
+                                FeatureUsageTracker.recordUsage(context, SmartFeatureId.MUSHAF)
+                                onOpenMushaf()
+                            },
                             icon = Icons.Rounded.AutoStories,
-                            label = if (isArabicUi) {
-                                "متابعة المصحف (${formatNumerals(settings.lastReadPage.toString(), useIndic)})"
-                            } else {
-                                "Mushaf p.${settings.lastReadPage}"
-                            }
+                            label = appLanguage.pick(
+                                "متابعة المصحف (${formatNumerals(settings.lastReadPage.toString(), useArabicDigits)})",
+                                "Mushaf p.${settings.lastReadPage}",
+                                "Mushaf ${settings.lastReadPage}-bet"
+                            )
                         )
                     }
                     item {
                         LiquidGlassPill(
                             selected = false,
-                            onClick = { showQiblaSheet = true },
+                            onClick = { requestGpsDetection() },
+                            icon = Icons.Rounded.MyLocation,
+                            label = strings.detectMyLocation
+                        )
+                    }
+                    if (appOperations.persistentPrayerNotificationAllowed) {
+                        item {
+                            LiquidGlassPill(
+                                selected = persistentBarEnabled,
+                                onClick = { togglePersistentBar() },
+                                icon = Icons.Rounded.Schedule,
+                                label = appLanguage.pick(
+                                    if (persistentBarEnabled) "شريط الصلاة: مفعّل" else "تثبيت الصلاة بالإشعارات",
+                                    if (persistentBarEnabled) "Shade Bar: ON" else "Pin Prayer Bar",
+                                    if (persistentBarEnabled) "Bildirishnoma: Yoqilgan" else "Namoz panelini yoqish"
+                                ),
+                                modifier = Modifier.testTag("toggle_persistent_bar_pill")
+                            )
+                        }
+                    }
+                    item {
+                        LiquidGlassPill(
+                            selected = false,
+                            onClick = {
+                                FeatureUsageTracker.recordUsage(context, SmartFeatureId.QIBLA)
+                                showQiblaSheet = true
+                            },
                             icon = MihrabIcons.Qibla,
                             label = strings.qiblaCompass
                         )
@@ -459,7 +696,10 @@ fun PrayerScreen(
                     item {
                         LiquidGlassPill(
                             selected = false,
-                            onClick = onOpenTasbih,
+                            onClick = {
+                                FeatureUsageTracker.recordUsage(context, SmartFeatureId.TASBIH)
+                                onOpenTasbih()
+                            },
                             icon = MihrabIcons.TasbihBeads,
                             label = strings.digitalTasbih
                         )
@@ -468,9 +708,12 @@ fun PrayerScreen(
                         item {
                             LiquidGlassPill(
                                 selected = false,
-                                onClick = onOpenAi,
+                                onClick = {
+                                    FeatureUsageTracker.recordUsage(context, SmartFeatureId.AI_COMPANION)
+                                    onOpenAi(null)
+                                },
                                 icon = MihrabIcons.AiSpark,
-                                label = if (isArabicUi) "المساعد الذكي" else "Islamic AI"
+                                label = appLanguage.pick("المساعد الذكي", "Islamic AI", "Islomiy AI")
                             )
                         }
                     }
@@ -488,7 +731,7 @@ fun PrayerScreen(
                             selected = false,
                             onClick = { showMethodSheet = true },
                             icon = MihrabIcons.MethodTune,
-                            label = if (isArabicUi) "الحساب والتعديل" else "Method & Offsets"
+                            label = appLanguage.pick("الحساب والتعديل", "Method & Offsets", "Hisob va tuzatish")
                         )
                     }
                     item {
@@ -496,15 +739,18 @@ fun PrayerScreen(
                             selected = false,
                             onClick = { showGuidesSheet = true },
                             icon = MihrabIcons.Guides,
-                            label = if (isArabicUi) "أحكام الصلوات" else "Prayer Guides"
+                            label = appLanguage.pick("أحكام الصلوات", "Prayer Guides", "Namoz qo'llanmasi")
                         )
                     }
                     item {
                         LiquidGlassPill(
                             selected = false,
-                            onClick = { showRakahCounterSheet = true },
+                            onClick = {
+                                FeatureUsageTracker.recordUsage(context, SmartFeatureId.RAKAH)
+                                showRakahCounterSheet = true
+                            },
                             icon = MihrabIcons.RakahTimer,
-                            label = if (isArabicUi) "عدّاد الركعات" else "Rak'ah & Focus"
+                            label = appLanguage.pick("عدّاد الركعات", "Rak'ah & Focus", "Rakat sanagich")
                         )
                     }
                     item {
@@ -512,13 +758,13 @@ fun PrayerScreen(
                             selected = khushuPrePrayerMode,
                             onClick = { khushuPrePrayerMode = !khushuPrePrayerMode },
                             icon = MihrabIcons.KhushuStar,
-                            label = if (isArabicUi) "تأمل الخشوع" else "Khushu'"
+                            label = appLanguage.pick("تأمل الخشوع", "Khushu'", "Xushu' tafakkuri")
                         )
                     }
                 }
             }
 
-            // 3. Daily Worship Bento Grid + Ayah of the Day
+            // 3. Daily Worship Bento Grid + Ayah of the Day + Live Rotating Ayahs & Hadiths
             item {
                 val pagesRead = settings.khatmahPagesRead.toInt().coerceIn(0, 604)
                 val khatmahRatio = (pagesRead / 604f).coerceIn(0.02f, 1f)
@@ -532,7 +778,10 @@ fun PrayerScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         LiquidGlassCard(
-                            onClick = onOpenMushaf,
+                            onClick = {
+                                FeatureUsageTracker.recordUsage(context, SmartFeatureId.MUSHAF)
+                                onOpenMushaf()
+                            },
                             contentPadding = 14.dp,
                             modifier = Modifier.weight(1f)
                         ) {
@@ -543,24 +792,27 @@ fun PrayerScreen(
                                 MiniCircularRing(
                                     progress = khatmahRatio,
                                     ringColor = MaterialTheme.colorScheme.primary,
-                                    centerLabel = formatNumerals("${(khatmahRatio * 100).toInt()}%", useIndic)
+                                    centerLabel = formatNumerals("${(khatmahRatio * 100).toInt()}%", useArabicDigits)
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = if (isArabicUi) "الورد والختمة" else "Daily Wird",
+                                        text = appLanguage.pick("الورد والختمة", "Daily Wird", "Kunlik vird"),
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        text = formatNumerals("$pagesRead / 604", useIndic),
+                                        text = formatNumerals("$pagesRead / 604", useArabicDigits),
                                         style = MaterialTheme.typography.labelLarge.withTabularNums(),
                                         color = MaterialTheme.colorScheme.primary
                                     )
                                     Text(
-                                        text = if (isArabicUi) "صفحة ${formatNumerals(settings.lastReadPage.toString(), useIndic)}"
-                                        else "Last p.${settings.lastReadPage}",
+                                        text = appLanguage.pick(
+                                            "صفحة ${formatNumerals(settings.lastReadPage.toString(), useArabicDigits)}",
+                                            "Last p.${settings.lastReadPage}",
+                                            "Oxirgi ${settings.lastReadPage}-bet"
+                                        ),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1
@@ -570,7 +822,10 @@ fun PrayerScreen(
                         }
 
                         LiquidGlassCard(
-                            onClick = onOpenTasbih,
+                            onClick = {
+                                FeatureUsageTracker.recordUsage(context, SmartFeatureId.TASBIH)
+                                onOpenTasbih()
+                            },
                             contentPadding = 14.dp,
                             modifier = Modifier.weight(1f)
                         ) {
@@ -581,27 +836,159 @@ fun PrayerScreen(
                                 MiniCircularRing(
                                     progress = adhkarRatio,
                                     ringColor = glass.accentGold,
-                                    centerLabel = formatNumerals("$totalAdhkarDone", useIndic)
+                                    centerLabel = formatNumerals("$totalAdhkarDone", useArabicDigits)
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = if (isArabicUi) "الأذكار والتسبيح" else "Daily Adhkar",
+                                        text = appLanguage.pick("الأذكار والتسبيح", "Daily Adhkar", "Kunlik zikrlar"),
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        text = formatNumerals("$totalAdhkarDone / $totalAdhkarTarget", useIndic),
+                                        text = formatNumerals("$totalAdhkarDone / $totalAdhkarTarget", useArabicDigits),
                                         style = MaterialTheme.typography.labelLarge.withTabularNums(),
                                         color = glass.accentGold
                                     )
                                     Text(
-                                        text = if (isArabicUi) "اضغط للسبحة" else "Open Tasbih",
+                                        text = appLanguage.pick("اضغط للسبحة", "Open Tasbih", "Tasbehni ochish"),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1
                                     )
+                                }
+                            }
+                        }
+                    }
+
+                    if (appOperations.liveVersesCardEnabled) {
+                        val quotes = LiveVersesAndHadithsCatalog.entries
+                        var quoteIndex by remember { mutableIntStateOf(0) }
+                        var quotePaused by remember { mutableStateOf(false) }
+
+                        LaunchedEffect(quoteIndex, quotePaused) {
+                            if (!quotePaused && quotes.isNotEmpty()) {
+                                delay(9000L)
+                                quoteIndex = (quoteIndex + 1) % quotes.size
+                            }
+                        }
+
+                        val currentQuote = quotes[quoteIndex % quotes.size]
+                        LiquidGlassCard(
+                            contentPadding = 14.dp,
+                            borderColor = glass.accentGold.copy(alpha = 0.42f),
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("live_verses_hadith_card")
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Rounded.AutoAwesome, null, tint = glass.accentGold, modifier = Modifier.size(18.dp))
+                                    Text(
+                                        text = "${strings.liveVersesTitle} • ${if (currentQuote.isQuran) appLanguage.pick("آية", "Quran", "Oyat") else appLanguage.pick("حديث", "Hadith", "Hadis")}",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = { quoteIndex = (quoteIndex - 1 + quotes.size) % quotes.size },
+                                        modifier = Modifier.size(30.dp)
+                                    ) {
+                                        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, contentDescription = "Previous", modifier = Modifier.size(18.dp))
+                                    }
+                                    IconButton(
+                                        onClick = { quotePaused = !quotePaused },
+                                        modifier = Modifier.size(30.dp)
+                                    ) {
+                                        Icon(
+                                            if (quotePaused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
+                                            contentDescription = if (quotePaused) "Resume" else "Pause",
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { quoteIndex = (quoteIndex + 1) % quotes.size },
+                                        modifier = Modifier.size(30.dp)
+                                    ) {
+                                        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "Next", modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
+
+                            AnimatedContent(targetState = currentQuote, label = "liveSpiritualQuote") { item ->
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        text = if (item.isQuran) "﴿${item.arabicText}﴾" else "«${item.arabicText}»",
+                                        fontFamily = AmiriQuranFontFamily,
+                                        fontSize = 19.sp,
+                                        lineHeight = 32.sp,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Text(
+                                        text = item.meaningFor(appLanguage),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Text(
+                                        text = item.sourceFor(appLanguage),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = glass.accentGold,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        val txt = "${currentQuote.arabicText}\n${currentQuote.meaningFor(appLanguage)}\n(${currentQuote.sourceFor(appLanguage)})"
+                                        cm.setPrimaryClip(ClipData.newPlainText("Mihrab Quote", txt))
+                                        viewModel.showMessage(strings.copiedToast)
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(15.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(strings.copyAyah, maxLines = 1)
+                                }
+                                if (appOperations.aiAssistantEnabled) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            val q = appLanguage.pick(
+                                                "اشرح لي معنى وفضل: ${currentQuote.arabicText} (${currentQuote.sourceAr})",
+                                                "Explain the tafsir/meaning and lessons of: ${currentQuote.arabicText} (${currentQuote.sourceEn})",
+                                                "Ushbu oyat/hadisning ma'nosi va foydalarini tushuntirib bering: ${currentQuote.arabicText} (${currentQuote.sourceUz})"
+                                            )
+                                            onOpenAi(q)
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(MihrabIcons.AiSpark, null, modifier = Modifier.size(15.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(appLanguage.pick("اسأل AI", "Ask AI", "AI dan so'rash"), maxLines = 1)
+                                    }
                                 }
                             }
                         }
@@ -634,7 +1021,11 @@ fun PrayerScreen(
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Icon(MihrabIcons.MihrabArch, null, tint = glass.accentGold, modifier = Modifier.size(18.dp))
                                         Text(
-                                            text = if (isArabicUi) "آية اليوم • ${dailySurah.nameAr}" else "Ayah of the Day • ${dailySurah.nameEn}",
+                                            text = appLanguage.pick(
+                                                "آية اليوم • ${dailySurah.nameAr}",
+                                                "Ayah of the Day • ${dailySurah.nameEn}",
+                                                "Kun oyati • ${dailySurah.nameEn}"
+                                            ),
                                             style = MaterialTheme.typography.labelLarge,
                                             color = MaterialTheme.colorScheme.primary,
                                             fontWeight = FontWeight.Bold
@@ -659,7 +1050,7 @@ fun PrayerScreen(
                                         ) {
                                             Icon(Icons.Rounded.Share, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
                                             Text(
-                                                text = if (isArabicUi) "مشاركة" else "Share",
+                                                text = strings.shareAyah,
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.primary
                                             )
@@ -697,21 +1088,28 @@ fun PrayerScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            if (isArabicUi) "استحضار الخشوع قبل الصلاة" else "Khushu' Reflection Before Prayer",
+                            appLanguage.pick(
+                                "استحضار الخشوع قبل الصلاة",
+                                "Khushu' Reflection Before Prayer",
+                                "Namozdan oldingi xushu' va tafakkur"
+                            ),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            if (isArabicUi) {
-                                "توقف ١٠ ثوانٍ وتذكّر أنك تقف بين يدي ملك الملوك؛ صلِّ صلاة مودِّع."
-                            } else {
-                                "Pause for 10 seconds. Imagine standing before the King of Kings as if this were your farewell prayer."
-                            },
+                            appLanguage.pick(
+                                "توقف ١٠ ثوانٍ وتذكّر أنك تقف بين يدي ملك الملوك؛ صلِّ صلاة مودِّع.",
+                                "Pause for 10 seconds. Imagine standing before the King of Kings as if this were your farewell prayer.",
+                                "10 soniya to'xtab, olamlar Robbisi huzurida turganingizni his qiling; xayrlashuv namozi kabi o'qing."
+                            ),
                             style = MaterialTheme.typography.bodyMedium
                         )
                         val rating = (todayLog?.khushuRating ?: 3L).toInt()
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (isArabicUi) "حضور القلب اليوم: " else "Today's presence: ", style = MaterialTheme.typography.labelLarge)
+                            Text(
+                                appLanguage.pick("حضور القلب اليوم: ", "Today's presence: ", "Bugungi qalb huzuri: "),
+                                style = MaterialTheme.typography.labelLarge
+                            )
                             (1..5).forEach { star ->
                                 IconButton(
                                     onClick = { viewModel.setKhushuRating(star, todayLog) },
@@ -737,21 +1135,31 @@ fun PrayerScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            if (isArabicUi) "جمعة مباركة • سنن يوم الجمعة" else "Jumu'ah Mubarak • Friday Sunnahs",
+                            appLanguage.pick(
+                                "جمعة مباركة • سنن يوم الجمعة",
+                                "Jumu'ah Mubarak • Friday Sunnahs",
+                                "Juma muborak • Juma sunnatlari"
+                            ),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            if (isArabicUi) {
-                                "• الغسل والتطيب • قراءة سورة الكهف • الإكثار من الصلاة على النبي ﷺ • تحري ساعة الإجابة قبل المغرب."
-                            } else {
-                                "• Ghusl & fragrance • Surah Al-Kahf • Abundant Salawat ﷺ • Seek the final hour before Maghrib."
-                            },
+                            appLanguage.pick(
+                                "• الغسل والتطيب • قراءة سورة الكهف • الإكثار من الصلاة على النبي ﷺ • تحري ساعة الإجابة قبل المغرب.",
+                                "• Ghusl & fragrance • Surah Al-Kahf • Abundant Salawat ﷺ • Seek the final hour before Maghrib.",
+                                "• G'usl va xushbo'ylik • Kahf surasi • Ko'p salavot ﷺ • Shomdan oldingi ijobat soatini kuting."
+                            ),
                             style = MaterialTheme.typography.bodyMedium
                         )
                         if (appOperations.aiAssistantEnabled) {
                             OutlinedButton(onClick = onOpenKhutbahAi) {
-                                Text(if (isArabicUi) "تلخيص خطبة الجمعة بالذكاء الاصطناعي" else "Summarize Today's Khutbah with AI")
+                                Text(
+                                    appLanguage.pick(
+                                        "تلخيص خطبة الجمعة بالذكاء الاصطناعي",
+                                        "Summarize Today's Khutbah with AI",
+                                        "Juma xutbasini AI bilan xulosa qilish"
+                                    )
+                                )
                             }
                         }
                     }
@@ -789,11 +1197,11 @@ fun PrayerScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(strings.prayerTracker, style = MaterialTheme.typography.titleLarge)
                             Text(
-                                text = if (isArabicUi) {
-                                    "${formatNumerals("$completedCount / 5", useIndic)} فرائض • $activeVoiceLabel"
-                                } else {
-                                    "${formatNumerals("$completedCount / 5", useIndic)} Completed • $activeVoiceLabel"
-                                },
+                                text = appLanguage.pick(
+                                    "${formatNumerals("$completedCount / 5", useArabicDigits)} فرائض • $activeVoiceLabel",
+                                    "${formatNumerals("$completedCount / 5", false)} Completed • $activeVoiceLabel",
+                                    "$completedCount / 5 farz • $activeVoiceLabel"
+                                ),
                                 style = MaterialTheme.typography.bodyMedium.withTabularNums(),
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -801,7 +1209,7 @@ fun PrayerScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.AirplanemodeActive, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.width(4.dp))
-                            Text(if (isArabicUi) "قصر" else "Qasr", style = MaterialTheme.typography.labelLarge)
+                            Text(appLanguage.pick("قصر", "Qasr", "Qasr"), style = MaterialTheme.typography.labelLarge)
                             Spacer(Modifier.width(6.dp))
                             Switch(
                                 checked = settings.travelerMode,
@@ -834,8 +1242,8 @@ fun PrayerScreen(
                             isCompleted = checked,
                             isNext = nextPrayerEntry.key == entry.key,
                             alertMode = mode,
-                            isArabicUi = isArabicUi,
-                            useIndic = useIndic,
+                            appLanguage = appLanguage,
+                            useArabicDigits = useArabicDigits,
                             onToggle = { viewModel.togglePrayerToday(key, todayLog) },
                             onOpenAdhan = { showAdhanSheet = true }
                         )
@@ -843,7 +1251,7 @@ fun PrayerScreen(
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = glass.glassBorder)
                     Text(
-                        if (isArabicUi) "السنن الرواتب والنوافل" else "Sunnah & Nawafil Schedule",
+                        appLanguage.pick("السنن الرواتب والنوافل", "Sunnah & Nawafil Schedule", "Sunnat va nafl namozlar"),
                         style = MaterialTheme.typography.titleMedium
                     )
                     FlowRow(
@@ -853,22 +1261,22 @@ fun PrayerScreen(
                         LiquidGlassPill(
                             selected = todayLog?.sunnahRawatib == true,
                             onClick = { viewModel.togglePrayerToday("sunnahRawatib", todayLog) },
-                            label = if (isArabicUi) "السنن الرواتب (١٢)" else "12 Rawatib"
+                            label = appLanguage.pick("السنن الرواتب (١٢)", "12 Rawatib", "12 Rakat Sunnat")
                         )
                         LiquidGlassPill(
                             selected = todayLog?.duha == true,
                             onClick = { viewModel.togglePrayerToday("duha", todayLog) },
-                            label = if (isArabicUi) "الضحى" else "Duha"
+                            label = appLanguage.pick("الضحى", "Duha", "Zuho")
                         )
                         LiquidGlassPill(
                             selected = todayLog?.witr == true,
                             onClick = { viewModel.togglePrayerToday("witr", todayLog) },
-                            label = if (isArabicUi) "الوتر" else "Witr"
+                            label = appLanguage.pick("الوتر", "Witr", "Vitr")
                         )
                         LiquidGlassPill(
                             selected = todayLog?.qiyam == true,
                             onClick = { viewModel.togglePrayerToday("qiyam", todayLog) },
-                            label = if (isArabicUi) "قيام الليل" else "Qiyam / Tahajjud"
+                            label = appLanguage.pick("قيام الليل", "Qiyam / Tahajjud", "Tahajjud")
                         )
                     }
                 }
@@ -882,16 +1290,20 @@ fun PrayerScreen(
                 ) {
                     Text(strings.qadaCounter, style = MaterialTheme.typography.titleLarge)
                     Text(
-                        if (isArabicUi) "تابع قضاء الصلوات الفائتة وأتمها بالتدريج." else "Track and gradually fulfill missed obligatory prayers with ease.",
+                        appLanguage.pick(
+                            "تابع قضاء الصلوات الفائتة وأتمها بالتدريج.",
+                            "Track and gradually fulfill missed obligatory prayers with ease.",
+                            "Qazo namozlaringizni tartib bilan hisoblab, ado etib boring."
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     val qadaItems = listOf(
-                        Triple(if (isArabicUi) "الفجر" else "Fajr", "qadaFajr", settings.qadaFajr),
-                        Triple(if (isArabicUi) "الظهر" else "Dhuhr", "qadaDhuhr", settings.qadaDhuhr),
-                        Triple(if (isArabicUi) "العصر" else "Asr", "qadaAsr", settings.qadaAsr),
-                        Triple(if (isArabicUi) "المغرب" else "Maghrib", "qadaMaghrib", settings.qadaMaghrib),
-                        Triple(if (isArabicUi) "العشاء" else "Isha", "qadaIsha", settings.qadaIsha)
+                        Triple(schedule.fajr.nameFor(appLanguage), "qadaFajr", settings.qadaFajr),
+                        Triple(schedule.dhuhr.nameFor(appLanguage), "qadaDhuhr", settings.qadaDhuhr),
+                        Triple(schedule.asr.nameFor(appLanguage), "qadaAsr", settings.qadaAsr),
+                        Triple(schedule.maghrib.nameFor(appLanguage), "qadaMaghrib", settings.qadaMaghrib),
+                        Triple(schedule.isha.nameFor(appLanguage), "qadaIsha", settings.qadaIsha)
                     )
                     qadaItems.forEach { (label, field, value) ->
                         Row(
@@ -905,7 +1317,7 @@ fun PrayerScreen(
                                     Icon(Icons.Rounded.Remove, contentDescription = "Decrease $label Qada")
                                 }
                                 Text(
-                                    text = formatNumerals(value.toString(), useIndic),
+                                    text = formatNumerals(value.toString(), useArabicDigits),
                                     style = MaterialTheme.typography.titleMedium.withTabularNums(),
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(horizontal = 8.dp)
@@ -919,60 +1331,245 @@ fun PrayerScreen(
                 }
             }
 
-            // 6. Nearby Mosques & Iqamah Times
-            item {
-                Text(
-                    if (isArabicUi) "المساجد القريبة وأوقات الإقامة (${settings.city})"
-                    else "Nearby Mosques & Iqamah (${settings.city})",
-                    style = MaterialTheme.typography.titleLarge
-                )
-            }
-            items(mosques) { mosque ->
-                LiquidGlassCard(
-                    shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+            // 6. Real GPS Nearby Mosques & Iqamah Times
+            if (appOperations.nearbyMosquesEnabled) {
+                item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Rounded.Mosque, null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(8.dp))
-                            Text(mosque.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "${strings.nearbyMosquesTitle} (${settings.city})",
+                                style = MaterialTheme.typography.titleLarge
+                            )
+                            Text(
+                                appLanguage.pick(
+                                    "تحديث مباشر عبر الخريطة المفتوحة (OpenStreetMap) مع المسار",
+                                    "Live OpenStreetMap GPS search with turn-by-turn directions",
+                                    "OpenStreetMap orqali real GPS masjidlar qidiruvi va yo'nalish"
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                        Text(
-                            mosque.distanceLabel,
-                            style = MaterialTheme.typography.labelLarge.withTabularNums(),
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        IconButton(
+                            onClick = { viewModel.refreshNearbyMosques(settings, manualOffsets, appLanguage) }
+                        ) {
+                            if (nearbyMosquesLoading) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Rounded.Refresh, contentDescription = "Refresh mosques")
+                            }
+                        }
                     }
-                    Text(
-                        if (isArabicUi) {
-                            "الإقامة: الفجر ${mosque.iqamahFajr} • الظهر ${mosque.iqamahDhuhr} • العصر ${mosque.iqamahAsr} • المغرب ${mosque.iqamahMaghrib} • العشاء ${mosque.iqamahIsha}"
-                        } else {
-                            "Iqamah: Fajr ${mosque.iqamahFajr} • Dhuhr ${mosque.iqamahDhuhr} • Asr ${mosque.iqamahAsr} • Maghrib ${mosque.iqamahMaghrib} • Isha ${mosque.iqamahIsha}"
+                }
+                items(mosques) { mosque ->
+                    LiquidGlassCard(
+                        onClick = {
+                            FeatureUsageTracker.recordUsage(context, SmartFeatureId.MOSQUES)
+                            LocationAndMosqueLocator.openMosqueDirections(context, mosque)
                         },
-                        style = MaterialTheme.typography.bodyMedium.withTabularNums()
-                    )
-                    Text(
-                        if (isArabicUi) "خطبة الجمعة: ${mosque.jummahKhutbah}" else "Jumu'ah Khutbah: ${mosque.jummahKhutbah}",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = glass.accentGold
-                    )
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        mosque.facilities.forEach { facility ->
+                        shape = RoundedCornerShape(24.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.Rounded.Mosque, null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(8.dp))
+                                Column {
+                                    Text(mosque.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                    if (mosque.address.isNotBlank()) {
+                                        Text(
+                                            mosque.address,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
                             Surface(
-                                color = glass.glassSubtleFill,
-                                border = BorderStroke(1.dp, glass.glassBorder),
+                                color = if (mosque.isRealOsmData) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else glass.glassSubtleFill,
                                 shape = CircleShape
                             ) {
-                                Text(
-                                    text = facility,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(Icons.Rounded.Directions, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                                    Text(
+                                        mosque.distanceLabel,
+                                        style = MaterialTheme.typography.labelLarge.withTabularNums(),
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            appLanguage.pick(
+                                "الإقامة: الفجر ${mosque.iqamahFajr} • الظهر ${mosque.iqamahDhuhr} • العصر ${mosque.iqamahAsr} • المغرب ${mosque.iqamahMaghrib} • العشاء ${mosque.iqamahIsha}",
+                                "Iqamah: Fajr ${mosque.iqamahFajr} • Dhuhr ${mosque.iqamahDhuhr} • Asr ${mosque.iqamahAsr} • Maghrib ${mosque.iqamahMaghrib} • Isha ${mosque.iqamahIsha}",
+                                "Iqoma: Bomdod ${mosque.iqamahFajr} • Peshin ${mosque.iqamahDhuhr} • Asr ${mosque.iqamahAsr} • Shom ${mosque.iqamahMaghrib} • Xufton ${mosque.iqamahIsha}"
+                            ),
+                            style = MaterialTheme.typography.bodyMedium.withTabularNums()
+                        )
+                        Text(
+                            appLanguage.pick(
+                                "خطبة الجمعة: ${mosque.jummahKhutbah}",
+                                "Jumu'ah Khutbah: ${mosque.jummahKhutbah}",
+                                "Juma xutbasi: ${mosque.jummahKhutbah}"
+                            ),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = glass.accentGold
+                        )
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            mosque.facilities.forEach { facility ->
+                                Surface(
+                                    color = glass.glassSubtleFill,
+                                    border = BorderStroke(1.dp, glass.glassBorder),
+                                    shape = CircleShape
+                                ) {
+                                    Text(
+                                        text = facility,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 7. Bottom Smart Frequently-Used Shortcuts & Home Screen Pinning
+            if (appOperations.smartShortcutsEnabled) {
+                item {
+                    val topFeatures = remember(usageVersion, context) {
+                        FeatureUsageTracker.getTopFeatures(context, 5)
+                    }
+
+                    fun launchSmartFeature(fid: SmartFeatureId) {
+                        FeatureUsageTracker.recordUsage(context, fid)
+                        when (fid) {
+                            SmartFeatureId.MUSHAF -> onOpenMushaf()
+                            SmartFeatureId.TASBIH -> onOpenTasbih()
+                            SmartFeatureId.ADHKAR -> onOpenAdhkar()
+                            SmartFeatureId.AI_COMPANION -> onOpenAi(null)
+                            SmartFeatureId.QIBLA -> showQiblaSheet = true
+                            SmartFeatureId.MOSQUES -> scope.launch {
+                                val targetIndex = (listState.layoutInfo.totalItemsCount - 2).coerceAtLeast(0)
+                                listState.animateScrollToItem(targetIndex)
+                            }
+                            SmartFeatureId.KHATMAH -> onOpenKhatmah()
+                            SmartFeatureId.ZAKAT -> onOpenZakat()
+                            SmartFeatureId.HIJRI -> onOpenHijri()
+                            SmartFeatureId.RAKAH -> showRakahCounterSheet = true
+                        }
+                    }
+
+                    fun pinTargetForFeature(fid: SmartFeatureId): LauncherShortcutTarget? = when (fid) {
+                        SmartFeatureId.MUSHAF, SmartFeatureId.KHATMAH -> LauncherShortcutTarget.QURAN
+                        SmartFeatureId.TASBIH, SmartFeatureId.ADHKAR -> LauncherShortcutTarget.TASBIH
+                        SmartFeatureId.AI_COMPANION -> LauncherShortcutTarget.AI
+                        SmartFeatureId.QIBLA, SmartFeatureId.MOSQUES -> LauncherShortcutTarget.PRAYER
+                        else -> null
+                    }
+
+                    LiquidGlassCard(
+                        shape = RoundedCornerShape(26.dp),
+                        borderColor = glass.accentGold.copy(alpha = 0.4f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("bottom_smart_shortcuts_card")
+                    ) {
+                        Text(strings.smartShortcutsTitle, style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            appLanguage.pick(
+                                "أكثر المزايا التي تستخدمها للوصول السريع وتثبيتها على شاشة الهاتف.",
+                                "Your most frequently used tools, ranked automatically with 1-tap home screen pinning.",
+                                "Eng ko'p foydalanilgan bo'limlaringiz va telefon ekraniga yorliq sifatida qo'shish."
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        topFeatures.forEach { ranked ->
+                            val icon = when (ranked.feature) {
+                                SmartFeatureId.MUSHAF -> Icons.Rounded.AutoStories
+                                SmartFeatureId.TASBIH -> MihrabIcons.TasbihBeads
+                                SmartFeatureId.ADHKAR -> Icons.Rounded.VolunteerActivism
+                                SmartFeatureId.AI_COMPANION -> MihrabIcons.AiSpark
+                                SmartFeatureId.QIBLA -> Icons.Rounded.Explore
+                                SmartFeatureId.MOSQUES -> Icons.Rounded.Mosque
+                                SmartFeatureId.KHATMAH -> Icons.Rounded.AutoStories
+                                SmartFeatureId.ZAKAT -> Icons.Rounded.Schedule
+                                SmartFeatureId.HIJRI -> Icons.Rounded.CalendarMonth
+                                SmartFeatureId.RAKAH -> MihrabIcons.RakahTimer
+                            }
+                            val pinTarget = pinTargetForFeature(ranked.feature)
+                            Surface(
+                                onClick = { launchSmartFeature(ranked.feature) },
+                                color = glass.glassSubtleFill,
+                                border = BorderStroke(1.dp, glass.glassBorder),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+                                        Column {
+                                            Text(
+                                                ranked.feature.labelFor(appLanguage),
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            if (ranked.count > 0) {
+                                                Text(
+                                                    appLanguage.pick(
+                                                        "استُخدم ${formatNumerals(ranked.count.toString(), useArabicDigits)} مرة",
+                                                        "Opened ${ranked.count}×",
+                                                        "${ranked.count} marta ochilgan"
+                                                    ),
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
+                                    if (pinTarget != null && LauncherShortcutHelper.isPinSupported(context)) {
+                                        IconButton(
+                                            onClick = {
+                                                val ok = LauncherShortcutHelper.requestPinShortcut(context, pinTarget, appLanguage)
+                                                viewModel.showMessage(
+                                                    if (ok) appLanguage.pick(
+                                                        "أُرسل طلب إضافة الاختصار للشاشة الرئيسية",
+                                                        "Home screen shortcut pin requested",
+                                                        "Bosh ekranga yorliq qo'shish so'raldi"
+                                                    ) else appLanguage.pick(
+                                                        "مشغّل النظام لا يدعم التثبيت التلقائي",
+                                                        "Launcher does not support pinned shortcuts",
+                                                        "Qurilma yorliq qo'shishni qo'llab-quvvatlamaydi"
+                                                    )
+                                                )
+                                            }
+                                        ) {
+                                            Icon(Icons.Rounded.PushPin, contentDescription = strings.pinShortcutsTitle, tint = glass.accentGold)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1120,7 +1717,7 @@ fun PrayerScreen(
                                 Text(strings.uploadCustomAdhan, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                 if (settings.customAdhanName.isNotBlank()) {
                                     Text(
-                                        text = "${if (isArabicUi) "الملف المختار" else "Selected"}: ${settings.customAdhanName}",
+                                        text = "${appLanguage.pick("الملف المختار", "Selected", "Tanlangan fayl")}: ${settings.customAdhanName}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.primary
                                     )
@@ -1159,17 +1756,17 @@ fun PrayerScreen(
 
                 HorizontalDivider(color = glass.glassBorder)
                 Text(
-                    if (isArabicUi) "تخصيص تنبيه كل صلاة" else "Per-Prayer Notification Mode",
+                    appLanguage.pick("تخصيص تنبيه كل صلاة", "Per-Prayer Notification Mode", "Har bir namoz uchun bildirishnoma turi"),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
 
                 val fivePrayers = listOf(
-                    "fajr" to (if (isArabicUi) "الفجر" else "Fajr"),
-                    "dhuhr" to (if (isArabicUi) "الظهر" else "Dhuhr"),
-                    "asr" to (if (isArabicUi) "العصر" else "Asr"),
-                    "maghrib" to (if (isArabicUi) "المغرب" else "Maghrib"),
-                    "isha" to (if (isArabicUi) "العشاء" else "Isha")
+                    "fajr" to schedule.fajr.nameFor(appLanguage),
+                    "dhuhr" to schedule.dhuhr.nameFor(appLanguage),
+                    "asr" to schedule.asr.nameFor(appLanguage),
+                    "maghrib" to schedule.maghrib.nameFor(appLanguage),
+                    "isha" to schedule.isha.nameFor(appLanguage)
                 )
 
                 fivePrayers.forEach { (pKey, pLabel) ->
@@ -1203,7 +1800,7 @@ fun PrayerScreen(
                                     selected = currentMode == mode,
                                     onClick = { viewModel.savePerPrayerAdhanMode(settings.perPrayerAdhanModes, pKey, mode) },
                                     icon = MihrabIcons.iconForAdhanMode(mode),
-                                    label = if (isArabicUi) mode.labelAr else mode.labelEn
+                                    label = mode.labelFor(appLanguage)
                                 )
                             }
                         }
@@ -1217,7 +1814,7 @@ fun PrayerScreen(
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(if (isArabicUi) "تم" else "Done")
+                    Text(appLanguage.pick("تم", "Done", "Tayyor"))
                 }
                 Spacer(Modifier.height(12.dp))
             }
@@ -1236,6 +1833,7 @@ fun PrayerScreen(
                 isArabicUi = isArabicUi,
                 useIndic = useIndic,
                 arQiblaEnabled = appOperations.arQiblaEnabled,
+                appLanguage = appLanguage,
                 onSelectCity = { preset -> viewModel.selectCityPreset(preset) },
                 onGpsLocation = { label, lat, lng -> viewModel.updateLocationCoordinates(label, lat, lng) },
                 onClose = { showQiblaSheet = false }
@@ -1256,7 +1854,7 @@ fun PrayerScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    if (isArabicUi) "طريقة الحساب والتعديلات اليدوية" else "Calculation Method & Manual Offsets",
+                    appLanguage.pick("طريقة الحساب والتعديلات اليدوية", "Calculation Method & Manual Offsets", "Hisoblash usuli va qo'lda tuzatish"),
                     style = MaterialTheme.typography.headlineMedium
                 )
                 CalculationMethod.entries.forEach { method ->
@@ -1286,13 +1884,16 @@ fun PrayerScreen(
                     }
                 }
                 HorizontalDivider(color = glass.glassBorder)
-                Text(if (isArabicUi) "تعديل الدقائق يدوياً" else "Manual Minute Adjustments", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    appLanguage.pick("تعديل الدقائق يدوياً", "Manual Minute Adjustments", "Daqiqalarni qo'lda moslash"),
+                    style = MaterialTheme.typography.titleMedium
+                )
                 listOf(
-                    "fajr" to (if (isArabicUi) "الفجر" else "Fajr"),
-                    "dhuhr" to (if (isArabicUi) "الظهر" else "Dhuhr"),
-                    "asr" to (if (isArabicUi) "العصر" else "Asr"),
-                    "maghrib" to (if (isArabicUi) "المغرب" else "Maghrib"),
-                    "isha" to (if (isArabicUi) "العشاء" else "Isha")
+                    "fajr" to schedule.fajr.nameFor(appLanguage),
+                    "dhuhr" to schedule.dhuhr.nameFor(appLanguage),
+                    "asr" to schedule.asr.nameFor(appLanguage),
+                    "maghrib" to schedule.maghrib.nameFor(appLanguage),
+                    "isha" to schedule.isha.nameFor(appLanguage)
                 ).forEach { (key, label) ->
                     val offset = manualOffsets[key] ?: 0
                     Row(
@@ -1316,7 +1917,7 @@ fun PrayerScreen(
                     }
                 }
                 Button(onClick = { showMethodSheet = false }, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (isArabicUi) "تم" else "Done")
+                    Text(appLanguage.pick("تم", "Done", "Tayyor"))
                 }
             }
         }
@@ -1334,7 +1935,10 @@ fun PrayerScreen(
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(if (isArabicUi) "أدلة الصلوات والسنن" else "Salah & Special Prayer Guides", style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    appLanguage.pick("أدلة الصلوات والسنن", "Salah & Special Prayer Guides", "Namoz va sunnatlar qo'llanmasi"),
+                    style = MaterialTheme.typography.headlineMedium
+                )
                 IslamicLibraryData.prayerGuides.forEach { guide ->
                     LiquidGlassCard(modifier = Modifier.fillMaxWidth()) {
                         Text(guide.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -1372,26 +1976,33 @@ fun PrayerScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(if (isArabicUi) "عدّاد الركعات ومؤقت الخشوع" else "Rak'ah Counter & Worship Focus", style = MaterialTheme.typography.headlineMedium)
                 Text(
-                    if (isArabicUi) "اضغط بعد كل سجدة أو ركعة لتفادي السهو في الصلاة." else "Tap each Sujud or Rak'ah to prevent forgetfulness while praying.",
+                    appLanguage.pick("عدّاد الركعات ومؤقت الخشوع", "Rak'ah Counter & Worship Focus", "Rakat sanagich va xushu' taymeri"),
+                    style = MaterialTheme.typography.headlineMedium
+                )
+                Text(
+                    appLanguage.pick(
+                        "اضغط بعد كل سجدة أو ركعة لتفادي السهو في الصلاة.",
+                        "Tap each Sujud or Rak'ah to prevent forgetfulness while praying.",
+                        "Namozda adashmaslik uchun har sajda yoki rakatdan so'ng bosing."
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxWidth()) {
                     LiquidGlassCard(modifier = Modifier.weight(1f), contentPadding = 14.dp) {
                         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(if (isArabicUi) "الركعات" else "Rak'ah", style = MaterialTheme.typography.labelLarge)
-                            Text(formatNumerals("$rakahCount / 4", useIndic), style = MaterialTheme.typography.displayMedium.withTabularNums())
+                            Text(appLanguage.pick("الركعات", "Rak'ah", "Rakat"), style = MaterialTheme.typography.labelLarge)
+                            Text(formatNumerals("$rakahCount / 4", useArabicDigits), style = MaterialTheme.typography.displayMedium.withTabularNums())
                             Button(onClick = { rakahCount = (rakahCount + 1) % 5 }) {
-                                Text(if (isArabicUi) "+١ ركعة" else "+1 Rak'ah")
+                                Text(appLanguage.pick("+١ ركعة", "+1 Rak'ah", "+1 Rakat"))
                             }
                         }
                     }
                     LiquidGlassCard(modifier = Modifier.weight(1f), contentPadding = 14.dp) {
                         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(if (isArabicUi) "السجود" else "Sujud", style = MaterialTheme.typography.labelLarge)
-                            Text(formatNumerals("$sujudCount / 2", useIndic), style = MaterialTheme.typography.displayMedium.withTabularNums())
+                            Text(appLanguage.pick("السجود", "Sujud", "Sajda"), style = MaterialTheme.typography.labelLarge)
+                            Text(formatNumerals("$sujudCount / 2", useArabicDigits), style = MaterialTheme.typography.displayMedium.withTabularNums())
                             Button(onClick = {
                                 if (sujudCount == 1) {
                                     sujudCount = 0
@@ -1400,22 +2011,25 @@ fun PrayerScreen(
                                     sujudCount = 1
                                 }
                             }) {
-                                Text(if (isArabicUi) "تسجيل سجدة" else "Log Sujud")
+                                Text(appLanguage.pick("تسجيل سجدة", "Log Sujud", "Sajdani belgilash"))
                             }
                         }
                     }
                 }
                 HorizontalDivider(color = glass.glassBorder)
                 Text(
-                    "${if (isArabicUi) "مؤقت الخشوع" else "Quiet Focus"}: ${focusSeconds / 60}:${String.format("%02d", focusSeconds % 60)}",
+                    "${appLanguage.pick("مؤقت الخشوع", "Quiet Focus", "Xushu' taymeri")}: ${focusSeconds / 60}:${String.format("%02d", focusSeconds % 60)}",
                     style = MaterialTheme.typography.titleMedium.withTabularNums()
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(onClick = { focusRunning = !focusRunning }) {
-                        Text(if (focusRunning) (if (isArabicUi) "إيقاف" else "Pause Timer") else (if (isArabicUi) "بدء ١٠ دقائق" else "Start 10-Min Focus"))
+                        Text(
+                            if (focusRunning) appLanguage.pick("إيقاف", "Pause Timer", "To'xtatish")
+                            else appLanguage.pick("بدء ١٠ دقائق", "Start 10-Min Focus", "10 daqiqa boshlash")
+                        )
                     }
                     OutlinedButton(onClick = { focusRunning = false; focusSeconds = 600; rakahCount = 0; sujudCount = 0 }) {
-                        Text(if (isArabicUi) "إعادة" else "Reset")
+                        Text(appLanguage.pick("إعادة", "Reset", "Qayta boshlash"))
                     }
                 }
             }
@@ -1521,12 +2135,13 @@ private fun PrayerRowItem(
     isCompleted: Boolean,
     isNext: Boolean,
     alertMode: AdhanAlertMode,
-    isArabicUi: Boolean,
-    useIndic: Boolean,
+    appLanguage: AppLanguage,
+    useArabicDigits: Boolean,
     onToggle: () -> Unit,
     onOpenAdhan: () -> Unit
 ) {
     val glass = LocalLiquidGlassPalette.current
+    val isArabicUi = appLanguage.isArabicUi
     Surface(
         onClick = onToggle,
         color = if (isNext) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f) else glass.glassSubtleFill,
@@ -1563,7 +2178,7 @@ private fun PrayerRowItem(
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = if (isArabicUi) entry.nameAr else entry.nameEn,
+                            text = entry.nameFor(appLanguage),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = if (isNext) FontWeight.Bold else FontWeight.SemiBold
                         )
@@ -1573,7 +2188,7 @@ private fun PrayerRowItem(
                         }
                     }
                     Text(
-                        entry.sunnahInfo,
+                        entry.sunnahInfoFor(appLanguage),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -1585,13 +2200,13 @@ private fun PrayerRowItem(
                 IconButton(onClick = onOpenAdhan, modifier = Modifier.size(32.dp)) {
                     Icon(
                         imageVector = MihrabIcons.iconForAdhanMode(alertMode),
-                        contentDescription = if (isArabicUi) alertMode.labelAr else alertMode.labelEn,
+                        contentDescription = alertMode.labelFor(appLanguage),
                         tint = if (alertMode == AdhanAlertMode.SILENT) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp)
                     )
                 }
                 Text(
-                    text = formatNumerals(entry.formattedTime, useIndic),
+                    text = formatNumerals(entry.formattedTime, useArabicDigits),
                     style = MaterialTheme.typography.titleMedium.withTabularNums(),
                     fontWeight = FontWeight.Bold,
                     color = if (isNext) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface

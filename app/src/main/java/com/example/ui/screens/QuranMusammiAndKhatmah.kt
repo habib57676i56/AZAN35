@@ -61,6 +61,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.core.i18n.AppLanguage
+import com.example.core.i18n.LocalizedStrings
+import com.example.core.i18n.stringsFor
 import com.example.data.firebase.KhatmahGroupDoc
 import com.example.data.firebase.UserSettingsDoc
 import com.example.domain.QuranContentData
@@ -79,7 +82,9 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AlMusammiSection(
-    aiViewModel: AiViewModel
+    aiViewModel: AiViewModel,
+    appLanguage: AppLanguage = AppLanguage.ARABIC,
+    strings: LocalizedStrings = stringsFor(appLanguage)
 ) {
     val context = LocalContext.current
     val glass = LocalLiquidGlassPalette.current
@@ -112,7 +117,11 @@ fun AlMusammiSection(
 
     fun startArabicSpeechRecognition() {
         if (speechRecognizer == null) {
-            micNotice = "Device speech recognizer unavailable on this emulator; type or paste Arabic below to test word checking."
+            micNotice = appLanguage.pick(
+                "التعرف على الصوت غير متاح في هذا الجهاز؛ يمكنك كتابة أو لصق الآية أدناه.",
+                "Device speech recognizer unavailable; type or paste Arabic below to check words.",
+                "Qurilmada ovozli aniqlash mavjud emas; quyida arabcha matnni kiriting."
+            )
             return
         }
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -121,14 +130,21 @@ fun AlMusammiSection(
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         }
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) { isListening = true; micNotice = "Listening in Arabic..." }
+            override fun onReadyForSpeech(params: Bundle?) {
+                isListening = true
+                micNotice = appLanguage.pick("جارٍ الاستماع للتلاوة بالعربية...", "Listening in Arabic...", "Arabcha tilovat tinglanmoqda...")
+            }
             override fun onBeginningOfSpeech() = Unit
             override fun onRmsChanged(rmsdB: Float) = Unit
             override fun onBufferReceived(buffer: ByteArray?) = Unit
             override fun onEndOfSpeech() { isListening = false }
             override fun onError(error: Int) {
                 isListening = false
-                micNotice = "Speech capture ended (code $error). You can also type or edit your recitation below."
+                micNotice = appLanguage.pick(
+                    "انتهى التقاط الصوت (رمز $error). يمكنك التعديل والاختبار يدوياً أدناه.",
+                    "Speech capture ended (code $error). Edit or test below.",
+                    "Ovoz yozish yakunlandi (kod $error). Quyida tahrirlashingiz mumkin."
+                )
             }
             override fun onResults(results: Bundle?) {
                 isListening = false
@@ -153,7 +169,11 @@ fun AlMusammiSection(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) startArabicSpeechRecognition()
-        else micNotice = "Microphone permission denied; type your recitation attempt below."
+        else micNotice = appLanguage.pick(
+            "تم رفض إذن الميكروفون؛ اكتب التلاوة أدناه.",
+            "Microphone permission denied; type your recitation below.",
+            "Mikrofon ruxsati berilmadi; quyida yozib tekshiring."
+        )
     }
 
     val words = remember(ayah.arabic) {
@@ -172,11 +192,22 @@ fun AlMusammiSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Al-Musammi' Recitation Checker", style = MaterialTheme.typography.titleLarge)
-                    Text("Progressive word masking & AI Tajweed coach", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        appLanguage.pick("المُسمِّع ومصحح التلاوة", "Al-Musammi' Recitation Checker", "Musammi' qiroat tekshiruvchi"),
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    Text(
+                        appLanguage.pick(
+                            "إخفاء متدرج للكلمات ومدرب تجويد ذكي",
+                            "Progressive word masking & AI Tajweed coach",
+                            "So'zlarni bosqichma-bosqich yashirish va AI tajvid ustozi"
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Exam", style = MaterialTheme.typography.labelLarge)
+                    Text(appLanguage.pick("اختبار", "Exam", "Imtihon"), style = MaterialTheme.typography.labelLarge)
                     Spacer(Modifier.width(6.dp))
                     Switch(checked = examMode, onCheckedChange = {
                         examMode = it
@@ -196,7 +227,7 @@ fun AlMusammiSection(
                             hintRevealedWords = 0
                             aiViewModel.resetRecitationCoach()
                         },
-                        label = s.nameEn.substringBefore(" (")
+                        label = if (appLanguage.isArabicUi) s.nameAr else s.nameEn.substringBefore(" (")
                     )
                 }
             }
@@ -211,14 +242,21 @@ fun AlMusammiSection(
                                 diffResult = null
                                 hintRevealedWords = 0
                             },
-                            label = "Ayah ${item.number}"
+                            label = appLanguage.pick("آية ${item.number}", "Ayah ${item.number}", "${item.number}-oyat")
                         )
                     }
                 }
             }
 
             if (!examMode) {
-                Text("Progressive Page Masking: ${(maskFraction * 100).roundToInt()}% hidden", style = MaterialTheme.typography.labelLarge.withTabularNums())
+                Text(
+                    appLanguage.pick(
+                        "نسبة الإخفاء المتدرج: ${(maskFraction * 100).roundToInt()}%",
+                        "Progressive Page Masking: ${(maskFraction * 100).roundToInt()}% hidden",
+                        "Yashirish darajasi: ${(maskFraction * 100).roundToInt()}%"
+                    ),
+                    style = MaterialTheme.typography.labelLarge.withTabularNums()
+                )
                 Slider(
                     value = maskFraction,
                     onValueChange = { maskFraction = it },
@@ -251,7 +289,7 @@ fun AlMusammiSection(
                     OutlinedButton(onClick = { hintRevealedWords = (hintRevealedWords + 1).coerceAtMost(words.size) }) {
                         Icon(Icons.Rounded.Lightbulb, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Hint Word")
+                        Text(appLanguage.pick("تلميح كلمة", "Hint Word", "So'z yordam"))
                     }
                 }
                 Button(
@@ -271,7 +309,10 @@ fun AlMusammiSection(
                 ) {
                     Icon(if (isListening) Icons.Rounded.Stop else Icons.Rounded.Mic, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(if (isListening) "Stop" else "Recite by Voice")
+                    Text(
+                        if (isListening) strings.stopAdhan
+                        else appLanguage.pick("تسميع بالصوت", "Recite by Voice", "Ovoz bilan o'qish")
+                    )
                 }
             }
 
@@ -282,7 +323,15 @@ fun AlMusammiSection(
             OutlinedTextField(
                 value = spokenAttempt,
                 onValueChange = { spokenAttempt = it },
-                label = { Text("Recitation attempt (voice transcript or manual Arabic)") },
+                label = {
+                    Text(
+                        appLanguage.pick(
+                            "محاولة التسميع (نص صوتي أو كتابة عربية)",
+                            "Recitation attempt (voice transcript or manual Arabic)",
+                            "Tilovat matni (ovozli yoki arabcha yozma)"
+                        )
+                    )
+                },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2
             )
@@ -292,7 +341,7 @@ fun AlMusammiSection(
                     onClick = { diffResult = QuranContentData.compareRecitation(ayah.arabic, spokenAttempt) },
                     enabled = spokenAttempt.isNotBlank()
                 ) {
-                    Text("Check Words")
+                    Text(appLanguage.pick("فحص الكلمات", "Check Words", "So'zlarni tekshirish"))
                 }
                 OutlinedButton(
                     onClick = {
@@ -307,14 +356,18 @@ fun AlMusammiSection(
                 ) {
                     Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("AI Tajweed Coach")
+                    Text(appLanguage.pick("مدرب التجويد AI", "AI Tajweed Coach", "AI Tajvid ustozi"))
                 }
             }
 
             diffResult?.let { result ->
                 HorizontalDivider(color = glass.glassBorder)
                 Text(
-                    "Accuracy: ${result.accuracyPercent}% • ${result.missingCount} word(s) to review",
+                    appLanguage.pick(
+                        "الدقة: ${result.accuracyPercent}% • ${result.missingCount} كلمة للمراجعة",
+                        "Accuracy: ${result.accuracyPercent}% • ${result.missingCount} word(s) to review",
+                        "Aniqlik: ${result.accuracyPercent}% • ${result.missingCount} ta so'z tekshirilishi kerak"
+                    ),
                     style = MaterialTheme.typography.titleMedium.withTabularNums(),
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -358,7 +411,9 @@ fun KhatmahAndGroupsSection(
     settings: UserSettingsDoc,
     groupsState: UiState<List<KhatmahGroupDoc>>,
     viewModel: MihrabViewModel,
-    familyKhatmahEnabled: Boolean = true
+    familyKhatmahEnabled: Boolean = true,
+    appLanguage: AppLanguage = AppLanguage.ARABIC,
+    strings: LocalizedStrings = stringsFor(appLanguage)
 ) {
     val glass = LocalLiquidGlassPalette.current
     var newGroupName by remember { mutableStateOf("") }
@@ -371,9 +426,16 @@ fun KhatmahAndGroupsSection(
             shape = RoundedCornerShape(26.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Personal Khatmah Planner", style = MaterialTheme.typography.titleLarge)
             Text(
-                "$pagesRead / 604 Mushaf Pages (${(pagesRead * 100) / 604}%) • Est. $daysLeft days remaining at $dailyPagesGoal pages/day",
+                appLanguage.pick("خطة الختمة الشخصية", "Personal Khatmah Planner", "Shaxsiy Xatma rejasi"),
+                style = MaterialTheme.typography.titleLarge
+            )
+            Text(
+                appLanguage.pick(
+                    "$pagesRead / 604 صفحة (${(pagesRead * 100) / 604}%) • المتبقي تقريباً $daysLeft يوم بمعدل $dailyPagesGoal صفحة/يوم",
+                    "$pagesRead / 604 Mushaf Pages (${(pagesRead * 100) / 604}%) • Est. $daysLeft days remaining at $dailyPagesGoal pages/day",
+                    "$pagesRead / 604 sahifa (${(pagesRead * 100) / 604}%) • Kuniga $dailyPagesGoal sahifadan ~${daysLeft} kun qoldi"
+                ),
                 style = MaterialTheme.typography.bodyMedium.withTabularNums(),
                 color = MaterialTheme.colorScheme.primary
             )
@@ -388,15 +450,22 @@ fun KhatmahAndGroupsSection(
                 Button(onClick = {
                     viewModel.updateSettings(mapOf("khatmahPagesRead" to (pagesRead + 4).coerceAtMost(604).toLong()))
                 }) {
-                    Text("+4 Pages (1 Wird)")
+                    Text(appLanguage.pick("+٤ صفحات (ورد)", "+4 Pages (1 Wird)", "+4 Sahifa (Vird)"))
                 }
                 OutlinedButton(onClick = {
                     viewModel.updateSettings(mapOf("khatmahPagesRead" to (pagesRead + 20).coerceAtMost(604).toLong()))
                 }) {
-                    Text("+20 Pages (1 Juz')")
+                    Text(appLanguage.pick("+٢٠ صفحة (جزء)", "+20 Pages (1 Juz')", "+20 Sahifa (1 Juz)"))
                 }
             }
-            Text("Daily Pace Goal: $dailyPagesGoal pages/day", style = MaterialTheme.typography.labelLarge.withTabularNums())
+            Text(
+                appLanguage.pick(
+                    "الورد اليومي المستهدف: $dailyPagesGoal صفحة/يوم",
+                    "Daily Pace Goal: $dailyPagesGoal pages/day",
+                    "Kunlik maqsad: $dailyPagesGoal sahifa/kun"
+                ),
+                style = MaterialTheme.typography.labelLarge.withTabularNums()
+            )
             Slider(
                 value = dailyPagesGoal.toFloat(),
                 onValueChange = { dailyPagesGoal = it.roundToInt().coerceIn(4, 40) },
@@ -409,12 +478,15 @@ fun KhatmahAndGroupsSection(
                 shape = RoundedCornerShape(26.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Family & Friends Khatmah", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    appLanguage.pick("ختمة العائلة والأصدقاء", "Family & Friends Khatmah", "Oila va do'stlar Xatmasi"),
+                    style = MaterialTheme.typography.titleLarge
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = newGroupName,
                         onValueChange = { newGroupName = it },
-                        label = { Text("New group title") },
+                        label = { Text(appLanguage.pick("اسم المجموعة الجديدة", "New group title", "Yangi guruh nomi")) },
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
@@ -434,7 +506,11 @@ fun KhatmahAndGroupsSection(
                     is UiState.Success -> {
                         if (groupsState.data.isEmpty()) {
                             Text(
-                                "Create a Family Khatmah above and mark Juz' 1–30 together in real time.",
+                                appLanguage.pick(
+                                    "أنشئ ختمة عائلية أعلاه وحدد الأجزاء ١–٣٠ معاً بشكل مباشر.",
+                                    "Create a Family Khatmah above and mark Juz' 1–30 together in real time.",
+                                    "Yuqorida oilaviy Xatma yarating va 1–30 juzlarni birgalikda belgilang."
+                                ),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -447,7 +523,11 @@ fun KhatmahAndGroupsSection(
                                 ) {
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                         Text(group.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                        Text("${group.completedJuz.size}/30 Juz • Code ${group.joinCode}", style = MaterialTheme.typography.labelLarge.withTabularNums(), color = MaterialTheme.colorScheme.primary)
+                                        Text(
+                                            "${group.completedJuz.size}/30 ${strings.juzLabel} • ${group.joinCode}",
+                                            style = MaterialTheme.typography.labelLarge.withTabularNums(),
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
                                     }
                                     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         (1..30).forEach { juz ->

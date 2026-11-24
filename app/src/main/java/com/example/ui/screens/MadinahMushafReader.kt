@@ -164,7 +164,7 @@ fun MadinahMushafReader(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val glass = LocalLiquidGlassPalette.current
-    val isArabicUi = appLanguage == AppLanguage.ARABIC || appLanguage == AppLanguage.URDU
+    val isArabicUi = appLanguage.isArabicUi
 
     val pagesMap by viewModel.mushafPages.collectAsStateWithLifecycle()
     val reciters by viewModel.recitersState.collectAsStateWithLifecycle()
@@ -188,7 +188,7 @@ fun MadinahMushafReader(
     var selectedAyahForAction by remember { mutableStateOf<MushafAyahItem?>(null) }
     var noteDialogAyah by remember { mutableStateOf<MushafAyahItem?>(null) }
     var noteInput by remember { mutableStateOf("") }
-    var collectionInput by remember { mutableStateOf("المفضلة") }
+    var collectionInput by remember { mutableStateOf(appLanguage.pick("المفضلة", "Favorites", "Sevimlilar")) }
     var showAiTafsirPanel by remember { mutableStateOf(false) }
 
     val paperTheme = MushafPaperTheme.fromId(settings.mushafPaper)
@@ -468,233 +468,242 @@ fun MadinahMushafReader(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = if (isArabicUi) {
-                            "سورة ${ayah.surahNameAr} • الآية ${ArabicTextNormalizer.toArabicIndicDigits(ayah.numberInSurah)}"
-                        } else {
-                            "Surah ${ayah.surahNameEn} • ${ayah.surahNumber}:${ayah.numberInSurah}"
-                        },
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "${strings.pageLabel} ${formatPageNum(ayah.pageNumber, isArabicUi)}",
-                        style = MaterialTheme.typography.labelLarge.withTabularNums(),
-                        color = glass.accentGold
-                    )
-                }
-
-                Surface(
-                    color = paperTheme.cardInner,
-                    shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "${ayah.textUthmani} ${ArabicTextNormalizer.formatVerseMedallion(ayah.numberInSurah)}",
-                        fontFamily = AmiriQuranFontFamily,
-                        fontSize = 23.sp,
-                        lineHeight = 42.sp,
-                        color = paperTheme.fg,
-                        textAlign = TextAlign.Right,
-                        modifier = Modifier.padding(14.dp)
-                    )
-                }
-
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (quranAudioEnabled) {
-                        Button(
-                            onClick = {
-                                recitationPlayer.playAyah(
-                                    surahNumber = ayah.surahNumber,
-                                    ayahNumber = ayah.numberInSurah,
-                                    pageNumber = ayah.pageNumber
-                                )
-                                selectedAyahForAction = null
-                            },
-                            modifier = Modifier.testTag("ayah_action_play")
-                        ) {
-                            Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(strings.playFromAyah)
-                        }
+                        Text(
+                            text = appLanguage.pick(
+                                "سورة ${ayah.surahNameAr} • الآية ${ArabicTextNormalizer.toArabicIndicDigits(ayah.numberInSurah)}",
+                                "Surah ${ayah.surahNameEn} • ${ayah.surahNumber}:${ayah.numberInSurah}",
+                                "${ayah.surahNameEn} surasi • ${ayah.surahNumber}:${ayah.numberInSurah}"
+                            ),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "${strings.pageLabel} ${formatPageNum(ayah.pageNumber, isArabicUi)}",
+                            style = MaterialTheme.typography.labelLarge.withTabularNums(),
+                            color = glass.accentGold
+                        )
                     }
 
-                    if (aiAssistantEnabled) {
-                        OutlinedButton(
-                            onClick = {
-                                showAiTafsirPanel = true
-                                aiViewModel.askAiTafsirForAyah(
-                                    surahNameAr = ayah.surahNameAr,
-                                    surahNumber = ayah.surahNumber,
-                                    ayahNumber = ayah.numberInSurah,
-                                    arabicText = ayah.textUthmani,
-                                    languageName = appLanguage.nativeLabel
-                                )
-                            },
-                            modifier = Modifier.testTag("ayah_action_ai_tafsir")
-                        ) {
-                            Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(strings.askAiTafsir)
-                        }
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            val clipMgr = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val clipText = "${ayah.textUthmani} (${ayah.surahNameAr} ${ayah.surahNumber}:${ayah.numberInSurah})"
-                            clipMgr.setPrimaryClip(ClipData.newPlainText("Quran Ayah", clipText))
-                            viewModel.showMessage(strings.copiedToast)
-                            selectedAyahForAction = null
-                        }
+                    Surface(
+                        color = paperTheme.cardInner,
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(strings.copyAyah)
+                        Text(
+                            text = "${ayah.textUthmani} ${ArabicTextNormalizer.formatVerseMedallion(ayah.numberInSurah)}",
+                            fontFamily = AmiriQuranFontFamily,
+                            fontSize = 23.sp,
+                            lineHeight = 42.sp,
+                            color = paperTheme.fg,
+                            textAlign = TextAlign.Right,
+                            modifier = Modifier.padding(14.dp)
+                        )
                     }
 
-                    OutlinedButton(
-                        onClick = {
-                            shareDesignedVerseTextOrCard(
-                                context = context,
-                                surahLabel = "${ayah.surahNameAr} (${ayah.surahNumber}:${ayah.numberInSurah})",
-                                arabicText = ayah.textUthmani,
-                                translation = "${ayah.surahNameEn} • Page ${ayah.pageNumber}"
-                            )
-                            selectedAyahForAction = null
-                        }
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.Rounded.Share, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(strings.shareAyah)
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            viewModel.addBookmark(
-                                surahNumber = ayah.surahNumber,
-                                ayahNumber = ayah.numberInSurah,
-                                collectionName = if (isArabicUi) "المفضلة" else "Favorites",
-                                note = null,
-                                pageNumber = ayah.pageNumber
-                            )
-                            selectedAyahForAction = null
-                        }
-                    ) {
-                        Icon(Icons.Rounded.Bookmark, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(strings.bookmarkAyah)
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            noteTargetDialog(
-                                ayah = ayah,
-                                isArabicUi = isArabicUi,
-                                onOpen = { a, col ->
+                        if (quranAudioEnabled) {
+                            Button(
+                                onClick = {
+                                    recitationPlayer.playAyah(
+                                        surahNumber = ayah.surahNumber,
+                                        ayahNumber = ayah.numberInSurah,
+                                        pageNumber = ayah.pageNumber
+                                    )
                                     selectedAyahForAction = null
-                                    collectionInput = col
-                                    noteInput = ""
-                                    noteDialogAyah = a
-                                }
-                            )
+                                },
+                                modifier = Modifier.testTag("ayah_action_play")
+                            ) {
+                                Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(strings.playFromAyah)
+                            }
                         }
-                    ) {
-                        Icon(Icons.Rounded.EditNote, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(strings.addNoteAyah)
-                    }
-                }
 
-                if (showAiTafsirPanel) {
-                    HorizontalDivider()
-                    when (val ts = ayahTafsirState) {
-                        is AiUiState.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Text(if (isArabicUi) "جارٍ استحضار التفسير ومعاني المفردات..." else "Fetching AI Tafsir & word meanings...")
-                        }
-                        is AiUiState.Streaming -> Text(ts.text, style = MaterialTheme.typography.bodyLarge)
-                        is AiUiState.Success -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(ts.text, style = MaterialTheme.typography.bodyLarge)
+                        if (aiAssistantEnabled) {
                             OutlinedButton(
                                 onClick = {
-                                    selectedAyahForAction = null
-                                    onOpenAiAssistant()
+                                    showAiTafsirPanel = true
+                                    aiViewModel.askAiTafsirForAyah(
+                                        surahNameAr = ayah.surahNameAr,
+                                        surahNumber = ayah.surahNumber,
+                                        ayahNumber = ayah.numberInSurah,
+                                        arabicText = ayah.textUthmani,
+                                        languageName = appLanguage.nativeLabel
+                                    )
                                 },
-                                modifier = Modifier.fillMaxWidth().testTag("open_full_ai_from_tafsir")
+                                modifier = Modifier.testTag("ayah_action_ai_tafsir")
                             ) {
                                 Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text(
-                                    if (isArabicUi) "متابعة الحوار في المساعد الذكي (محفوظ في السجل)"
-                                    else "Continue in AI Assistant (Saved to History)"
-                                )
+                                Text(strings.askAiTafsir)
                             }
                         }
-                        is AiUiState.Error -> Text(ts.message, color = MaterialTheme.colorScheme.error)
-                        else -> Unit
+
+                        OutlinedButton(
+                            onClick = {
+                                val clipMgr = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val clipText = "${ayah.textUthmani} (${ayah.surahNameAr} ${ayah.surahNumber}:${ayah.numberInSurah})"
+                                clipMgr.setPrimaryClip(ClipData.newPlainText("Quran Ayah", clipText))
+                                viewModel.showMessage(strings.copiedToast)
+                                selectedAyahForAction = null
+                            }
+                        ) {
+                            Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(strings.copyAyah)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                shareDesignedVerseTextOrCard(
+                                    context = context,
+                                    surahLabel = "${ayah.surahNameAr} (${ayah.surahNumber}:${ayah.numberInSurah})",
+                                    arabicText = ayah.textUthmani,
+                                    translation = "${ayah.surahNameEn} • ${strings.pageLabel} ${ayah.pageNumber}"
+                                )
+                                selectedAyahForAction = null
+                            }
+                        ) {
+                            Icon(Icons.Rounded.Share, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(strings.shareAyah)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.addBookmark(
+                                    surahNumber = ayah.surahNumber,
+                                    ayahNumber = ayah.numberInSurah,
+                                    collectionName = appLanguage.pick("المفضلة", "Favorites", "Sevimlilar"),
+                                    note = null,
+                                    pageNumber = ayah.pageNumber
+                                )
+                                selectedAyahForAction = null
+                            }
+                        ) {
+                            Icon(Icons.Rounded.Bookmark, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(strings.bookmarkAyah)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                noteTargetDialog(
+                                    ayah = ayah,
+                                    appLanguage = appLanguage,
+                                    onOpen = { a, col ->
+                                        selectedAyahForAction = null
+                                        collectionInput = col
+                                        noteInput = ""
+                                        noteDialogAyah = a
+                                    }
+                                )
+                            }
+                        ) {
+                            Icon(Icons.Rounded.EditNote, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(strings.addNoteAyah)
+                        }
                     }
+
+                    if (showAiTafsirPanel) {
+                        HorizontalDivider()
+                        when (val ts = ayahTafsirState) {
+                            is AiUiState.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    appLanguage.pick(
+                                        "جارٍ استحضار التفسير ومعاني المفردات...",
+                                        "Fetching AI Tafsir & word meanings...",
+                                        "AI tafsir va so'z ma'nolari yuklanmoqda..."
+                                    )
+                                )
+                            }
+                            is AiUiState.Streaming -> Text(ts.text, style = MaterialTheme.typography.bodyLarge)
+                            is AiUiState.Success -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(ts.text, style = MaterialTheme.typography.bodyLarge)
+                                OutlinedButton(
+                                    onClick = {
+                                        selectedAyahForAction = null
+                                        onOpenAiAssistant()
+                                    },
+                                    modifier = Modifier.fillMaxWidth().testTag("open_full_ai_from_tafsir")
+                                ) {
+                                    Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        appLanguage.pick(
+                                            "متابعة الحوار في المساعد الذكي (محفوظ في السجل)",
+                                            "Continue in AI Assistant (Saved to History)",
+                                            "AI yordamchida suhbatni davom ettirish (tarixda saqlanadi)"
+                                        )
+                                    )
+                                }
+                            }
+                            is AiUiState.Error -> Text(ts.message, color = MaterialTheme.colorScheme.error)
+                            else -> Unit
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
                 }
-                Spacer(Modifier.height(16.dp))
             }
         }
-    }
 
-    // --- NOTE & BOOKMARK DIALOG ---
-    noteDialogAyah?.let { ayah ->
-        AlertDialog(
-            onDismissRequest = { noteDialogAyah = null },
-            title = {
-                Text("${ayah.surahNameAr} (${ayah.surahNumber}:${ayah.numberInSurah})")
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = collectionInput,
-                        onValueChange = { collectionInput = it },
-                        label = { Text(if (isArabicUi) "المجموعة" else "Collection") },
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = noteInput,
-                        onValueChange = { noteInput = it },
-                        label = { Text(if (isArabicUi) "تأملاتك وملاحظاتك الشخصية" else "Personal reflection note") },
-                        minLines = 3
-                    )
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    viewModel.addBookmark(
-                        surahNumber = ayah.surahNumber,
-                        ayahNumber = ayah.numberInSurah,
-                        collectionName = collectionInput,
-                        note = noteInput,
-                        pageNumber = ayah.pageNumber
-                    )
-                    if (noteInput.isNotBlank()) {
-                        viewModel.addJournalEntry(
-                            entryType = "VERSE_NOTE",
-                            title = "${ayah.surahNameAr} (${ayah.surahNumber}:${ayah.numberInSurah})",
-                            body = noteInput,
-                            reference = "ص ${ayah.pageNumber}"
+        // --- NOTE & BOOKMARK DIALOG ---
+        noteDialogAyah?.let { ayah ->
+            AlertDialog(
+                onDismissRequest = { noteDialogAyah = null },
+                title = {
+                    Text("${ayah.surahNameAr} (${ayah.surahNumber}:${ayah.numberInSurah})")
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = collectionInput,
+                            onValueChange = { collectionInput = it },
+                            label = { Text(appLanguage.pick("المجموعة", "Collection", "To'plam")) },
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = noteInput,
+                            onValueChange = { noteInput = it },
+                            label = { Text(appLanguage.pick("تأملاتك وملاحظاتك الشخصية", "Personal reflection note", "Shaxsiy tafakkur va eslatma")) },
+                            minLines = 3
                         )
                     }
-                    noteDialogAyah = null
-                }) {
-                    Text(strings.save)
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        viewModel.addBookmark(
+                            surahNumber = ayah.surahNumber,
+                            ayahNumber = ayah.numberInSurah,
+                            collectionName = collectionInput,
+                            note = noteInput,
+                            pageNumber = ayah.pageNumber
+                        )
+                        if (noteInput.isNotBlank()) {
+                            viewModel.addJournalEntry(
+                                entryType = "VERSE_NOTE",
+                                title = "${ayah.surahNameAr} (${ayah.surahNumber}:${ayah.numberInSurah})",
+                                body = noteInput,
+                                reference = "${strings.pageLabel} ${ayah.pageNumber}"
+                            )
+                        }
+                        noteDialogAyah = null
+                    }) {
+                        Text(strings.save)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { noteDialogAyah = null }) { Text(strings.cancel) }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { noteDialogAyah = null }) { Text(strings.cancel) }
-            }
-        )
-    }
+            )
+        }
 
     // --- SMART FULL-QURAN ARABIC SEARCH SHEET ---
     if (showSearchSheet) {
@@ -736,8 +745,11 @@ fun MadinahMushafReader(
 
                 if (searchResults.isEmpty() && searchText.trim().length >= 2 && !isSearching) {
                     Text(
-                        text = if (isArabicUi) "لا توجد نتائج مطابقة. جرّب كلمة قرآنية أخرى أو قم بتنزيل المصحف كاملاً للبحث الفوري."
-                        else "No matching verses found. Try another Arabic root or sync the full Mushaf offline.",
+                        text = appLanguage.pick(
+                            "لا توجد نتائج مطابقة. جرّب كلمة قرآنية أخرى أو قم بتنزيل المصحف كاملاً للبحث الفوري.",
+                            "No matching verses found. Try another Arabic root or sync the full Mushaf offline.",
+                            "Mos oyat topilmadi. Boshqa arabcha so'zni kiriting yoki to'liq Mushafni oflayn yuklab oling."
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -880,7 +892,9 @@ fun MadinahMushafReader(
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(if (isArabicUi) "انتقال إلى الصفحة" else "Jump to Page")
+                            Text(
+                                appLanguage.pick("انتقال إلى الصفحة", "Jump to Page", "Sahifaga o'tish")
+                            )
                         }
                     }
                 }
@@ -899,7 +913,10 @@ fun MadinahMushafReader(
                 modifier = Modifier.fillMaxWidth().padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(if (isArabicUi) "إعدادات المصحف والقراءة" else "Mushaf Reading Preferences", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    appLanguage.pick("إعدادات المصحف والقراءة", "Mushaf Reading Preferences", "Mushaf o'qish sozlamalari"),
+                    style = MaterialTheme.typography.titleLarge
+                )
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val labels = listOf(
@@ -1024,19 +1041,19 @@ fun MadinahMushafReader(
                     OutlinedTextField(
                         value = startAyahStr,
                         onValueChange = { startAyahStr = it.filter { ch -> ch.isDigit() } },
-                        label = { Text(if (isArabicUi) "من الآية (أ)" else "Start Ayah (A)") },
+                        label = { Text(appLanguage.pick("من الآية (أ)", "Start Ayah (A)", "Boshlanish oyati (A)")) },
                         singleLine = true
                     )
                     OutlinedTextField(
                         value = endAyahStr,
                         onValueChange = { endAyahStr = it.filter { ch -> ch.isDigit() } },
-                        label = { Text(if (isArabicUi) "إلى الآية (ب)" else "End Ayah (B)") },
+                        label = { Text(appLanguage.pick("إلى الآية (ب)", "End Ayah (B)", "Tugash oyati (B)")) },
                         singleLine = true
                     )
                     OutlinedTextField(
                         value = repeatsStr,
                         onValueChange = { repeatsStr = it.filter { ch -> ch.isDigit() } },
-                        label = { Text(if (isArabicUi) "عدد مرات التكرار" else "Repeat Count") },
+                        label = { Text(appLanguage.pick("عدد مرات التكرار", "Repeat Count", "Takrorlash soni")) },
                         singleLine = true
                     )
                 }
@@ -1049,7 +1066,7 @@ fun MadinahMushafReader(
                     recitationPlayer.startAToBLoop(activeSurah, sA, eA, rep, activePageNum)
                     showLoopDialog = false
                 }) {
-                    Text(if (isArabicUi) "بدء التكرار" else "Start Loop")
+                    Text(appLanguage.pick("بدء التكرار", "Start Loop", "Takrorlashni boshlash"))
                 }
             },
             dismissButton = {
@@ -1066,10 +1083,10 @@ fun MadinahMushafReader(
 
 private fun noteTargetDialog(
     ayah: MushafAyahItem,
-    isArabicUi: Boolean,
+    appLanguage: AppLanguage,
     onOpen: (MushafAyahItem, String) -> Unit
 ) {
-    onOpen(ayah, if (isArabicUi) "تأملات" else "Reflections")
+    onOpen(ayah, appLanguage.pick("تأملات", "Reflections", "Tafakkurlar"))
 }
 
 @Composable
@@ -1133,7 +1150,7 @@ private fun MushafPageFrame(
                     CircularProgressIndicator(color = paperTheme.accent)
                     Text(
                         text = if (isArabicUi) "جارٍ تهيئة الصفحة ${ArabicTextNormalizer.toArabicIndicDigits(pageNumber)}..."
-                        else "Loading Mushaf Page $pageNumber...",
+                        else "${strings.pageLabel} $pageNumber...",
                         color = paperTheme.fg.copy(alpha = 0.75f)
                     )
                 }

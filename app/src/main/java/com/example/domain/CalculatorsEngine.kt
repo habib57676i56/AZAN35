@@ -1,5 +1,6 @@
 package com.example.domain
 
+import com.example.core.i18n.AppLanguage
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -61,28 +62,39 @@ object CalculatorsEngine {
         hasFather: Boolean,
         hasMother: Boolean,
         sons: Int,
-        daughters: Int
+        daughters: Int,
+        language: AppLanguage = AppLanguage.ENGLISH
     ): List<InheritanceShare> {
         if (netEstate <= 0.0) return emptyList()
         val hasChildren = sons > 0 || daughters > 0
+        val husbandLbl = language.pick("الزوج", "Husband", "Er")
+        val wifeLbl = language.pick("الزوجة", "Wife", "Xotin")
+        val motherLbl = language.pick("الأم", "Mother", "Ona")
+        val fatherLbl = language.pick("الأب", "Father", "Ota")
+        val daughtersOnlyLbl = language.pick("البنات ($daughters)", "Daughters ($daughters)", "Qizlar ($daughters)")
+        val awlSuffix = language.pick("(عول)", "(Awl)", "(Avl)")
+        val asabahLbl = language.pick("تعصيباً (الباقي)", "Asabah (Residue)", "Asaba (qoldiq)")
+        val asabah2to1Lbl = language.pick("تعصيباً للذكر مثل حظ الأنثيين", "Asabah (2:1 w/ Son)", "Asaba (o'g'il bilan 2:1)")
+        val raddLbl = language.pick("رداً", "Radd", "Radd")
+
         val fixedFractions = mutableMapOf<String, Pair<String, Double>>()
 
         when (spouse) {
-            "HUSBAND" -> fixedFractions["Husband"] = if (hasChildren) "1/4" to 0.25 else "1/2" to 0.50
-            "WIFE" -> fixedFractions["Wife"] = if (hasChildren) "1/8" to 0.125 else "1/4" to 0.25
+            "HUSBAND" -> fixedFractions[husbandLbl] = if (hasChildren) "1/4" to 0.25 else "1/2" to 0.50
+            "WIFE" -> fixedFractions[wifeLbl] = if (hasChildren) "1/8" to 0.125 else "1/4" to 0.25
         }
 
         if (hasMother) {
-            fixedFractions["Mother"] = if (hasChildren) "1/6" to (1.0 / 6.0) else "1/3" to (1.0 / 3.0)
+            fixedFractions[motherLbl] = if (hasChildren) "1/6" to (1.0 / 6.0) else "1/3" to (1.0 / 3.0)
         }
         if (hasFather && hasChildren) {
-            fixedFractions["Father"] = "1/6" to (1.0 / 6.0)
+            fixedFractions[fatherLbl] = "1/6" to (1.0 / 6.0)
         }
         if (daughters > 0 && sons == 0) {
-            fixedFractions["Daughters ($daughters)"] = if (daughters == 1) "1/2" to 0.5 else "2/3" to (2.0 / 3.0)
+            fixedFractions[daughtersOnlyLbl] = if (daughters == 1) "1/2" to 0.5 else "2/3" to (2.0 / 3.0)
         }
 
-        var totalFixed = fixedFractions.values.sumOf { it.second }
+        val totalFixed = fixedFractions.values.sumOf { it.second }
 
         // Handle Awl (if fixed shares exceed 100%)
         val results = mutableListOf<InheritanceShare>()
@@ -92,7 +104,7 @@ object CalculatorsEngine {
                 results.add(
                     InheritanceShare(
                         heirLabel = heir,
-                        fractionLabel = "${pair.first} (Awl)",
+                        fractionLabel = "${pair.first} $awlSuffix",
                         percentage = scaled * 100.0,
                         amount = netEstate * scaled
                     )
@@ -120,8 +132,12 @@ object CalculatorsEngine {
                     val sonShare = remainder * (2.0 * sons / units)
                     results.add(
                         InheritanceShare(
-                            heirLabel = if (sons == 1) "Son" else "Sons ($sons)",
-                            fractionLabel = "Asabah (Residue)",
+                            heirLabel = if (sons == 1) {
+                                language.pick("الابن", "Son", "O'g'il")
+                            } else {
+                                language.pick("الأبناء ($sons)", "Sons ($sons)", "O'g'illar ($sons)")
+                            },
+                            fractionLabel = asabahLbl,
                             percentage = sonShare * 100.0,
                             amount = netEstate * sonShare
                         )
@@ -130,8 +146,12 @@ object CalculatorsEngine {
                         val daughterShare = remainder * (1.0 * daughters / units)
                         results.add(
                             InheritanceShare(
-                                heirLabel = if (daughters == 1) "Daughter" else "Daughters ($daughters)",
-                                fractionLabel = "Asabah (2:1 w/ Son)",
+                                heirLabel = if (daughters == 1) {
+                                    language.pick("البنت", "Daughter", "Qiz")
+                                } else {
+                                    language.pick("البنات ($daughters)", "Daughters ($daughters)", "Qizlar ($daughters)")
+                                },
+                                fractionLabel = asabah2to1Lbl,
                                 percentage = daughterShare * 100.0,
                                 amount = netEstate * daughterShare
                             )
@@ -139,21 +159,21 @@ object CalculatorsEngine {
                     }
                 }
                 hasFather -> {
-                    val existingFather = results.indexOfFirst { it.heirLabel == "Father" }
+                    val existingFather = results.indexOfFirst { it.heirLabel == fatherLbl }
                     if (existingFather >= 0) {
                         val cur = results[existingFather]
                         val combined = (cur.percentage / 100.0) + remainder
                         results[existingFather] = InheritanceShare(
-                            heirLabel = "Father",
-                            fractionLabel = "1/6 + Residue",
+                            heirLabel = fatherLbl,
+                            fractionLabel = language.pick("١/٦ + الباقي تعصيباً", "1/6 + Residue", "1/6 + Asaba"),
                             percentage = combined * 100.0,
                             amount = netEstate * combined
                         )
                     } else {
                         results.add(
                             InheritanceShare(
-                                heirLabel = "Father",
-                                fractionLabel = "Asabah (Residue)",
+                                heirLabel = fatherLbl,
+                                fractionLabel = asabahLbl,
                                 percentage = remainder * 100.0,
                                 amount = netEstate * remainder
                             )
@@ -162,7 +182,7 @@ object CalculatorsEngine {
                 }
                 else -> {
                     // Radd back to blood fixed heirs (excluding spouse in classical majority)
-                    val bloodIndices = results.indices.filter { results[it].heirLabel !in listOf("Husband", "Wife") }
+                    val bloodIndices = results.indices.filter { results[it].heirLabel !in listOf(husbandLbl, wifeLbl) }
                     val bloodTotal = bloodIndices.sumOf { results[it].percentage / 100.0 }
                     if (bloodTotal > 0.0) {
                         for (idx in bloodIndices) {
@@ -170,7 +190,7 @@ object CalculatorsEngine {
                             val base = item.percentage / 100.0
                             val updated = base + remainder * (base / bloodTotal)
                             results[idx] = item.copy(
-                                fractionLabel = "${item.fractionLabel} + Radd",
+                                fractionLabel = "${item.fractionLabel} + $raddLbl",
                                 percentage = updated * 100.0,
                                 amount = netEstate * updated
                             )
@@ -189,15 +209,27 @@ object CalculatorsEngine {
         val feedback: String
     )
 
-    fun estimateAblutionWater(isGhusl: Boolean, tapSeconds: Int): WaterUsageResult {
+    fun estimateAblutionWater(
+        isGhusl: Boolean,
+        tapSeconds: Int,
+        language: AppLanguage = AppLanguage.ENGLISH
+    ): WaterUsageResult {
         // Standard household faucet ~ 0.11 liters per second (~6.5 L/min)
         val used = max(0.2, tapSeconds * 0.11)
         val prophetic = if (isGhusl) 3.0 else 0.75 // 1 Sa' (~3L) for Ghusl, 1 Mudd (~0.75L) for Wudu
         val ratio = max(1, (used / prophetic).roundToInt())
         val note = if (used <= prophetic * 1.5) {
-            "Ma sha Allah! Close to the Prophetic Sunnah of conserving water."
+            language.pick(
+                "ما شاء الله! استهلاكك قريب من هدي النبي ﷺ في الاقتصاد بالماء.",
+                "Ma sha Allah! Close to the Prophetic Sunnah of conserving water.",
+                "Mashaalloh! Payg'ambarimiz ﷺ ning suvni tejash sunnatlariga yaqinsiz."
+            )
         } else {
-            "Try turning the tap off between washings — the Prophet ﷺ performed Wudu with ~0.75 L (1 Mudd) and Ghusl with ~3 L (1 Sa')."
+            language.pick(
+                "جرّب إغلاق الصنبور بين غسل الأعضاء؛ فقد كان النبي ﷺ يتوضأ بمُد (~٠.٧٥ لتر) ويغتسل بصاع (~٣ لتر).",
+                "Try turning the tap off between washings — the Prophet ﷺ performed Wudu with ~0.75 L (1 Mudd) and Ghusl with ~3 L (1 Sa').",
+                "A'zolarni yuvish orasida jo'mrakni yopib turing — Payg'ambarimiz ﷺ tahoratni ~0.75 L (1 mud) va g'uslni ~3 L (1 so') suv bilan qilganlar."
+            )
         }
         return WaterUsageResult(used, prophetic, ratio, note)
     }

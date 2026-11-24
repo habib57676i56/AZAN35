@@ -39,4 +39,17 @@
             <extra android:name="launch_tab" android:value="dhikr" />
         </intent>
     </shortcut>
+    <shortcut
+        android:shortcutId="shortcut_ai"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_ai_short"
+        android:shortcutLongLabel="@string/shortcut_ai_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.aistudio.mihrab.xkpqzr"
+            android:targetClass="com.example.MainActivity">
+            <extra android:name="launch_tab" android:value="learn" />
+        </intent>
+    </shortcut>
 </shortcuts>

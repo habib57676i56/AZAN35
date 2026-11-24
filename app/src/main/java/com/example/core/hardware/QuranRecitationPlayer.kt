@@ -3,8 +3,11 @@ package com.example.core.hardware
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.Build
+import android.os.PowerManager
 import android.util.Log
 import com.example.data.firebase.MihrabRepository
 import com.example.data.local.AudioCacheDao
@@ -56,6 +59,20 @@ data class RecitationPlaybackState(
 object RecitationPlayerHolder {
     @Volatile
     var instance: QuranRecitationPlayer? = null
+
+    fun getOrCreate(
+        context: Context,
+        audioCacheDao: AudioCacheDao,
+        mushafDao: MushafDao
+    ): QuranRecitationPlayer {
+        return instance ?: synchronized(this) {
+            instance ?: QuranRecitationPlayer(
+                context = context.applicationContext,
+                audioCacheDao = audioCacheDao,
+                mushafDao = mushafDao
+            ).also { instance = it }
+        }
+    }
 }
 
 class QuranRecitationPlayer(
@@ -66,6 +83,8 @@ class QuranRecitationPlayer(
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val audioDir = File(appContext.filesDir, "quran_audio").apply { mkdirs() }
+    private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    private var focusRequest: AudioFocusRequest? = null
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -79,6 +98,27 @@ class QuranRecitationPlayer(
 
     private val _state = MutableStateFlow(RecitationPlaybackState())
     val state: StateFlow<RecitationPlaybackState> = _state.asStateFlow()
+
+    private val audioFocusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                if (_state.value.isPlaying) togglePlayPause()
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                if (_state.value.isPlaying) {
+                    runCatching { mediaPlayer?.pause() }
+                    _state.value = _state.value.copy(isPlaying = false, isPaused = true)
+                    updateForegroundMediaService()
+                }
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                runCatching { mediaPlayer?.setVolume(0.35f, 0.35f) }
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                runCatching { mediaPlayer?.setVolume(1.0f, 1.0f) }
+            }
+        }
+    }
 
     init {
         RecitationPlayerHolder.instance = this
@@ -133,6 +173,7 @@ class QuranRecitationPlayer(
         playJob = scope.launch {
             try {
                 val file = ensureAyahCached(reciter, surahNumber, ayahNumber, global)
+                requestAudioFocus()
                 startMediaPlayer(file)
                 startForegroundMediaService()
                 prefetchNextTwoAyahs(reciter, surahNumber, ayahNumber)
@@ -181,6 +222,7 @@ class QuranRecitationPlayer(
             _state.value = _state.value.copy(isPlaying = false, isPaused = true)
             updateForegroundMediaService()
         } else if (_state.value.isPaused && mp != null) {
+            requestAudioFocus()
             runCatching {
                 applyPlaybackSpeed(_state.value.speed)
                 mp.start()
@@ -246,6 +288,7 @@ class QuranRecitationPlayer(
 
     fun stopFromService() {
         playJob?.cancel()
+        abandonAudioFocus()
         runCatching {
             mediaPlayer?.stop()
             mediaPlayer?.release()
@@ -261,12 +304,45 @@ class QuranRecitationPlayer(
         }
     }
 
+    private fun requestAudioFocus() {
+        val mgr = audioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val req = focusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                .setOnAudioFocusChangeListener(audioFocusListener)
+                .build()
+                .also { focusRequest = it }
+            runCatching { mgr.requestAudioFocus(req) }
+        } else {
+            @Suppress("DEPRECATION")
+            runCatching {
+                mgr.requestAudioFocus(audioFocusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
+            }
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        val mgr = audioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            focusRequest?.let { runCatching { mgr.abandonAudioFocusRequest(it) } }
+        } else {
+            @Suppress("DEPRECATION")
+            runCatching { mgr.abandonAudioFocus(audioFocusListener) }
+        }
+    }
+
     private fun startMediaPlayer(file: File) {
         runCatching {
             mediaPlayer?.stop()
             mediaPlayer?.release()
         }
         val mp = MediaPlayer().apply {
+            setWakeMode(appContext, PowerManager.PARTIAL_WAKE_LOCK)
             setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)

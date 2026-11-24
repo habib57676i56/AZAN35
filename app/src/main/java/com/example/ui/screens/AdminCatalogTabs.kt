@@ -52,6 +52,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.core.hardware.AdhanAudioPlayer
+import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
 import com.example.data.firebase.AdhanVoiceDoc
 import com.example.data.firebase.AdhkarItemDoc
@@ -67,12 +68,13 @@ import kotlinx.coroutines.launch
 @Composable
 fun RecitersCrudTab(
     reciters: List<ReciterDoc>,
-    isArabicUi: Boolean,
+    appLanguage: AppLanguage,
     strings: LocalizedStrings,
     onUpsert: (ReciterDoc) -> Unit,
     onDelete: (String) -> Unit,
     onSeedDefaults: () -> Unit
 ) {
+    val isArabicUi = appLanguage.isArabicUi
     var editing by remember { mutableStateOf<ReciterDoc?>(null) }
 
     LazyColumn(
@@ -94,7 +96,7 @@ fun RecitersCrudTab(
                 ) {
                     Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(if (isArabicUi) "إضافة قارئ" else "Add Reciter")
+                    Text(appLanguage.pick("إضافة قارئ", "Add Reciter", "Qori qo'shish"))
                 }
                 OutlinedButton(onClick = onSeedDefaults, shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f)) {
                     Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(18.dp))
@@ -155,7 +157,7 @@ fun RecitersCrudTab(
 
         AlertDialog(
             onDismissRequest = { editing = null },
-            title = { Text(if (isArabicUi) "بيانات القارئ" else "Reciter Details") },
+            title = { Text(appLanguage.pick("بيانات القارئ", "Reciter Details", "Qori ma'lumotlari")) },
             text = {
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -205,12 +207,13 @@ fun RecitersCrudTab(
 @Composable
 fun AdhkarCrudTab(
     adhkarList: List<AdhkarItemDoc>,
-    isArabicUi: Boolean,
+    appLanguage: AppLanguage,
     strings: LocalizedStrings,
     onUpsert: (AdhkarItemDoc) -> Unit,
     onDelete: (String) -> Unit,
     onSeedDefaults: () -> Unit
 ) {
+    val isArabicUi = appLanguage.isArabicUi
     var selectedCategory by remember { mutableStateOf("ALL") }
     var editing by remember { mutableStateOf<AdhkarItemDoc?>(null) }
 
@@ -241,7 +244,7 @@ fun AdhkarCrudTab(
                 ) {
                     Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(if (isArabicUi) "إضافة ذكر" else "Add Dhikr")
+                    Text(appLanguage.pick("إضافة ذكر", "Add Dhikr", "Zikr qo'shish"))
                 }
                 OutlinedButton(onClick = onSeedDefaults, shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f)) {
                     Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(18.dp))
@@ -257,7 +260,7 @@ fun AdhkarCrudTab(
                     LiquidGlassPill(
                         selected = selectedCategory == "ALL",
                         onClick = { selectedCategory = "ALL" },
-                        label = if (isArabicUi) "الكل (${adhkarList.size})" else "All (${adhkarList.size})"
+                        label = appLanguage.pick("الكل (${adhkarList.size})", "All (${adhkarList.size})", "Barchasi (${adhkarList.size})")
                     )
                 }
                 items(AdhkarCategoryMeta.entries, key = { it.id }) { cat ->
@@ -265,7 +268,7 @@ fun AdhkarCrudTab(
                         selected = selectedCategory == cat.id,
                         onClick = { selectedCategory = cat.id },
                         icon = MihrabIcons.iconForAdhkarCategory(cat.id),
-                        label = if (isArabicUi) cat.titleAr else cat.titleEn
+                        label = cat.titleFor(appLanguage)
                     )
                 }
             }
@@ -322,20 +325,20 @@ fun AdhkarCrudTab(
 
         AlertDialog(
             onDismissRequest = { editing = null },
-            title = { Text(if (isArabicUi) "تحرير الذكر والأيقونة" else "Edit Dhikr & Icon") },
+            title = { Text(appLanguage.pick("تحرير الذكر والأيقونة", "Edit Dhikr & Icon", "Zikr va belgini tahrirlash")) },
             text = {
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedTextField(value = id, onValueChange = { id = it }, label = { Text("Doc ID") }, singleLine = true)
-                    Text(if (isArabicUi) "القسم" else "Category", style = MaterialTheme.typography.labelLarge)
+                    Text(appLanguage.pick("القسم", "Category", "Bo'lim"), style = MaterialTheme.typography.labelLarge)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         AdhkarCategoryMeta.entries.forEach { cat ->
                             LiquidGlassPill(
                                 selected = category == cat.id,
                                 onClick = { category = cat.id },
-                                label = if (isArabicUi) cat.titleAr else cat.titleEn
+                                label = cat.titleFor(appLanguage)
                             )
                         }
                     }
@@ -347,13 +350,13 @@ fun AdhkarCrudTab(
                     OutlinedTextField(
                         value = targetCount,
                         onValueChange = { targetCount = it.filter { c -> c.isDigit() } },
-                        label = { Text(if (isArabicUi) "عدد التكرار" else "Repeat Count") },
+                        label = { Text(appLanguage.pick("عدد التكرار", "Repeat Count", "Takror soni")) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true
                     )
                     OutlinedTextField(value = refAr, onValueChange = { refAr = it }, label = { Text("التخريج والمرجع بالعربية") })
                     OutlinedTextField(value = refEn, onValueChange = { refEn = it }, label = { Text("Reference (English)") })
-                    Text(if (isArabicUi) "الأيقونة (SVG / Vector Icon)" else "Icon Name", style = MaterialTheme.typography.labelLarge)
+                    Text(appLanguage.pick("الأيقونة (SVG / Vector Icon)", "Icon Name", "Belgi nomi"), style = MaterialTheme.typography.labelLarge)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         MihrabIcons.selectableAdhkarIconNames.forEach { name ->
                             LiquidGlassPill(
@@ -397,12 +400,13 @@ fun AdhkarCrudTab(
 fun AdhanAudioCrudTab(
     voices: List<AdhanVoiceDoc>,
     adhanAudioPlayer: AdhanAudioPlayer,
-    isArabicUi: Boolean,
+    appLanguage: AppLanguage,
     strings: LocalizedStrings,
     onUpsert: (AdhanVoiceDoc) -> Unit,
     onDelete: (String) -> Unit,
     onSeedDefaults: () -> Unit
 ) {
+    val isArabicUi = appLanguage.isArabicUi
     val scope = rememberCoroutineScope()
     val playbackState by adhanAudioPlayer.state.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<AdhanVoiceDoc?>(null) }
@@ -420,7 +424,7 @@ fun AdhanAudioCrudTab(
                 ) {
                     Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(if (isArabicUi) "إضافة أذان" else "Add Adhan Voice")
+                    Text(appLanguage.pick("إضافة أذان", "Add Adhan Voice", "Azon qo'shish"))
                 }
                 OutlinedButton(onClick = onSeedDefaults, shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f)) {
                     Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(18.dp))
@@ -502,13 +506,13 @@ fun AdhanAudioCrudTab(
 
         AlertDialog(
             onDismissRequest = { editing = null },
-            title = { Text(if (isArabicUi) "إدارة تسجيل الأذان" else "Manage Adhan Recording") },
+            title = { Text(appLanguage.pick("إدارة تسجيل الأذان", "Manage Adhan Recording", "Azon yozuvini boshqarish")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = id, onValueChange = { id = it }, label = { Text("Voice ID (e.g. makkah)") }, singleLine = true)
                     OutlinedTextField(value = nameAr, onValueChange = { nameAr = it }, label = { Text("الاسم بالعربية") }, singleLine = true)
                     OutlinedTextField(value = nameEn, onValueChange = { nameEn = it }, label = { Text("English Name") }, singleLine = true)
-                    OutlinedTextField(value = muezzin, onValueChange = { muezzin = it }, label = { Text(if (isArabicUi) "اسم المؤذن" else "Muezzin") }, singleLine = true)
+                    OutlinedTextField(value = muezzin, onValueChange = { muezzin = it }, label = { Text(appLanguage.pick("اسم المؤذن", "Muezzin", "Muazzin")) }, singleLine = true)
                     OutlinedTextField(value = audioUrl, onValueChange = { audioUrl = it }, label = { Text("Public Audio URL (HTTPS MP3)") }, singleLine = true)
                     OutlinedButton(
                         onClick = { pickAudioLauncher.launch(arrayOf("audio/*")) },
@@ -516,11 +520,15 @@ fun AdhanAudioCrudTab(
                     ) {
                         Icon(Icons.Rounded.UploadFile, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text(if (isArabicUi) "اختبار ملف صوتي من الجهاز" else "Test Local Audio File")
+                        Text(appLanguage.pick("اختبار ملف صوتي من الجهاز", "Test Local Audio File", "Qurilmadan audio sinash"))
                     }
                     if (pickedLocalFile != null) {
                         Text(
-                            text = if (isArabicUi) "تم فحص الملف محلياً. أدخل رابط HTTPS أعلاه لإتاحته لجميع المستخدمين." else "Local audio verified. Provide an HTTPS URL above so all users can stream it.",
+                            text = appLanguage.pick(
+                                "تم فحص الملف محلياً. أدخل رابط HTTPS أعلاه لإتاحته لجميع المستخدمين.",
+                                "Local audio verified. Provide an HTTPS URL above so all users can stream it.",
+                                "Audio fayl tekshirildi. Barcha foydalanuvchilar uchun yuqoriga HTTPS havola kiriting."
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary
                         )

@@ -48,24 +48,31 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.core.i18n.AppLanguage
+import com.example.core.i18n.LocalizedStrings
+import com.example.core.i18n.stringsFor
 import com.example.data.firebase.GoogleSignInButton
 import com.example.ui.theme.AmiriQuranFontFamily
 import com.example.ui.theme.IslamicGeometricPatternCanvas
 import com.example.ui.theme.LiquidGlassCard
+import com.example.ui.theme.LiquidGlassPill
 import com.example.ui.theme.LocalLiquidGlassPalette
 import com.example.ui.theme.SacredAmbientCanvas
 import com.example.ui.theme.SacredEmerald
 
 @Composable
 fun AuthScreen(
-    signInButtonText: String,
+    selectedLanguage: AppLanguage = AppLanguage.ARABIC,
+    onSelectLanguage: (AppLanguage) -> Unit = {},
+    strings: LocalizedStrings = stringsFor(selectedLanguage),
+    signInButtonText: String = strings.signInWithGoogle,
     onAuthSuccess: () -> Unit,
     firebaseConfigMissing: Boolean = false
 ) {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val glass = LocalLiquidGlassPalette.current
 
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+    CompositionLocalProvider(LocalLayoutDirection provides selectedLanguage.layoutDirection) {
         SacredAmbientCanvas {
             Column(
                 modifier = Modifier
@@ -73,13 +80,29 @@ fun AuthScreen(
                     .verticalScroll(rememberScrollState())
                     .statusBarsPadding()
                     .navigationBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 18.dp)
+                    .padding(horizontal = 20.dp, vertical = 14.dp)
                     .widthIn(max = 520.dp)
                     .align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    // Pre-login language selector (Arabic / English / Uzbek)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+                    ) {
+                        listOf(AppLanguage.ARABIC, AppLanguage.ENGLISH, AppLanguage.UZBEK).forEach { lang ->
+                            LiquidGlassPill(
+                                selected = selectedLanguage == lang,
+                                onClick = { onSelectLanguage(lang) },
+                                label = lang.nativeLabel
+                            )
+                        }
+                    }
+
                     LiquidGlassCard(
                         shape = RoundedCornerShape(30.dp),
                         contentPadding = 0.dp,
@@ -90,12 +113,16 @@ fun AuthScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(236.dp)
+                                .height(228.dp)
                                 .clip(RoundedCornerShape(30.dp))
                         ) {
                             Image(
                                 painter = painterResource(id = R.drawable.img_kaaba_horizon),
-                                contentDescription = "إطلالة هادئة نحو المسجد الحرام",
+                                contentDescription = selectedLanguage.pick(
+                                    "إطلالة هادئة نحو المسجد الحرام",
+                                    "Serene view toward Masjid al-Haram",
+                                    "Masjidul Harom tomon sokin manzara"
+                                ),
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -129,7 +156,11 @@ fun AuthScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "محراب • Mihrab",
+                                    text = selectedLanguage.pick(
+                                        "محراب • Mihrab",
+                                        "Mihrab • محراب",
+                                        "Mihrob • محراب"
+                                    ),
                                     style = MaterialTheme.typography.displayMedium,
                                     color = Color.White
                                 )
@@ -137,23 +168,31 @@ fun AuthScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(22.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
 
                     Text(
-                        text = "رفيقك المتكامل للقرآن والصلاة والذكر",
+                        text = selectedLanguage.pick(
+                            "رفيقك المتكامل للقرآن والصلاة والذكر",
+                            "Your Complete Companion for Quran, Salah & Dhikr",
+                            "Qur'on, Namoz va Zikr uchun mukammal hamrohingiz"
+                        ),
                         style = MaterialTheme.typography.headlineMedium,
                         color = MaterialTheme.colorScheme.onBackground,
                         textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "مصحف المدينة الكامل بـ ٦٠٤ صفحات ونص عثماني تفاعلي مع كبار القرّاء، مواقيت الصلاة والقبلة بالواقع المعزز، الأذكار، وأدوات الزكاة والمواريث بمزامنة سحابية آمنة.",
+                        text = selectedLanguage.pick(
+                            "مصحف المدينة الكامل بـ ٦٠٤ صفحات ونص عثماني تفاعلي مع كبار القرّاء، مواقيت الصلاة والقبلة بالواقع المعزز، الأذكار، وأدوات الزكاة والمواريث بمزامنة سحابية آمنة.",
+                            "Complete 604-page Madinah Mushaf with top reciters, GPS prayer times & AR Qibla, nearby mosques, Adhkar, and Zakat & inheritance tools synced securely.",
+                            "604 sahifalik to'liq Madina Mushafi va mashhur qorilar, aniq GPS namoz vaqtlari va Qibla, yaqin masjidlar, zikrlar hamda zakot va meros asboblari."
+                        ),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     LiquidGlassCard(
                         shape = RoundedCornerShape(26.dp),
@@ -162,23 +201,47 @@ fun AuthScreen(
                     ) {
                         TrustRow(
                             icon = Icons.Rounded.Lock,
-                            title = "خصوصية تامة ومزامنة محمية",
-                            subtitle = "موضع قراءتك وعلامات المصحف وأدعيتك محفوظة لحسابك وحدك مع دعم التصفح دون إنترنت."
+                            title = selectedLanguage.pick(
+                                "خصوصية تامة ومزامنة محمية",
+                                "Complete Privacy & Cloud Sync",
+                                "To'liq maxfiylik va bulutli sinxronlash"
+                            ),
+                            subtitle = selectedLanguage.pick(
+                                "موضع قراءتك وعلامات المصحف وأدعيتك محفوظة لحسابك وحدك مع دعم التصفح دون إنترنت.",
+                                "Your reading progress, bookmarks, and journals are securely saved to your account with offline support.",
+                                "O'qish sahifangiz, xatcho'plaringiz va duolaringiz hisobingizda xavfsiz saqlanadi va oflayn ishlaydi."
+                            )
                         )
                         TrustRow(
                             icon = Icons.Rounded.Mosque,
-                            title = "تجربة خاشعة بلا إعلانات",
-                            subtitle = "قراءة متواصلة في المصحف ومتابعة الصلوات والتسبيح بتركيز وهدوء."
+                            title = selectedLanguage.pick(
+                                "تجربة خاشعة بلا إعلانات",
+                                "Focused Worship Without Ads",
+                                "Reklamasiz xotirjam ibodat"
+                            ),
+                            subtitle = selectedLanguage.pick(
+                                "قراءة متواصلة في المصحف ومتابعة الصلوات والتسبيح بتركيز وهدوء.",
+                                "Read Quran, track daily prayers, find nearby mosques, and make Dhikr peacefully.",
+                                "Qur'on o'qish, namozlarni kuzatish, yaqin masjidlarni topish va zikr qilish uchun sokin muhit."
+                            )
                         )
                         TrustRow(
                             icon = Icons.Rounded.VerifiedUser,
-                            title = "مصحف المدينة وتلاوات متزامنة",
-                            subtitle = "نص عثماني تفاعلي مع تظليل الآية وتقليب الصفحات تلقائياً أثناء التلاوة."
+                            title = selectedLanguage.pick(
+                                "مصحف المدينة وتلاوات في الخلفية",
+                                "Madinah Mushaf & Background Recitation",
+                                "Madina Mushafi va fonda tilovat"
+                            ),
+                            subtitle = selectedLanguage.pick(
+                                "نص عثماني تفاعلي مع تظليل الآية واستمرار التلاوة بعد الخروج من التطبيق.",
+                                "Interactive Uthmani script with verse highlighting and continuous audio even after leaving the app.",
+                                "Oyatni ajratib ko'rsatish va ilovadan chiqqanda ham uzluksiz davom etadigan audio tilovat."
+                            )
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(22.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -193,7 +256,11 @@ fun AuthScreen(
                                 .padding(bottom = 12.dp)
                         ) {
                             Text(
-                                text = "إعدادات Firebase غير مدمجة في هذه النسخة (ملف app/google-services.json مفقود أثناء بناء APK). أضِف الملف في GitHub ثم أعد البناء لتفعيل تسجيل الدخول.",
+                                text = selectedLanguage.pick(
+                                    "إعدادات Firebase غير مدمجة في هذه النسخة (ملف app/google-services.json مفقود أثناء بناء APK). أضِف الملف في GitHub ثم أعد البناء لتفعيل تسجيل الدخول.",
+                                    "Firebase configuration is missing from this build (app/google-services.json was absent during APK build). Add it in GitHub and rebuild to enable Sign-In.",
+                                    "Ushbu APK yig'ilishida Firebase sozlamalari (app/google-services.json) topilmadi. Kirishni yoqish uchun faylni qo'shib qayta yig'ing."
+                                ),
                                 color = MaterialTheme.colorScheme.error,
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(12.dp)
