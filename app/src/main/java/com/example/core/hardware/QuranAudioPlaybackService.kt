@@ -97,7 +97,8 @@ class QuranAudioPlaybackService : Service() {
         )
 
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notif_mihrab)
+            .setColor(0xFF0F6B4E.toInt())
             .setContentTitle(title)
             .setContentText(subtitle)
             .setContentIntent(openAppIntent)

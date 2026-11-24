@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Adaptive notification shade text colors (Dark mode) -->
+    <color name="notif_primary_text">#FFF2FAF6</color>
+    <color name="notif_secondary_text">#FFB4CFC5</color>
+    <color name="notif_accent_emerald">#FF66D1AC</color>
+</resources>

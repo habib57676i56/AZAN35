@@ -9,6 +9,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.view.View
+import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.MainActivity
@@ -18,6 +20,7 @@ import com.example.core.i18n.formatNumerals
 import com.example.data.firebase.AppOperationsConfig
 import com.example.data.firebase.UserSettingsDoc
 import com.example.domain.CalculationMethod
+import com.example.domain.HijriCalendarEngine
 import com.example.domain.PrayerTimesEngine
 import java.util.Calendar
 
@@ -86,7 +89,17 @@ object PrayerStatusNotificationManager {
             cancelNotificationAndAlarm(appCtx)
             return
         }
-        showOrUpdateNow(appCtx, settings.latitude, settings.longitude, settings.city, settings.calculationMethod, settings.travelerMode, offsets, language, useIndic)
+        showOrUpdateNow(
+            appCtx,
+            settings.latitude,
+            settings.longitude,
+            settings.city,
+            settings.calculationMethod,
+            settings.travelerMode,
+            offsets,
+            language,
+            useIndic
+        )
         scheduleNextRefresh(appCtx)
     }
 
@@ -135,41 +148,37 @@ object PrayerStatusNotificationManager {
             travelerMode = travelerMode,
             manualOffsetsMin = offsets
         )
+        val hijri = HijriCalendarEngine.gregorianToHijri(now)
+        val indicUi = useIndic && language.isArabicUi
+        val hijriText = formatNumerals(hijri.formattedFor(language), indicUi)
+
         val nowMin = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
         val five = listOf(schedule.fajr, schedule.dhuhr, schedule.asr, schedule.maghrib, schedule.isha)
-        val next = five.firstOrNull { it.timeMinutes > nowMin } ?: schedule.fajr
+        val nextIndex = five.indexOfFirst { it.timeMinutes > nowMin }.let { if (it >= 0) it else 0 }
+        val next = five[nextIndex]
         val diffMin = ((next.timeMinutes - nowMin) + 1440) % 1440
         val h = diffMin / 60
         val m = diffMin % 60
         val remainingStr = formatNumerals(
-            language.pick("${h}س ${m}د", "${h}h ${m}m", "${h}s ${m}d"),
-            useIndic && language.isArabicUi
+            when {
+                h > 0 && m > 0 -> language.pick("${h}س ${m}د", "${h}h ${m}m", "${h}s ${m}d")
+                h > 0 -> language.pick("${h}س", "${h}h", "${h}s")
+                else -> language.pick("${m}د", "${m}m", "${m}d")
+            },
+            indicUi
         )
-        val nextTimeStr = formatNumerals(next.formattedTime, useIndic && language.isArabicUi)
-        val title = language.pick(
-            "${next.nameAr}: $nextTimeStr (بعد $remainingStr) • $city",
-            "Next: ${next.nameEn} $nextTimeStr (in $remainingStr) • $city",
-            "Keyingi: ${next.nameUz} $nextTimeStr ($remainingStr) • $city"
+        val countdownPill = language.pick("بعد $remainingStr", "in $remainingStr", "$remainingStr qoldi")
+        val nextTimeStr = formatNumerals(next.formattedTime, indicUi)
+        val fallbackTitle = language.pick(
+            "${next.nameAr}: $nextTimeStr ($countdownPill) • $city",
+            "Next: ${next.nameEn} $nextTimeStr ($countdownPill) • $city",
+            "Keyingi: ${next.nameUz} $nextTimeStr ($countdownPill) • $city"
         )
-
         val summaryCompact = five.joinToString(" • ") { entry ->
             val shortName = entry.nameFor(language)
-            val t = formatNumerals(entry.formattedTime.replace(" AM", "").replace(" PM", ""), useIndic && language.isArabicUi)
+            val t = formatNumerals(entry.formattedTime.replace(" AM", "").replace(" PM", ""), indicUi)
             "$shortName $t"
         }
-
-        val inboxStyle = NotificationCompat.InboxStyle()
-            .setBigContentTitle(title)
-            .addLine("${schedule.fajr.nameFor(language)}: ${formatNumerals(schedule.fajr.formattedTime, useIndic && language.isArabicUi)}  |  ${schedule.sunrise.nameFor(language)}: ${formatNumerals(schedule.sunrise.formattedTime, useIndic && language.isArabicUi)}")
-            .addLine("${schedule.dhuhr.nameFor(language)}: ${formatNumerals(schedule.dhuhr.formattedTime, useIndic && language.isArabicUi)}  |  ${schedule.asr.nameFor(language)}: ${formatNumerals(schedule.asr.formattedTime, useIndic && language.isArabicUi)}")
-            .addLine("${schedule.maghrib.nameFor(language)}: ${formatNumerals(schedule.maghrib.formattedTime, useIndic && language.isArabicUi)}  |  ${schedule.isha.nameFor(language)}: ${formatNumerals(schedule.isha.formattedTime, useIndic && language.isArabicUi)}")
-            .setSummaryText(
-                language.pick(
-                    "ثلث الليل الآخر: ${formatNumerals(schedule.lastThirdQiyam, useIndic)}",
-                    "Last 1/3 Night: ${schedule.lastThirdQiyam}",
-                    "Tahajjud (oxirgi 1/3): ${schedule.lastThirdQiyam}"
-                )
-            )
 
         val openIntent = PendingIntent.getActivity(
             context,
@@ -181,15 +190,85 @@ object PrayerStatusNotificationManager {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val refreshIntent = PendingIntent.getBroadcast(
+            context,
+            7024,
+            Intent(context, PrayerStatusRefreshReceiver::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val compactView = RemoteViews(context.packageName, R.layout.notification_prayer_compact).apply {
+            setTextViewText(R.id.tv_compact_title, "${next.nameFor(language)}  •  $nextTimeStr")
+            setTextViewText(R.id.tv_compact_subtitle, "$city  •  $hijriText")
+            setTextViewText(R.id.tv_compact_countdown, countdownPill)
+        }
+
+        val tileIds = intArrayOf(R.id.tile_p1, R.id.tile_p2, R.id.tile_p3, R.id.tile_p4, R.id.tile_p5)
+        val badgeIds = intArrayOf(R.id.badge_p1, R.id.badge_p2, R.id.badge_p3, R.id.badge_p4, R.id.badge_p5)
+        val nameIds = intArrayOf(R.id.name_p1, R.id.name_p2, R.id.name_p3, R.id.name_p4, R.id.name_p5)
+        val timeIds = intArrayOf(R.id.time_p1, R.id.time_p2, R.id.time_p3, R.id.time_p4, R.id.time_p5)
+
+        val expandedView = RemoteViews(context.packageName, R.layout.notification_prayer_expanded).apply {
+            setTextViewText(R.id.tv_exp_meta, "$city  •  $hijriText")
+            setTextViewText(
+                R.id.tv_exp_next_title,
+                language.pick(
+                    "القادمة: ${next.nameAr}  $nextTimeStr",
+                    "Next: ${next.nameEn}  $nextTimeStr",
+                    "Keyingi: ${next.nameUz}  $nextTimeStr"
+                )
+            )
+            setTextViewText(R.id.tv_exp_countdown, countdownPill)
+            setOnClickPendingIntent(R.id.btn_exp_refresh, refreshIntent)
+
+            five.forEachIndexed { idx, entry ->
+                val isNext = idx == nextIndex
+                val shortTime = formatNumerals(
+                    entry.formattedTime.replace(" AM", "").replace(" PM", ""),
+                    indicUi
+                )
+                setTextViewText(nameIds[idx], entry.nameFor(language))
+                setTextViewText(timeIds[idx], shortTime)
+                setInt(
+                    tileIds[idx],
+                    "setBackgroundResource",
+                    if (isNext) R.drawable.bg_notif_prayer_tile_active else R.drawable.bg_notif_prayer_tile
+                )
+                if (isNext) {
+                    setViewVisibility(badgeIds[idx], View.VISIBLE)
+                    setTextViewText(badgeIds[idx], language.pick("القادمة", "NEXT", "KEYINGI"))
+                    setTextColor(nameIds[idx], 0xFFFFFFFF.toInt())
+                    setTextColor(timeIds[idx], 0xFFFFE082.toInt())
+                } else {
+                    setViewVisibility(badgeIds[idx], View.GONE)
+                    setTextColor(nameIds[idx], 0xFFD2EAE1.toInt())
+                    setTextColor(timeIds[idx], 0xFFFFFFFF.toInt())
+                }
+            }
+
+            setTextViewText(
+                R.id.tv_exp_sunrise,
+                "☀ ${schedule.sunrise.nameFor(language)} ${formatNumerals(schedule.sunrise.formattedTime, indicUi)}"
+            )
+            setTextViewText(
+                R.id.tv_exp_qiyam,
+                "☾ ${language.pick("الثلث الأخير", "Qiyam", "Tahajjud")} ${formatNumerals(schedule.lastThirdQiyam, indicUi)}"
+            )
+        }
+
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(title)
+            .setSmallIcon(R.drawable.ic_notif_mihrab)
+            .setColor(0xFF0F6B4E.toInt())
+            .setContentTitle(fallbackTitle)
             .setContentText(summaryCompact)
-            .setStyle(inboxStyle)
+            .setCustomContentView(compactView)
+            .setCustomBigContentView(expandedView)
+            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
             .setContentIntent(openIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
@@ -206,12 +285,12 @@ object PrayerStatusNotificationManager {
             Intent(context, PrayerStatusRefreshReceiver::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val triggerAt = System.currentTimeMillis() + 5 * 60 * 1000L
+        val triggerAt = System.currentTimeMillis() + 2 * 60 * 1000L
         runCatching {
             alarmManager.setWindow(
                 AlarmManager.RTC,
                 triggerAt,
-                60 * 1000L,
+                45 * 1000L,
                 pi
             )
         }
