@@ -8,6 +8,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.example.R
 
+val IbmPlexSansArabicFontFamily = FontFamily(
+    Font(R.font.ibm_plex_sans_arabic, FontWeight.Normal),
+    Font(R.font.ibm_plex_sans_arabic, FontWeight.Medium),
+    Font(R.font.ibm_plex_sans_arabic, FontWeight.SemiBold),
+    Font(R.font.ibm_plex_sans_arabic, FontWeight.Bold)
+)
+
 val CairoFontFamily = FontFamily(
     Font(R.font.cairo, FontWeight.Normal),
     Font(R.font.cairo, FontWeight.Medium),
@@ -44,35 +51,45 @@ val PlusJakartaSansFontFamily = FontFamily(
     Font(R.font.plus_jakarta_sans, FontWeight.Bold)
 )
 
+/**
+ * Tabular numeral style modifier helper for prayer countdowns, clocks & Tasbih counters
+ * so digits remain rock-steady without horizontal jitter.
+ */
+fun TextStyle.withTabularNums(): TextStyle = copy(fontFeatureSettings = "tnum")
+
 fun buildMihrabTypography(fontScale: Float = 1.0f, arabicPrimary: Boolean = true): Typography {
     val scale = fontScale.coerceIn(0.8f, 1.5f)
     val displayFamily = if (arabicPrimary) CairoFontFamily else PlayfairDisplayFontFamily
-    val uiFamily = if (arabicPrimary) CairoFontFamily else PlusJakartaSansFontFamily
-    val bodyFamily = if (arabicPrimary) TajawalFontFamily else PlusJakartaSansFontFamily
+    val uiFamily = if (arabicPrimary) IbmPlexSansArabicFontFamily else PlusJakartaSansFontFamily
+    val bodyFamily = if (arabicPrimary) IbmPlexSansArabicFontFamily else PlusJakartaSansFontFamily
 
     return Typography(
         displayLarge = TextStyle(
             fontFamily = displayFamily,
             fontWeight = FontWeight.Bold,
-            fontSize = (34f * scale).sp,
-            lineHeight = (44f * scale).sp
+            fontSize = (36f * scale).sp,
+            lineHeight = (44f * scale).sp,
+            letterSpacing = (-0.4).sp,
+            fontFeatureSettings = "tnum"
         ),
         displayMedium = TextStyle(
             fontFamily = displayFamily,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = (26f * scale).sp,
-            lineHeight = (36f * scale).sp
+            fontWeight = FontWeight.Bold,
+            fontSize = (27f * scale).sp,
+            lineHeight = (36f * scale).sp,
+            letterSpacing = (-0.2).sp,
+            fontFeatureSettings = "tnum"
         ),
         headlineMedium = TextStyle(
             fontFamily = displayFamily,
             fontWeight = FontWeight.Bold,
-            fontSize = (21f * scale).sp,
+            fontSize = (22f * scale).sp,
             lineHeight = (30f * scale).sp
         ),
         titleLarge = TextStyle(
             fontFamily = uiFamily,
             fontWeight = FontWeight.Bold,
-            fontSize = (18f * scale).sp,
+            fontSize = (18.5f * scale).sp,
             lineHeight = (26f * scale).sp
         ),
         titleMedium = TextStyle(
@@ -85,13 +102,13 @@ fun buildMihrabTypography(fontScale: Float = 1.0f, arabicPrimary: Boolean = true
             fontFamily = bodyFamily,
             fontWeight = FontWeight.Normal,
             fontSize = (15f * scale).sp,
-            lineHeight = (23f * scale).sp
+            lineHeight = (24f * scale).sp
         ),
         bodyMedium = TextStyle(
             fontFamily = bodyFamily,
             fontWeight = FontWeight.Normal,
             fontSize = (13.5f * scale).sp,
-            lineHeight = (20f * scale).sp
+            lineHeight = (20.5f * scale).sp
         ),
         labelLarge = TextStyle(
             fontFamily = uiFamily,

@@ -11,6 +11,10 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -28,6 +32,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CameraAlt
@@ -36,9 +41,6 @@ import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.LocationCity
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -56,8 +58,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalContext
@@ -73,8 +77,12 @@ import com.example.core.i18n.formatNumerals
 import com.example.domain.CityPreset
 import com.example.domain.PrayerTimesEngine
 import com.example.ui.icons.MihrabIcons
-import com.example.ui.theme.BurnishedGold
+import com.example.ui.theme.IslamicGeometricPatternCanvas
+import com.example.ui.theme.LiquidGlassCard
+import com.example.ui.theme.LiquidGlassPill
+import com.example.ui.theme.LocalLiquidGlassPalette
 import com.example.ui.theme.SanctuaryEmerald
+import com.example.ui.theme.withTabularNums
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -91,6 +99,7 @@ fun QiblaAndLocationDialogContent(
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
+    val glass = LocalLiquidGlassPalette.current
     val azimuth by remember(context) { observeCompassAzimuth(context) }
         .collectAsStateWithLifecycle(initialValue = 0f)
 
@@ -136,6 +145,17 @@ fun QiblaAndLocationDialogContent(
     val angularDiff = minOf(relativeAngle, 360f - relativeAngle)
     val isAligned = angularDiff <= 6f
 
+    val animatedAzimuth by animateFloatAsState(
+        targetValue = azimuth,
+        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        label = "azimuth"
+    )
+    val animatedNeedle by animateFloatAsState(
+        targetValue = relativeAngle,
+        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        label = "needle"
+    )
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -149,12 +169,26 @@ fun QiblaAndLocationDialogContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(MihrabIcons.KaabaCube, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                    border = BorderStroke(1.dp, glass.glassBorder),
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(MihrabIcons.KaabaCube, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
                 Column {
                     Text(
                         if (isArabicUi) "القبلة والواقع المعزز" else "Qibla & AR Sighting",
-                        style = MaterialTheme.typography.headlineMedium
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = if (isArabicUi) {
@@ -162,7 +196,7 @@ fun QiblaAndLocationDialogContent(
                         } else {
                             "$currentCity • ${qiblaBearing.roundToInt()}° from North • $distanceKm km to Makkah"
                         },
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyMedium.withTabularNums(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -176,14 +210,14 @@ fun QiblaAndLocationDialogContent(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            FilterChip(
+            LiquidGlassPill(
                 selected = !arModeEnabled,
                 onClick = { arModeEnabled = false },
-                label = { Text(if (isArabicUi) "البوصلة" else "Compass") },
-                leadingIcon = { Icon(Icons.Rounded.Explore, null, modifier = Modifier.size(18.dp)) }
+                label = if (isArabicUi) "البوصلة" else "Compass",
+                icon = Icons.Rounded.Explore
             )
             if (arQiblaEnabled) {
-                FilterChip(
+                LiquidGlassPill(
                     selected = arModeEnabled,
                     onClick = {
                         val granted = ContextCompat.checkSelfPermission(
@@ -195,61 +229,68 @@ fun QiblaAndLocationDialogContent(
                             cameraLauncher.launch(Manifest.permission.CAMERA)
                         }
                     },
-                    label = { Text(if (isArabicUi) "الواقع المعزز AR" else "AR Camera") },
-                    leadingIcon = { Icon(Icons.Rounded.CameraAlt, null, modifier = Modifier.size(18.dp)) },
+                    label = if (isArabicUi) "الواقع المعزز AR" else "AR Camera",
+                    icon = Icons.Rounded.CameraAlt,
                     modifier = Modifier.testTag("ar_qibla_toggle")
                 )
             }
         }
 
         if (arModeEnabled && arQiblaEnabled) {
-            Box(
+            Surface(
+                shape = RoundedCornerShape(26.dp),
+                border = BorderStroke(
+                    width = if (isAligned) 2.dp else 1.dp,
+                    color = if (isAligned) glass.accentGold else glass.glassBorder
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(270.dp)
-                    .clip(MaterialTheme.shapes.large)
+                    .height(274.dp)
             ) {
-                ArCameraPreview(modifier = Modifier.fillMaxSize())
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.28f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Surface(
-                            color = if (isAligned) SanctuaryEmerald else Color.Black.copy(alpha = 0.65f),
-                            shape = MaterialTheme.shapes.medium
-                        ) {
-                            Text(
-                                text = if (isAligned) {
-                                    if (isArabicUi) "أنت متجه نحو الكعبة المشرفة" else "Facing Qibla • Kaaba Direction"
-                                } else {
-                                    if (isArabicUi) {
-                                        "استدر ${if (relativeAngle < 180f) "يميناً" else "يساراً"} ${formatNumerals("${angularDiff.roundToInt()}°", useIndic)}"
+                Box(modifier = Modifier.fillMaxSize()) {
+                    ArCameraPreview(modifier = Modifier.fillMaxSize())
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.28f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Surface(
+                                color = if (isAligned) SanctuaryEmerald.copy(alpha = 0.9f) else Color(0xA6081411),
+                                border = BorderStroke(1.dp, if (isAligned) glass.accentGold else Color.White.copy(alpha = 0.25f)),
+                                shape = CircleShape
+                            ) {
+                                Text(
+                                    text = if (isAligned) {
+                                        if (isArabicUi) "أنت متجه نحو الكعبة المشرفة" else "Facing Qibla • Kaaba Direction"
                                     } else {
-                                        "Turn ${if (relativeAngle < 180f) "Right" else "Left"} ${angularDiff.roundToInt()}°"
-                                    }
-                                },
-                                color = Color.White,
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(92.dp)
-                                .clip(CircleShape)
-                                .background(if (isAligned) BurnishedGold.copy(alpha = 0.35f) else Color.Transparent),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = MihrabIcons.KaabaCube,
-                                contentDescription = "AR Qibla Marker",
-                                tint = if (isAligned) BurnishedGold else Color.White,
-                                modifier = Modifier.size(48.dp)
-                            )
+                                        if (isArabicUi) {
+                                            "استدر ${if (relativeAngle < 180f) "يميناً" else "يساراً"} ${formatNumerals("${angularDiff.roundToInt()}°", useIndic)}"
+                                        } else {
+                                            "Turn ${if (relativeAngle < 180f) "Right" else "Left"} ${angularDiff.roundToInt()}°"
+                                        }
+                                    },
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.titleMedium.withTabularNums(),
+                                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 9.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(98.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isAligned) glass.accentGold.copy(alpha = 0.30f) else Color(0x44000000)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = MihrabIcons.KaabaCube,
+                                    contentDescription = "AR Qibla Marker",
+                                    tint = if (isAligned) glass.accentGold else Color.White,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -257,80 +298,118 @@ fun QiblaAndLocationDialogContent(
         } else {
             val primaryColor = MaterialTheme.colorScheme.primary
             val outlineColor = MaterialTheme.colorScheme.outline
-            val surfaceLow = MaterialTheme.colorScheme.surfaceContainerLow
+            val dialSurface = glass.glassFillStrong
+            val goldCol = glass.accentGold
             Box(
                 modifier = Modifier
-                    .size(230.dp)
+                    .size(244.dp)
                     .padding(6.dp),
                 contentAlignment = Alignment.Center
             ) {
+                IslamicGeometricPatternCanvas(
+                    modifier = Modifier
+                        .size(204.dp)
+                        .clip(CircleShape),
+                    tint = if (isAligned) goldCol else primaryColor,
+                    alpha = 0.055f
+                )
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val center = Offset(size.width / 2f, size.height / 2f)
                     val radius = size.minDimension / 2f - 10f
-                    drawCircle(color = surfaceLow, radius = radius, center = center)
+
+                    if (isAligned) {
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(goldCol.copy(alpha = 0.28f), Color.Transparent),
+                                center = center,
+                                radius = radius * 1.15f
+                            ),
+                            radius = radius * 1.15f,
+                            center = center
+                        )
+                    }
+
+                    drawCircle(color = dialSurface, radius = radius, center = center)
                     drawCircle(
-                        color = if (isAligned) BurnishedGold else outlineColor,
+                        color = if (isAligned) goldCol else outlineColor,
                         radius = radius,
                         center = center,
-                        style = Stroke(width = if (isAligned) 8f else 4f)
+                        style = Stroke(width = if (isAligned) 3.5.dp.toPx() else 1.5.dp.toPx())
                     )
-                    rotate(degrees = -azimuth, pivot = center) {
-                        for (deg in 0 until 360 step 30) {
+                    drawCircle(
+                        color = outlineColor.copy(alpha = 0.35f),
+                        radius = radius * 0.72f,
+                        center = center,
+                        style = Stroke(width = 1.dp.toPx())
+                    )
+
+                    rotate(degrees = -animatedAzimuth, pivot = center) {
+                        for (deg in 0 until 360 step 15) {
                             rotate(degrees = deg.toFloat(), pivot = center) {
+                                val isMajor = deg % 90 == 0
+                                val isMedium = deg % 30 == 0
                                 drawLine(
-                                    color = if (deg == 0) Color(0xFFB84A39) else outlineColor,
+                                    color = when {
+                                        deg == 0 -> Color(0xFFD9534F)
+                                        isMajor -> primaryColor
+                                        else -> outlineColor.copy(alpha = 0.65f)
+                                    },
                                     start = Offset(center.x, center.y - radius + 6f),
-                                    end = Offset(center.x, center.y - radius + 22f),
-                                    strokeWidth = if (deg == 0) 6f else 3f
+                                    end = Offset(
+                                        center.x,
+                                        center.y - radius + (if (isMajor) 24f else if (isMedium) 18f else 12f)
+                                    ),
+                                    strokeWidth = if (isMajor) 3.dp.toPx() else 1.4.dp.toPx(),
+                                    cap = StrokeCap.Round
                                 )
                             }
                         }
                     }
-                    rotate(degrees = relativeAngle, pivot = center) {
+
+                    rotate(degrees = animatedNeedle, pivot = center) {
                         val needle = Path().apply {
                             moveTo(center.x, center.y - radius + 28f)
-                            lineTo(center.x - 18f, center.y + 18f)
-                            lineTo(center.x, center.y + 4f)
-                            lineTo(center.x + 18f, center.y + 18f)
+                            lineTo(center.x - 16f, center.y + 18f)
+                            lineTo(center.x, center.y + 6f)
+                            lineTo(center.x + 16f, center.y + 18f)
                             close()
                         }
-                        drawPath(needle, color = if (isAligned) BurnishedGold else primaryColor)
+                        drawPath(needle, color = if (isAligned) goldCol else primaryColor)
                     }
-                    drawCircle(color = BurnishedGold, radius = 10f, center = center)
+                    drawCircle(color = goldCol, radius = 9.dp.toPx(), center = center)
+                    drawCircle(color = Color.White, radius = 3.5.dp.toPx(), center = center)
                 }
             }
         }
 
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = if (isAligned) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow
-            ),
+        LiquidGlassCard(
+            containerColor = if (isAligned) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f) else glass.glassFill,
+            borderColor = if (isAligned) glass.accentGold.copy(alpha = 0.6f) else glass.glassBorder,
+            contentPadding = 14.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Text(
-                    text = if (isAligned) {
-                        if (isArabicUi) "اتجاه القبلة مطابق الآن!" else "Aligned with the Qibla!"
+            Text(
+                text = if (isAligned) {
+                    if (isArabicUi) "اتجاه القبلة مطابق الآن!" else "Aligned with the Qibla!"
+                } else {
+                    if (isArabicUi) {
+                        "الاتجاه ${formatNumerals("${azimuth.roundToInt()}°", useIndic)} • القبلة ${formatNumerals("${qiblaBearing.roundToInt()}°", useIndic)}"
                     } else {
-                        if (isArabicUi) {
-                            "الاتجاه ${formatNumerals("${azimuth.roundToInt()}°", useIndic)} • القبلة ${formatNumerals("${qiblaBearing.roundToInt()}°", useIndic)}"
-                        } else {
-                            "Heading ${azimuth.roundToInt()}° • Qibla ${qiblaBearing.roundToInt()}°"
-                        }
-                    },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = if (isArabicUi) {
-                        "مناسب للمنازل والفنادق والمطارات والسفر. أبقِ الهاتف بعيداً عن المعادن المغناطيسية."
-                    } else {
-                        "Suitable for hotel rooms, airports, and outdoor travel. Keep away from strong magnets."
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+                        "Heading ${azimuth.roundToInt()}° • Qibla ${qiblaBearing.roundToInt()}°"
+                    }
+                },
+                style = MaterialTheme.typography.titleMedium.withTabularNums(),
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = if (isArabicUi) {
+                    "مناسب للمنازل والفنادق والمطارات والسفر. أبقِ الهاتف بعيداً عن المعادن المغناطيسية."
+                } else {
+                    "Suitable for hotel rooms, airports, and outdoor travel. Keep away from strong magnets."
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         if (permissionNotice != null) {
@@ -376,11 +455,11 @@ fun QiblaAndLocationDialogContent(
             modifier = Modifier.fillMaxWidth()
         ) {
             PrayerTimesEngine.cityPresets.forEach { preset ->
-                FilterChip(
+                LiquidGlassPill(
                     selected = currentCity == preset.name,
                     onClick = { onSelectCity(preset) },
-                    leadingIcon = { Icon(Icons.Rounded.LocationCity, null, modifier = Modifier.size(16.dp)) },
-                    label = { Text(preset.name) }
+                    icon = Icons.Rounded.LocationCity,
+                    label = preset.name
                 )
             }
         }

@@ -3,6 +3,17 @@ package com.example.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,6 +34,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -55,11 +67,8 @@ import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -87,9 +96,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -103,6 +114,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -115,14 +127,18 @@ import com.example.core.hardware.shareDesignedVerseTextOrCard
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
 import com.example.data.firebase.UserSettingsDoc
-import com.example.data.local.ReciterEntity
 import com.example.domain.ArabicTextNormalizer
 import com.example.domain.MushafAyahItem
 import com.example.domain.MushafPageModel
 import com.example.domain.QuranCatalog
 import com.example.ui.theme.AmiriQuranFontFamily
-import com.example.ui.theme.BurnishedGold
+import com.example.ui.theme.IslamicGeometricPatternCanvas
+import com.example.ui.theme.LiquidGlassCard
+import com.example.ui.theme.LiquidGlassPill
+import com.example.ui.theme.LocalLiquidGlassPalette
 import com.example.ui.theme.MushafPaperTheme
+import com.example.ui.theme.SacredEaseOutExpo
+import com.example.ui.theme.withTabularNums
 import com.example.ui.viewmodel.AiUiState
 import com.example.ui.viewmodel.AiViewModel
 import com.example.ui.viewmodel.MihrabViewModel
@@ -147,6 +163,7 @@ fun MadinahMushafReader(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val glass = LocalLiquidGlassPalette.current
     val isArabicUi = appLanguage == AppLanguage.ARABIC || appLanguage == AppLanguage.URDU
 
     val pagesMap by viewModel.mushafPages.collectAsStateWithLifecycle()
@@ -216,36 +233,59 @@ fun MadinahMushafReader(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Top Madinah Mushaf Toolbar (hidden in Focus mode)
-        if (!focusBarlessMode) {
+        // Frosted Floating Glass Madinah Mushaf Toolbar (smooth Focus Mode animation)
+        AnimatedVisibility(
+            visible = !focusBarlessMode,
+            enter = fadeIn(tween(220, easing = SacredEaseOutExpo)) + slideInVertically { -it / 2 },
+            exit = fadeOut(tween(180)) + slideOutVertically { -it / 2 }
+        ) {
             Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                tonalElevation = 2.dp,
-                modifier = Modifier.fillMaxWidth()
+                color = glass.dockBackground,
+                border = BorderStroke(1.dp, glass.glassBorder),
+                shape = RoundedCornerShape(22.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
             ) {
-                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        OutlinedButton(
+                        LiquidGlassPill(
+                            selected = false,
                             onClick = { showNavigatorSheet = true },
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            icon = Icons.AutoMirrored.Rounded.List,
+                            label = "${strings.pageLabel} ${formatPageNum(activePageNum, isArabicUi)}",
                             modifier = Modifier.testTag("mushaf_navigator_button")
-                        ) {
-                            Icon(Icons.AutoMirrored.Rounded.List, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = "${strings.pageLabel} ${formatPageNum(activePageNum, isArabicUi)}",
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                        }
+                        )
 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            // Instant 3-paper color dots (White / Sepia / Dark)
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 4.dp)
+                            ) {
+                                MushafPaperTheme.entries.forEach { paper ->
+                                    val selectedPaper = paperTheme == paper
+                                    Surface(
+                                        onClick = { viewModel.updateSettings(mapOf("mushafPaper" to paper.id)) },
+                                        shape = CircleShape,
+                                        color = paper.bg,
+                                        border = BorderStroke(
+                                            width = if (selectedPaper) 2.dp else 1.dp,
+                                            color = if (selectedPaper) MaterialTheme.colorScheme.primary else glass.glassBorder
+                                        ),
+                                        modifier = Modifier.size(18.dp)
+                                    ) {}
+                                }
+                            }
                             Surface(
-                                color = if (cachedCount >= 604) MaterialTheme.colorScheme.primaryContainer
-                                else MaterialTheme.colorScheme.secondaryContainer,
+                                color = if (cachedCount >= 604) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+                                else glass.glassSubtleFill,
+                                border = BorderStroke(1.dp, glass.glassBorder),
                                 shape = CircleShape,
                                 modifier = Modifier.clickable { showReaderSettingsSheet = true }
                             ) {
@@ -262,24 +302,31 @@ fun MadinahMushafReader(
                                     Spacer(Modifier.width(4.dp))
                                     Text(
                                         text = "${formatPageNum(cachedCount, isArabicUi)}/${formatPageNum(604, isArabicUi)}",
-                                        style = MaterialTheme.typography.labelSmall
+                                        style = MaterialTheme.typography.labelSmall.withTabularNums()
                                     )
                                 }
                             }
                             IconButton(
                                 onClick = { showSearchSheet = true },
-                                modifier = Modifier.testTag("mushaf_search_button")
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .testTag("mushaf_search_button")
                             ) {
-                                Icon(Icons.Rounded.Search, contentDescription = strings.searchQuranHint)
+                                Icon(Icons.Rounded.Search, contentDescription = strings.searchQuranHint, modifier = Modifier.size(20.dp))
                             }
                             IconButton(
                                 onClick = { showReaderSettingsSheet = true },
-                                modifier = Modifier.testTag("mushaf_settings_button")
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .testTag("mushaf_settings_button")
                             ) {
-                                Icon(Icons.Rounded.Tune, contentDescription = strings.fontScaleLabel)
+                                Icon(Icons.Rounded.Tune, contentDescription = strings.fontScaleLabel, modifier = Modifier.size(20.dp))
                             }
-                            IconButton(onClick = { focusBarlessMode = true }) {
-                                Icon(Icons.Rounded.VisibilityOff, contentDescription = strings.focusModeLabel)
+                            IconButton(
+                                onClick = { focusBarlessMode = true },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(Icons.Rounded.VisibilityOff, contentDescription = strings.focusModeLabel, modifier = Modifier.size(20.dp))
                             }
                         }
                     }
@@ -296,18 +343,25 @@ fun MadinahMushafReader(
                     }
                 }
             }
-        } else {
+        }
+
+        AnimatedVisibility(
+            visible = focusBarlessMode,
+            enter = fadeIn(tween(200)),
+            exit = fadeOut(tween(150))
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.End
             ) {
-                TextButton(onClick = { focusBarlessMode = false }) {
-                    Icon(Icons.Rounded.Visibility, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(strings.exitFocusMode)
-                }
+                LiquidGlassPill(
+                    selected = false,
+                    onClick = { focusBarlessMode = false },
+                    icon = Icons.Rounded.Visibility,
+                    label = strings.exitFocusMode
+                )
             }
         }
 
@@ -340,6 +394,7 @@ fun MadinahMushafReader(
                             showAiTafsirPanel = false
                             aiViewModel.resetAyahTafsir()
                         },
+                        onToggleFocusMode = { focusBarlessMode = !focusBarlessMode },
                         onPrevPage = {
                             if (pageIdx > 0) scope.launch { pagerState.animateScrollToPage(pageIdx - 1) }
                         },
@@ -355,8 +410,12 @@ fun MadinahMushafReader(
             if (!quranAudioEnabled) recitationPlayer.stop()
         }
 
-        // Docked Multi-Reciter Synced Audio Bar (hidden in Focus mode unless playing, or when disabled by Admin)
-        if (quranAudioEnabled && (!focusBarlessMode || audioState.isPlaying || audioState.isBuffering)) {
+        // Floating Mini Audio Pill (hidden in Focus mode unless playing, or when disabled by Admin)
+        AnimatedVisibility(
+            visible = quranAudioEnabled && (!focusBarlessMode || audioState.isPlaying || audioState.isBuffering),
+            enter = fadeIn(tween(220)) + slideInVertically { it / 2 },
+            exit = fadeOut(tween(180)) + slideOutVertically { it / 2 }
+        ) {
             val activeModel = (pagesMap[activePageNum] as? UiState.Success)?.data
             DockedRecitationAudioBar(
                 audioState = audioState,
@@ -394,7 +453,8 @@ fun MadinahMushafReader(
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
             onDismissRequest = { selectedAyahForAction = null },
-            sheetState = sheetState
+            sheetState = sheetState,
+            containerColor = glass.glassFillStrong
         ) {
             Column(
                 modifier = Modifier
@@ -419,8 +479,8 @@ fun MadinahMushafReader(
                     )
                     Text(
                         text = "${strings.pageLabel} ${formatPageNum(ayah.pageNumber, isArabicUi)}",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = BurnishedGold
+                        style = MaterialTheme.typography.labelLarge.withTabularNums(),
+                        color = glass.accentGold
                     )
                 }
 
@@ -639,7 +699,10 @@ fun MadinahMushafReader(
     // --- SMART FULL-QURAN ARABIC SEARCH SHEET ---
     if (showSearchSheet) {
         var searchText by remember { mutableStateOf("") }
-        ModalBottomSheet(onDismissRequest = { showSearchSheet = false }) {
+        ModalBottomSheet(
+            onDismissRequest = { showSearchSheet = false },
+            containerColor = glass.glassFillStrong
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -682,36 +745,34 @@ fun MadinahMushafReader(
 
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(searchResults, key = { it.globalAyahNumber }) { hit ->
-                        Card(
+                        LiquidGlassCard(
                             onClick = {
                                 showSearchSheet = false
                                 scope.launch {
                                     pagerState.animateScrollToPage((hit.pageNumber - 1).coerceIn(0, 603))
                                 }
                             },
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                            contentPadding = 12.dp,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(
-                                        text = "${hit.surahNameAr} (${hit.surahNumber}:${hit.ayahNumber})",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        text = "${strings.pageLabel} ${formatPageNum(hit.pageNumber, isArabicUi)}",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = BurnishedGold
-                                    )
-                                }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(
-                                    text = hit.uthmaniText,
-                                    fontFamily = AmiriQuranFontFamily,
-                                    fontSize = 20.sp,
-                                    lineHeight = 34.sp
+                                    text = "${hit.surahNameAr} (${hit.surahNumber}:${hit.ayahNumber})",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "${strings.pageLabel} ${formatPageNum(hit.pageNumber, isArabicUi)}",
+                                    style = MaterialTheme.typography.labelMedium.withTabularNums(),
+                                    color = glass.accentGold
                                 )
                             }
+                            Text(
+                                text = hit.uthmaniText,
+                                fontFamily = AmiriQuranFontFamily,
+                                fontSize = 20.sp,
+                                lineHeight = 34.sp
+                            )
                         }
                     }
                 }
@@ -723,7 +784,10 @@ fun MadinahMushafReader(
     if (showNavigatorSheet) {
         var navTab by remember { mutableIntStateOf(0) } // 0=Surahs, 1=Juz, 2=Page Jump
         var pageJumpText by remember { mutableStateOf(activePageNum.toString()) }
-        ModalBottomSheet(onDismissRequest = { showNavigatorSheet = false }) {
+        ModalBottomSheet(
+            onDismissRequest = { showNavigatorSheet = false },
+            containerColor = glass.glassFillStrong
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -732,24 +796,24 @@ fun MadinahMushafReader(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = navTab == 0, onClick = { navTab = 0 }, label = { Text(strings.surahIndex) })
-                    FilterChip(selected = navTab == 1, onClick = { navTab = 1 }, label = { Text(strings.juzIndex) })
-                    FilterChip(selected = navTab == 2, onClick = { navTab = 2 }, label = { Text(strings.pageLabel) })
+                    LiquidGlassPill(selected = navTab == 0, onClick = { navTab = 0 }, label = strings.surahIndex)
+                    LiquidGlassPill(selected = navTab == 1, onClick = { navTab = 1 }, label = strings.juzIndex)
+                    LiquidGlassPill(selected = navTab == 2, onClick = { navTab = 2 }, label = strings.pageLabel)
                 }
 
                 when (navTab) {
                     0 -> LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(QuranCatalog.surahs, key = { it.number }) { s ->
-                            Card(
+                            LiquidGlassCard(
                                 onClick = {
                                     showNavigatorSheet = false
                                     scope.launch { pagerState.animateScrollToPage((s.startPage - 1).coerceIn(0, 603)) }
                                 },
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                                contentPadding = 12.dp,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                    modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
@@ -771,8 +835,8 @@ fun MadinahMushafReader(
                                     }
                                     Text(
                                         text = "${strings.pageLabel} ${formatPageNum(s.startPage, isArabicUi)}",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = BurnishedGold
+                                        style = MaterialTheme.typography.labelLarge.withTabularNums(),
+                                        color = glass.accentGold
                                     )
                                 }
                             }
@@ -782,20 +846,20 @@ fun MadinahMushafReader(
                         items(30) { idx ->
                             val juzNum = idx + 1
                             val startPage = QuranCatalog.juzStartPages[idx]
-                            Card(
+                            LiquidGlassCard(
                                 onClick = {
                                     showNavigatorSheet = false
                                     scope.launch { pagerState.animateScrollToPage((startPage - 1).coerceIn(0, 603)) }
                                 },
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                                contentPadding = 14.dp,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                                    modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text("${strings.juzLabel} ${formatPageNum(juzNum, isArabicUi)}", style = MaterialTheme.typography.titleMedium)
-                                    Text("${strings.pageLabel} ${formatPageNum(startPage, isArabicUi)}", color = BurnishedGold)
+                                    Text("${strings.pageLabel} ${formatPageNum(startPage, isArabicUi)}", color = glass.accentGold, style = MaterialTheme.typography.labelLarge.withTabularNums())
                                 }
                             }
                         }
@@ -827,7 +891,10 @@ fun MadinahMushafReader(
     // --- READER PAPER MODE, FONT SCALE & OFFLINE SYNC SHEET ---
     if (showReaderSettingsSheet) {
         var sliderScale by remember(settings.fontScale) { mutableFloatStateOf(fontScale) }
-        ModalBottomSheet(onDismissRequest = { showReaderSettingsSheet = false }) {
+        ModalBottomSheet(
+            onDismissRequest = { showReaderSettingsSheet = false },
+            containerColor = glass.glassFillStrong
+        ) {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -841,15 +908,15 @@ fun MadinahMushafReader(
                         MushafPaperTheme.DARK to strings.paperDark
                     )
                     labels.forEach { (theme, label) ->
-                        FilterChip(
+                        LiquidGlassPill(
                             selected = paperTheme == theme,
                             onClick = { viewModel.updateSettings(mapOf("mushafPaper" to theme.id)) },
-                            label = { Text(label) }
+                            label = label
                         )
                     }
                 }
 
-                Text("${strings.fontScaleLabel}: ${(sliderScale * 100).roundToInt()}%", style = MaterialTheme.typography.labelLarge)
+                Text("${strings.fontScaleLabel}: ${(sliderScale * 100).roundToInt()}%", style = MaterialTheme.typography.labelLarge.withTabularNums())
                 Slider(
                     value = sliderScale,
                     onValueChange = { sliderScale = it },
@@ -859,10 +926,10 @@ fun MadinahMushafReader(
                     valueRange = 0.8f..1.45f
                 )
 
-                HorizontalDivider()
+                HorizontalDivider(color = glass.glassBorder)
                 Text(
                     text = "${strings.offlineCachedBadge}: ${formatPageNum(cachedCount, isArabicUi)} / ${formatPageNum(604, isArabicUi)}",
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleMedium.withTabularNums()
                 )
                 Button(
                     onClick = {
@@ -882,7 +949,10 @@ fun MadinahMushafReader(
 
     // --- DYNAMIC RECITER SELECTOR SHEET ---
     if (showReciterSheet) {
-        ModalBottomSheet(onDismissRequest = { showReciterSheet = false }) {
+        ModalBottomSheet(
+            onDismissRequest = { showReciterSheet = false },
+            containerColor = glass.glassFillStrong
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -894,20 +964,18 @@ fun MadinahMushafReader(
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(reciters, key = { it.id }) { reciter ->
                         val selected = audioState.reciter.id == reciter.id
-                        Card(
+                        LiquidGlassCard(
                             onClick = {
                                 recitationPlayer.setReciter(reciter)
                                 viewModel.updateSettings(mapOf("preferredReciterId" to reciter.id))
                                 showReciterSheet = false
                             },
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer
-                                else MaterialTheme.colorScheme.surfaceContainerLow
-                            ),
+                            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f) else glass.glassFill,
+                            contentPadding = 14.dp,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                                modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -1016,19 +1084,21 @@ private fun MushafPageFrame(
     selectedGlobalAyah: Int,
     onRetry: () -> Unit,
     onAyahTapped: (MushafAyahItem) -> Unit,
+    onToggleFocusMode: () -> Unit,
     onPrevPage: () -> Unit,
     onNextPage: () -> Unit
 ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(18.dp))
             .background(paperTheme.bg)
-            .padding(horizontal = 10.dp, vertical = 6.dp)
             .drawBehind {
                 val inset1 = 4.dp.toPx()
                 val inset2 = 9.dp.toPx()
                 drawRoundRect(
-                    color = paperTheme.border.copy(alpha = 0.7f),
+                    color = paperTheme.border.copy(alpha = 0.72f),
                     topLeft = Offset(inset1, inset1),
                     size = Size(size.width - inset1 * 2, size.height - inset1 * 2),
                     cornerRadius = CornerRadius(14.dp.toPx()),
@@ -1042,8 +1112,17 @@ private fun MushafPageFrame(
                     style = Stroke(width = 1.dp.toPx())
                 )
             }
-            .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
+        IslamicGeometricPatternCanvas(
+            modifier = Modifier.matchParentSize(),
+            tint = paperTheme.border,
+            alpha = 0.035f
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 14.dp, vertical = 12.dp)
+        ) {
         when (pageState) {
             is UiState.Loading -> {
                 Column(
@@ -1116,7 +1195,8 @@ private fun MushafPageFrame(
                             fontScale = fontScale,
                             activePlayingGlobalAyah = activePlayingGlobalAyah,
                             selectedGlobalAyah = selectedGlobalAyah,
-                            onAyahTapped = onAyahTapped
+                            onAyahTapped = onAyahTapped,
+                            onToggleFocusMode = onToggleFocusMode
                         )
                     }
 
@@ -1136,7 +1216,7 @@ private fun MushafPageFrame(
                         ) {
                             Text(
                                 text = "${strings.pageLabel} ${formatPageNum(pageNumber, isArabicUi)}",
-                                style = MaterialTheme.typography.labelLarge,
+                                style = MaterialTheme.typography.labelLarge.withTabularNums(),
                                 color = paperTheme.fg,
                                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
                             )
@@ -1148,6 +1228,7 @@ private fun MushafPageFrame(
                 }
             }
         }
+        }
     }
 }
 
@@ -1158,7 +1239,8 @@ private fun MushafInteractivePageBody(
     fontScale: Float,
     activePlayingGlobalAyah: Int,
     selectedGlobalAyah: Int,
-    onAyahTapped: (MushafAyahItem) -> Unit
+    onAyahTapped: (MushafAyahItem) -> Unit,
+    onToggleFocusMode: () -> Unit
 ) {
     // Group sequential Ayahs by Surah blocks so Surah headers & Bismillah render cleanly inline
     val blocks = remember(model) {
@@ -1317,6 +1399,8 @@ private fun MushafInteractivePageBody(
                             ).firstOrNull()
                             if (hit != null) {
                                 ayahLookup[hit.item]?.let(onAyahTapped)
+                            } else {
+                                onToggleFocusMode()
                             }
                         }
                     }
@@ -1339,54 +1423,83 @@ private fun DockedRecitationAudioBar(
     onOpenLoopDialog: () -> Unit,
     onCachePageAudio: () -> Unit
 ) {
+    val glass = LocalLiquidGlassPalette.current
     val surahMeta = QuranCatalog.surahByNumber(audioState.currentSurah)
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 6.dp,
-        modifier = Modifier.fillMaxWidth()
+        color = glass.dockBackground,
+        shape = RoundedCornerShape(28.dp),
+        border = BorderStroke(1.dp, glass.glassBorder),
+        shadowElevation = 8.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .drawWithContent {
+                    drawContent()
+                    drawLine(
+                        brush = Brush.horizontalGradient(
+                            listOf(Color.Transparent, glass.specularHighlight, Color.Transparent)
+                        ),
+                        start = Offset(size.width * 0.1f, 1.dp.toPx()),
+                        end = Offset(size.width * 0.9f, 1.dp.toPx()),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                }
+                .padding(horizontal = 14.dp, vertical = 10.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(
+                Row(
                     modifier = Modifier
                         .weight(1f)
-                        .clickable { onOpenReciters() }
+                        .clickable { onOpenReciters() },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (audioState.isPlaying) {
+                        MushafMiniEqualizer(color = MaterialTheme.colorScheme.primary)
+                    } else {
                         Icon(
                             Icons.Rounded.RecordVoiceOver,
                             contentDescription = strings.chooseReciter,
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(18.dp)
                         )
-                        Spacer(Modifier.width(6.dp))
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = if (isArabicUi) audioState.reciter.nameAr else audioState.reciter.nameEn,
                             style = MaterialTheme.typography.labelLarge,
-                            maxLines = 1
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        val loopNote = if (audioState.playMode == RecitationPlayMode.A_TO_B_LOOP) {
+                            " • 🔁 ${audioState.loopStartAyah}-${audioState.loopEndAyah} (${audioState.loopRemaining})"
+                        } else ""
+                        Text(
+                            text = if (isArabicUi) {
+                                "${surahMeta.nameAr} • الآية ${ArabicTextNormalizer.toArabicIndicDigits(audioState.currentAyah)}$loopNote"
+                            } else {
+                                "${surahMeta.nameEn} ${audioState.currentSurah}:${audioState.currentAyah}$loopNote"
+                            },
+                            style = MaterialTheme.typography.labelSmall.withTabularNums(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                    val loopNote = if (audioState.playMode == RecitationPlayMode.A_TO_B_LOOP) {
-                        " • 🔁 ${audioState.loopStartAyah}-${audioState.loopEndAyah} (${audioState.loopRemaining})"
-                    } else ""
-                    Text(
-                        text = if (isArabicUi) {
-                            "${surahMeta.nameAr} • الآية ${ArabicTextNormalizer.toArabicIndicDigits(audioState.currentAyah)}$loopNote"
-                        } else {
-                            "${surahMeta.nameEn} ${audioState.currentSurah}:${audioState.currentAyah}$loopNote"
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onPrev) {
-                        Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous Ayah")
+                    IconButton(onClick = onPrev, modifier = Modifier.size(34.dp)) {
+                        Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous Ayah", modifier = Modifier.size(20.dp))
                     }
                     Surface(
                         color = MaterialTheme.colorScheme.primary,
@@ -1409,49 +1522,84 @@ private fun DockedRecitationAudioBar(
                             }
                         }
                     }
-                    IconButton(onClick = onNext) {
-                        Icon(Icons.Rounded.SkipNext, contentDescription = "Next Ayah")
+                    IconButton(onClick = onNext, modifier = Modifier.size(34.dp)) {
+                        Icon(Icons.Rounded.SkipNext, contentDescription = "Next Ayah", modifier = Modifier.size(20.dp))
                     }
                     if (audioState.isPlaying || audioState.isPaused) {
-                        IconButton(onClick = onStop) {
-                            Icon(Icons.Rounded.Stop, contentDescription = "Stop")
+                        IconButton(onClick = onStop, modifier = Modifier.size(34.dp)) {
+                            Icon(Icons.Rounded.Stop, contentDescription = "Stop", modifier = Modifier.size(18.dp))
                         }
                     }
                 }
             }
 
-            Row(
+            Spacer(Modifier.height(6.dp))
+            LazyRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                FilterChip(
-                    selected = false,
-                    onClick = onCycleSpeed,
-                    label = { Text("${audioState.speed}x") }
-                )
-                FilterChip(
-                    selected = audioState.playMode == RecitationPlayMode.A_TO_B_LOOP,
-                    onClick = onOpenLoopDialog,
-                    leadingIcon = { Icon(Icons.Rounded.Repeat, null, modifier = Modifier.size(14.dp)) },
-                    label = { Text(strings.loopAB) }
-                )
-                FilterChip(
-                    selected = audioState.offlineDownloadingCount > 0,
-                    onClick = onCachePageAudio,
-                    leadingIcon = { Icon(Icons.Rounded.CloudDownload, null, modifier = Modifier.size(14.dp)) },
-                    label = {
-                        Text(
-                            if (audioState.offlineDownloadingCount > 0) "..."
-                            else if (isArabicUi) "حفظ الصفحة" else "Cache Page"
-                        )
-                    }
-                )
+                item {
+                    LiquidGlassPill(
+                        selected = false,
+                        onClick = onCycleSpeed,
+                        label = "${audioState.speed}x"
+                    )
+                }
+                item {
+                    LiquidGlassPill(
+                        selected = audioState.playMode == RecitationPlayMode.A_TO_B_LOOP,
+                        onClick = onOpenLoopDialog,
+                        icon = Icons.Rounded.Repeat,
+                        label = strings.loopAB
+                    )
+                }
+                item {
+                    LiquidGlassPill(
+                        selected = audioState.offlineDownloadingCount > 0,
+                        onClick = onCachePageAudio,
+                        icon = Icons.Rounded.CloudDownload,
+                        label = if (audioState.offlineDownloadingCount > 0) "..."
+                        else if (isArabicUi) "حفظ الصفحة" else "Cache Page"
+                    )
+                }
             }
 
             audioState.errorMessage?.let { err ->
+                Spacer(Modifier.height(4.dp))
                 Text(err, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
             }
+        }
+    }
+}
+
+@Composable
+private fun MushafMiniEqualizer(color: Color) {
+    val transition = rememberInfiniteTransition(label = "mushafEq")
+    val bars = listOf(0, 140, 280).map { delayMs ->
+        transition.animateFloat(
+            initialValue = 0.3f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(420, delayMillis = delayMs, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "eq$delayMs"
+        ).value
+    }
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.height(18.dp)
+    ) {
+        bars.forEach { h ->
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height((16 * h).dp)
+                    .clip(CircleShape)
+                    .background(color)
+            )
         }
     }
 }

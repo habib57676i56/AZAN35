@@ -14,8 +14,17 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +44,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -52,10 +62,7 @@ import androidx.compose.material.icons.rounded.Stars
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -74,17 +81,23 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -100,10 +113,17 @@ import com.example.domain.IslamicLibraryData
 import com.example.ui.icons.MihrabIcons
 import com.example.ui.theme.AmiriFontFamily
 import com.example.ui.theme.BurnishedGold
+import com.example.ui.theme.IslamicGeometricPatternCanvas
+import com.example.ui.theme.LiquidGlassCard
+import com.example.ui.theme.LiquidGlassPill
+import com.example.ui.theme.LocalLiquidGlassPalette
+import com.example.ui.theme.LuminousMintEmerald
+import com.example.ui.theme.SacredEaseOutExpo
+import com.example.ui.theme.withTabularNums
 import com.example.ui.viewmodel.MihrabViewModel
 import com.example.ui.viewmodel.UiState
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DhikrScreen(
     viewModel: MihrabViewModel,
@@ -112,9 +132,12 @@ fun DhikrScreen(
     appLanguage: AppLanguage,
     strings: LocalizedStrings,
     useIndic: Boolean,
-    appOperations: AppOperationsConfig = AppOperationsConfig()
+    appOperations: AppOperationsConfig = AppOperationsConfig(),
+    initialSubTab: Int = 0,
+    subTabTriggerNonce: Int = 0
 ) {
     val context = LocalContext.current
+    val glass = LocalLiquidGlassPalette.current
     val isArabicUi = appLanguage == AppLanguage.ARABIC || appLanguage == AppLanguage.URDU
     val tasbihState by viewModel.tasbihState.collectAsStateWithLifecycle()
     val journalState by viewModel.journalState.collectAsStateWithLifecycle()
@@ -122,7 +145,11 @@ fun DhikrScreen(
     val adhkarCatalog by viewModel.adhkarCatalogState.collectAsStateWithLifecycle()
     val todayLogs by viewModel.todayAdhkarLogsState.collectAsStateWithLifecycle()
 
-    var activeSection by remember { mutableIntStateOf(0) } // 0=Adhkar, 1=Tasbih, 2=99Names, 3=Journal/Wall
+    var activeSection by remember { mutableIntStateOf(initialSubTab) } // 0=Adhkar, 1=Tasbih, 2=99Names, 3=Journal/Wall
+    LaunchedEffect(initialSubTab, subTabTriggerNonce) {
+        activeSection = initialSubTab
+    }
+
     var selectedCategory by remember { mutableStateOf(AdhkarCategoryMeta.MORNING) }
     var adhkarQuery by remember { mutableStateOf("") }
     val adhkarProgress = remember { mutableStateMapOf<String, Int>() }
@@ -157,16 +184,16 @@ fun DhikrScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
-                FlowRow(
+                LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    topTabs.forEach { (label, icon, idx) ->
-                        FilterChip(
+                    items(topTabs, key = { it.third }) { (label, icon, idx) ->
+                        LiquidGlassPill(
                             selected = activeSection == idx,
                             onClick = { activeSection = idx },
-                            leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                            label = { Text(label) },
+                            label = label,
+                            icon = icon,
                             modifier = Modifier.testTag("dhikr_tab_$idx")
                         )
                     }
@@ -193,89 +220,105 @@ fun DhikrScreen(
                     val totalDailyTarget = adhkarCatalog.size.coerceAtLeast(1)
 
                     item {
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                            shape = MaterialTheme.shapes.large,
+                        LiquidGlassCard(
+                            shape = RoundedCornerShape(26.dp),
+                            containerColor = glass.glassFillStrong,
+                            borderColor = glass.glassBorder,
+                            contentPadding = 0.dp,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                IslamicGeometricPatternCanvas(
+                                    modifier = Modifier.matchParentSize(),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    alpha = 0.035f
+                                )
+                                Column(
+                                    modifier = Modifier.padding(18.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
-                                    val primaryCol = MaterialTheme.colorScheme.primary
-                                    val trackCol = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
-                                    Box(modifier = Modifier.size(68.dp), contentAlignment = Alignment.Center) {
-                                        Canvas(modifier = Modifier.fillMaxSize()) {
-                                            drawArc(
-                                                color = trackCol,
-                                                startAngle = 0f,
-                                                sweepAngle = 360f,
-                                                useCenter = false,
-                                                style = Stroke(width = 10f)
-                                            )
-                                            drawArc(
-                                                color = primaryCol,
-                                                startAngle = -90f,
-                                                sweepAngle = 360f * progressRatio,
-                                                useCenter = false,
-                                                style = Stroke(width = 10f, cap = StrokeCap.Round)
-                                            )
-                                        }
-                                        Text(
-                                            formatNumerals("$completedInCat/${activeCategoryItems.size}", useIndic),
-                                            style = MaterialTheme.typography.labelLarge,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            Icon(
-                                                imageVector = MihrabIcons.iconForAdhkarCategory(selectedCategory.id),
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(20.dp)
-                                            )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                    ) {
+                                        val primaryCol = MaterialTheme.colorScheme.primary
+                                        val trackCol = glass.glassBorder
+                                        Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.Center) {
+                                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                                drawArc(
+                                                    color = trackCol,
+                                                    startAngle = 0f,
+                                                    sweepAngle = 360f,
+                                                    useCenter = false,
+                                                    style = Stroke(width = 11f)
+                                                )
+                                                drawArc(
+                                                    brush = Brush.sweepGradient(listOf(primaryCol, BurnishedGold, primaryCol)),
+                                                    startAngle = -90f,
+                                                    sweepAngle = 360f * progressRatio,
+                                                    useCenter = false,
+                                                    style = Stroke(width = 11f, cap = StrokeCap.Round)
+                                                )
+                                            }
                                             Text(
-                                                text = if (isArabicUi) selectedCategory.titleAr else selectedCategory.titleEn,
-                                                style = MaterialTheme.typography.titleLarge,
+                                                formatNumerals("$completedInCat/${activeCategoryItems.size}", useIndic),
+                                                style = MaterialTheme.typography.labelLarge.withTabularNums(),
                                                 fontWeight = FontWeight.Bold
                                             )
                                         }
-                                        Text(
-                                            text = if (isArabicUi) {
-                                                "حصن المسلم الشامل (${AdhkarCategoryMeta.entries.size} باباً) • اضغط على البطاقة للتسبيح والعد وحفظ الإنجاز اليومي."
-                                            } else {
-                                                "Comprehensive Hisn al-Muslim (${AdhkarCategoryMeta.entries.size} categories) • Tap cards to count & sync daily progress."
-                                            },
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-
-                                // Daily Global Completion Summary
-                                Surface(
-                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
-                                    shape = MaterialTheme.shapes.medium,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            Text(strings.dailyAdhkarStats, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Icon(
+                                                    imageVector = MihrabIcons.iconForAdhkarCategory(selectedCategory.id),
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                                Text(
+                                                    text = if (isArabicUi) selectedCategory.titleAr else selectedCategory.titleEn,
+                                                    style = MaterialTheme.typography.titleLarge,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
                                             Text(
-                                                text = formatNumerals("$totalDailyCompleted / $totalDailyTarget", useIndic),
-                                                style = MaterialTheme.typography.labelLarge,
-                                                color = MaterialTheme.colorScheme.primary
+                                                text = if (isArabicUi) {
+                                                    "حصن المسلم الشامل (${AdhkarCategoryMeta.entries.size} باباً) • اضغط على البطاقة للتسبيح والعد وحفظ الإنجاز اليومي."
+                                                } else {
+                                                    "Comprehensive Hisn al-Muslim (${AdhkarCategoryMeta.entries.size} categories) • Tap cards to count & sync daily progress."
+                                                },
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
-                                        LinearProgressIndicator(
-                                            progress = { (totalDailyCompleted.toFloat() / totalDailyTarget).coerceIn(0f, 1f) },
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(6.dp)
-                                                .clip(CircleShape)
-                                        )
+                                    }
+
+                                    // Daily Global Completion Summary
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                                        shape = RoundedCornerShape(16.dp),
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                Text(strings.dailyAdhkarStats, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                                                Text(
+                                                    text = formatNumerals("$totalDailyCompleted / $totalDailyTarget", useIndic),
+                                                    style = MaterialTheme.typography.labelLarge.withTabularNums(),
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                            LinearProgressIndicator(
+                                                progress = { (totalDailyCompleted.toFloat() / totalDailyTarget).coerceIn(0f, 1f) },
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(7.dp)
+                                                    .clip(CircleShape)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -284,23 +327,29 @@ fun DhikrScreen(
 
                     // Search bar across all 12 Adhkar categories
                     item {
-                        OutlinedTextField(
-                            value = adhkarQuery,
-                            onValueChange = { adhkarQuery = it },
-                            leadingIcon = { Icon(MihrabIcons.Search, contentDescription = null) },
-                            trailingIcon = {
-                                if (adhkarQuery.isNotEmpty()) {
-                                    IconButton(onClick = { adhkarQuery = "" }) {
-                                        Icon(Icons.Rounded.Close, contentDescription = strings.cancel)
-                                    }
-                                }
-                            },
-                            label = {
-                                Text(if (isArabicUi) "ابحث في جميع الأذكار والأدعية..." else "Search all 12 Adhkar categories...")
-                            },
-                            singleLine = true,
+                        LiquidGlassCard(
+                            shape = RoundedCornerShape(22.dp),
+                            contentPadding = 12.dp,
                             modifier = Modifier.fillMaxWidth()
-                        )
+                        ) {
+                            OutlinedTextField(
+                                value = adhkarQuery,
+                                onValueChange = { adhkarQuery = it },
+                                leadingIcon = { Icon(MihrabIcons.Search, contentDescription = null) },
+                                trailingIcon = {
+                                    if (adhkarQuery.isNotEmpty()) {
+                                        IconButton(onClick = { adhkarQuery = "" }) {
+                                            Icon(Icons.Rounded.Close, contentDescription = strings.cancel)
+                                        }
+                                    }
+                                },
+                                label = {
+                                    Text(if (isArabicUi) "ابحث في جميع الأذكار والأدعية..." else "Search all 12 Adhkar categories...")
+                                },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
 
                     // 12 Adhkar Categories with semantic icons
@@ -312,21 +361,15 @@ fun DhikrScreen(
                             items(AdhkarCategoryMeta.entries, key = { it.id }) { cat ->
                                 val logForCat = todayLogs.firstOrNull { it.category == cat.id }
                                 val catDone = logForCat != null && logForCat.completedCount >= logForCat.targetCount
-                                FilterChip(
+                                LiquidGlassPill(
                                     selected = selectedCategory == cat && adhkarQuery.isBlank(),
                                     onClick = {
                                         adhkarQuery = ""
                                         selectedCategory = cat
                                     },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = if (catDone) Icons.Rounded.CheckCircle else MihrabIcons.iconForAdhkarCategory(cat.id),
-                                            contentDescription = null,
-                                            modifier = Modifier.size(18.dp),
-                                            tint = if (catDone) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    },
-                                    label = { Text(if (isArabicUi) cat.titleAr else cat.titleEn) },
+                                    icon = if (catDone) Icons.Rounded.CheckCircle else MihrabIcons.iconForAdhkarCategory(cat.id),
+                                    label = if (isArabicUi) cat.titleAr else cat.titleEn,
+                                    activeColor = if (catDone) LuminousMintEmerald else MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.testTag("adhkar_cat_${cat.id}")
                                 )
                             }
@@ -337,118 +380,131 @@ fun DhikrScreen(
                         val doneCount = adhkarProgress[dhikr.id] ?: 0
                         val finished = doneCount >= dhikr.targetCount
                         val catMeta = AdhkarCategoryMeta.fromId(dhikr.category)
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (finished) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
-                                else MaterialTheme.colorScheme.surfaceContainerLow
-                            ),
-                            shape = MaterialTheme.shapes.large,
+                        LiquidGlassCard(
+                            shape = RoundedCornerShape(24.dp),
+                            containerColor = if (finished) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else glass.glassFill,
+                            borderColor = if (finished) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f) else glass.glassBorder,
+                            onClick = {
+                                val next = (doneCount + 1).coerceAtMost(dhikr.targetCount)
+                                adhkarProgress[dhikr.id] = next
+                                triggerHaptic(context)
+                                val itemsForCat = adhkarCatalog.filter { it.category == dhikr.category }
+                                val doneInCat = itemsForCat.count { (adhkarProgress[it.id] ?: 0) >= it.targetCount }
+                                viewModel.logAdhkarProgress(dhikr.category, doneInCat, itemsForCat.size)
+                            },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("adhkar_card_${dhikr.id}")
-                                .clickable {
-                                    val next = (doneCount + 1).coerceAtMost(dhikr.targetCount)
-                                    adhkarProgress[dhikr.id] = next
-                                    triggerHaptic(context)
-                                    val itemsForCat = adhkarCatalog.filter { it.category == dhikr.category }
-                                    val doneInCat = itemsForCat.count { (adhkarProgress[it.id] ?: 0) >= it.targetCount }
-                                    viewModel.logAdhkarProgress(dhikr.category, doneInCat, itemsForCat.size)
-                                }
                         ) {
-                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Row(
-                                    Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        modifier = Modifier.weight(1f)
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                        modifier = Modifier.size(32.dp)
                                     ) {
-                                        Icon(
-                                            imageVector = MihrabIcons.iconForAdhkarItem(dhikr.iconName, dhikr.category),
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Text(
-                                            text = if (isArabicUi) dhikr.titleAr else "${dhikr.titleEn} • ${catMeta.titleEn}",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        if (doneCount > 0) {
-                                            IconButton(
-                                                onClick = {
-                                                    adhkarProgress[dhikr.id] = 0
-                                                    val itemsForCat = adhkarCatalog.filter { it.category == dhikr.category }
-                                                    val doneInCat = itemsForCat.count { (adhkarProgress[it.id] ?: 0) >= it.targetCount }
-                                                    viewModel.logAdhkarProgress(dhikr.category, doneInCat, itemsForCat.size)
-                                                },
-                                                modifier = Modifier.size(30.dp)
-                                            ) {
-                                                Icon(
-                                                    Icons.Rounded.Refresh,
-                                                    contentDescription = if (isArabicUi) "إعادة" else "Reset",
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                        }
-                                        Surface(
-                                            color = if (finished) MaterialTheme.colorScheme.primary else BurnishedGold.copy(alpha = 0.22f),
-                                            shape = CircleShape
-                                        ) {
-                                            Text(
-                                                text = formatNumerals("$doneCount/${dhikr.targetCount}", useIndic),
-                                                color = if (finished) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                                                style = MaterialTheme.typography.labelLarge,
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = MihrabIcons.iconForAdhkarItem(dhikr.iconName, dhikr.category),
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(16.dp)
                                             )
                                         }
                                     }
+                                    Text(
+                                        text = if (isArabicUi) dhikr.titleAr else "${dhikr.titleEn} • ${catMeta.titleEn}",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
-
-                                Text(
-                                    text = dhikr.arabic,
-                                    fontFamily = AmiriFontFamily,
-                                    fontSize = 23.sp,
-                                    lineHeight = 40.sp,
-                                    textAlign = TextAlign.Right,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                if (!isArabicUi) {
-                                    Text(dhikr.transliteration, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                                    Text(dhikr.translation, style = MaterialTheme.typography.bodyLarge)
-                                }
-                                Text(
-                                    text = if (isArabicUi) dhikr.referenceAr else dhikr.referenceEn,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(onClick = {
-                                        audioPlayer.speak(dhikr.titleAr, dhikr.arabic, preferArabic = true)
-                                    }) {
-                                        Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(16.dp))
-                                        Spacer(Modifier.width(4.dp))
-                                        Text(if (isArabicUi) "استماع" else "Listen")
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    if (doneCount > 0) {
+                                        IconButton(
+                                            onClick = {
+                                                adhkarProgress[dhikr.id] = 0
+                                                val itemsForCat = adhkarCatalog.filter { it.category == dhikr.category }
+                                                val doneInCat = itemsForCat.count { (adhkarProgress[it.id] ?: 0) >= it.targetCount }
+                                                viewModel.logAdhkarProgress(dhikr.category, doneInCat, itemsForCat.size)
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.Refresh,
+                                                contentDescription = if (isArabicUi) "إعادة" else "Reset",
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
                                     }
-                                    OutlinedButton(onClick = {
+                                    Surface(
+                                        color = if (finished) MaterialTheme.colorScheme.primary else BurnishedGold.copy(alpha = 0.22f),
+                                        shape = CircleShape,
+                                        border = BorderStroke(
+                                            1.dp,
+                                            if (finished) MaterialTheme.colorScheme.primary else BurnishedGold.copy(alpha = 0.45f)
+                                        )
+                                    ) {
+                                        Text(
+                                            text = formatNumerals("$doneCount/${dhikr.targetCount}", useIndic),
+                                            color = if (finished) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                            style = MaterialTheme.typography.labelLarge.withTabularNums(),
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Text(
+                                text = dhikr.arabic,
+                                fontFamily = AmiriFontFamily,
+                                fontSize = 23.sp,
+                                lineHeight = 40.sp,
+                                textAlign = TextAlign.Right,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            if (!isArabicUi) {
+                                Text(dhikr.transliteration, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                                Text(dhikr.translation, style = MaterialTheme.typography.bodyLarge)
+                            }
+                            Text(
+                                text = if (isArabicUi) dhikr.referenceAr else dhikr.referenceEn,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                LiquidGlassPill(
+                                    selected = false,
+                                    onClick = {
+                                        audioPlayer.speak(dhikr.titleAr, dhikr.arabic, preferArabic = true)
+                                    },
+                                    icon = Icons.Rounded.PlayArrow,
+                                    label = if (isArabicUi) "استماع" else "Listen"
+                                )
+                                LiquidGlassPill(
+                                    selected = false,
+                                    onClick = {
                                         shareDesignedVerseTextOrCard(
                                             context = context,
                                             surahLabel = if (isArabicUi) dhikr.titleAr else dhikr.titleEn,
                                             arabicText = dhikr.arabic,
                                             translation = if (isArabicUi) dhikr.referenceAr else dhikr.translation
                                         )
-                                    }) {
-                                        Icon(Icons.Rounded.Share, null, modifier = Modifier.size(16.dp))
-                                        Spacer(Modifier.width(4.dp))
-                                        Text(if (isArabicUi) "هدية حسنات" else "Hasanat Gift")
-                                    }
-                                }
+                                    },
+                                    icon = Icons.Rounded.Share,
+                                    label = if (isArabicUi) "هدية حسنات" else "Hasanat Gift"
+                                )
                             }
                         }
                     }
@@ -496,6 +552,8 @@ private fun TasbihSection(
     onSaveCounter: (String, String, String, Long, Long) -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val glass = LocalLiquidGlassPalette.current
     val basePresets = listOf(
         Triple("subhanallah", "SubhanAllah", "سُبْحَانَ اللَّهِ"),
         Triple("alhamdulillah", "Alhamdulillah", "الْحَمْدُ لِلَّهِ"),
@@ -528,6 +586,16 @@ private fun TasbihSection(
     var showNewDhikrDialog by remember { mutableStateOf(false) }
     var newDhikrLabel by remember { mutableStateOf("") }
     var newDhikrArabic by remember { mutableStateOf("") }
+
+    // Ripple animation state for the luminous glass Tasbih orb
+    val rippleProgress = remember { Animatable(1f) }
+    val orbInteraction = remember { MutableInteractionSource() }
+    val orbPressed by orbInteraction.collectIsPressedAsState()
+    val orbScale by animateFloatAsState(
+        targetValue = if (orbPressed) 0.94f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        label = "tasbihOrbScale"
+    )
 
     val recognizer = remember(context) {
         if (SpeechRecognizer.isRecognitionAvailable(context)) SpeechRecognizer.createSpeechRecognizer(context) else null
@@ -587,153 +655,226 @@ private fun TasbihSection(
         else voiceStatus = if (isArabicUi) "تم رفض إذن الميكروفون؛ استخدم اللمس للعد." else "Microphone permission denied; tap the orb to count."
     }
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        shape = MaterialTheme.shapes.extraLarge,
+    LiquidGlassCard(
+        shape = RoundedCornerShape(28.dp),
+        containerColor = glass.glassFillStrong,
+        borderColor = glass.glassBorder,
+        contentPadding = 0.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        Box(modifier = Modifier.fillMaxWidth()) {
+            IslamicGeometricPatternCanvas(
+                modifier = Modifier.matchParentSize(),
+                tint = BurnishedGold,
+                alpha = 0.035f
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(MihrabIcons.TasbihBeads, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text(strings.digitalTasbih, style = MaterialTheme.typography.titleLarge)
-                }
-                OutlinedButton(onClick = { showNewDhikrDialog = true }) {
-                    Icon(Icons.Rounded.Add, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(if (isArabicUi) "ذكر مخصص" else "Add Custom")
-                }
-            }
-
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                allPresets.forEach { item ->
-                    FilterChip(
-                        selected = selectedId == item.first,
-                        onClick = { selectedId = item.first },
-                        label = { Text(if (isArabicUi) item.third else item.second) }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(MihrabIcons.TasbihBeads, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Text(strings.digitalTasbih, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    }
+                    LiquidGlassPill(
+                        selected = false,
+                        onClick = { showNewDhikrDialog = true },
+                        icon = Icons.Rounded.Add,
+                        label = if (isArabicUi) "ذكر مخصص" else "Add Custom"
                     )
                 }
-            }
 
-            Text(
-                text = activePreset.third,
-                fontFamily = AmiriFontFamily,
-                fontSize = 30.sp,
-                color = MaterialTheme.colorScheme.primary,
-                textAlign = TextAlign.Center
-            )
-            if (!isArabicUi) {
-                Text(activePreset.second, style = MaterialTheme.typography.titleMedium)
-            }
-
-            val cycleProgress = (localCount % target).toFloat() / target.toFloat()
-            val primaryCol = MaterialTheme.colorScheme.primary
-            val trackCol = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-
-            Surface(
-                onClick = {
-                    localCount += 1
-                    triggerHaptic(context)
-                    onSaveCounter(activePreset.first, activePreset.second, activePreset.third, localCount.toLong(), target.toLong())
-                },
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surface,
-                shadowElevation = 4.dp,
-                modifier = Modifier
-                    .size(204.dp)
-                    .testTag("tasbih_tap_orb")
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Canvas(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-                        drawArc(color = trackCol, startAngle = 0f, sweepAngle = 360f, useCenter = false, style = Stroke(width = 14f))
-                        drawArc(
-                            color = primaryCol,
-                            startAngle = -90f,
-                            sweepAngle = 360f * cycleProgress,
-                            useCenter = false,
-                            style = Stroke(width = 14f, cap = StrokeCap.Round)
-                        )
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = formatNumerals(localCount.toString(), useIndic),
-                            style = MaterialTheme.typography.displayLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = if (isArabicUi) {
-                                "الهدف ${formatNumerals(target.toString(), useIndic)} • اضغط"
-                            } else {
-                                "Goal ${formatNumerals(target.toString(), useIndic)} • Tap"
-                            },
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(allPresets, key = { it.first }) { item ->
+                        LiquidGlassPill(
+                            selected = selectedId == item.first,
+                            onClick = { selectedId = item.first },
+                            label = if (isArabicUi) item.third else item.second
                         )
                     }
                 }
-            }
 
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                listOf(33, 99, 100, 1000).forEach { goal ->
-                    FilterChip(
-                        selected = target == goal,
+                Text(
+                    text = activePreset.third,
+                    fontFamily = AmiriFontFamily,
+                    fontSize = 32.sp,
+                    lineHeight = 46.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center
+                )
+                if (!isArabicUi) {
+                    Text(activePreset.second, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
+                val cycleProgress = (localCount % target).toFloat() / target.toFloat()
+                val primaryCol = MaterialTheme.colorScheme.primary
+                val trackCol = glass.glassBorder
+
+                // Centerpiece Luminous Interactive Glass & Gold Tasbih Orb
+                Box(
+                    modifier = Modifier.size(242.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Expanding radial pulse halo triggered on tap
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val rippleVal = rippleProgress.value
+                        if (rippleVal < 0.99f) {
+                            val radius = (size.minDimension * 0.38f) + (size.minDimension * 0.14f * rippleVal)
+                            drawCircle(
+                                color = BurnishedGold.copy(alpha = (1f - rippleVal) * 0.42f),
+                                radius = radius,
+                                style = Stroke(width = (1f - rippleVal) * 8f)
+                            )
+                        }
+                        // Outer soft ambient halo
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(primaryCol.copy(alpha = 0.16f), Color.Transparent),
+                                center = Offset(size.width / 2f, size.height / 2f),
+                                radius = size.minDimension * 0.5f
+                            )
+                        )
+                    }
+
+                    Surface(
                         onClick = {
-                            target = goal
+                            localCount += 1
+                            triggerHaptic(context)
+                            scope.launch {
+                                rippleProgress.snapTo(0f)
+                                rippleProgress.animateTo(1f, animationSpec = tween(520, easing = SacredEaseOutExpo))
+                            }
                             onSaveCounter(activePreset.first, activePreset.second, activePreset.third, localCount.toLong(), target.toLong())
                         },
-                        label = { Text(formatNumerals(goal.toString(), useIndic)) }
-                    )
-                }
-                FilterChip(
-                    selected = target !in listOf(33, 99, 100, 1000),
-                    onClick = {
-                        customTargetInput = target.toString()
-                        showCustomTargetDialog = true
-                    },
-                    label = { Text(strings.customTargetLabel) }
-                )
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(onClick = {
-                    if (voiceListening) {
-                        recognizer?.stopListening()
-                        voiceListening = false
-                    } else {
-                        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                        if (granted) startVoiceTasbih() else micLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                    }
-                }) {
-                    Icon(if (voiceListening) Icons.Rounded.Stop else Icons.Rounded.Mic, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        if (voiceListening) {
-                            if (isArabicUi) "جارٍ الاستماع..." else "Listening..."
-                        } else {
-                            if (isArabicUi) "تسبيح صوتي" else "Voice Tasbih"
+                        interactionSource = orbInteraction,
+                        shape = CircleShape,
+                        color = glass.glassFillStrong,
+                        shadowElevation = if (glass.isDark) 10.dp else 6.dp,
+                        border = BorderStroke(1.5.dp, BurnishedGold.copy(alpha = 0.55f)),
+                        modifier = Modifier
+                            .size(214.dp)
+                            .graphicsLayer {
+                                scaleX = orbScale
+                                scaleY = orbScale
+                            }
+                            .testTag("tasbih_tap_orb")
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.radialGradient(
+                                        colors = listOf(
+                                            primaryCol.copy(alpha = 0.14f),
+                                            BurnishedGold.copy(alpha = 0.06f),
+                                            Color.Transparent
+                                        )
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Canvas(modifier = Modifier.fillMaxSize().padding(14.dp)) {
+                                drawArc(color = trackCol, startAngle = 0f, sweepAngle = 360f, useCenter = false, style = Stroke(width = 14f))
+                                drawArc(
+                                    brush = Brush.sweepGradient(listOf(primaryCol, BurnishedGold, primaryCol)),
+                                    startAngle = -90f,
+                                    sweepAngle = 360f * cycleProgress,
+                                    useCenter = false,
+                                    style = Stroke(width = 14f, cap = StrokeCap.Round)
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = formatNumerals(localCount.toString(), useIndic),
+                                    style = MaterialTheme.typography.displayLarge.withTabularNums(),
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (isArabicUi) {
+                                        "الهدف ${formatNumerals(target.toString(), useIndic)} • اضغط"
+                                    } else {
+                                        "Goal ${formatNumerals(target.toString(), useIndic)} • Tap"
+                                    },
+                                    style = MaterialTheme.typography.labelLarge.withTabularNums(),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
+                    }
+                }
+
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(33, 99, 100, 1000).forEach { goal ->
+                        LiquidGlassPill(
+                            selected = target == goal,
+                            onClick = {
+                                target = goal
+                                onSaveCounter(activePreset.first, activePreset.second, activePreset.third, localCount.toLong(), target.toLong())
+                            },
+                            label = formatNumerals(goal.toString(), useIndic)
+                        )
+                    }
+                    LiquidGlassPill(
+                        selected = target !in listOf(33, 99, 100, 1000),
+                        onClick = {
+                            customTargetInput = target.toString()
+                            showCustomTargetDialog = true
+                        },
+                        label = strings.customTargetLabel
                     )
                 }
-                OutlinedButton(onClick = {
-                    localCount = 0
-                    onSaveCounter(activePreset.first, activePreset.second, activePreset.third, 0L, target.toLong())
-                }) {
-                    Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (isArabicUi) "تصفير" else "Reset")
-                }
-            }
 
-            if (voiceStatus != null) {
-                Text(voiceStatus!!, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = {
+                            if (voiceListening) {
+                                recognizer?.stopListening()
+                                voiceListening = false
+                            } else {
+                                val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                                if (granted) startVoiceTasbih() else micLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                        shape = RoundedCornerShape(20.dp)
+                    ) {
+                        Icon(if (voiceListening) Icons.Rounded.Stop else Icons.Rounded.Mic, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            if (voiceListening) {
+                                if (isArabicUi) "جارٍ الاستماع..." else "Listening..."
+                            } else {
+                                if (isArabicUi) "تسبيح صوتي" else "Voice Tasbih"
+                            }
+                        )
+                    }
+                    LiquidGlassPill(
+                        selected = false,
+                        onClick = {
+                            localCount = 0
+                            onSaveCounter(activePreset.first, activePreset.second, activePreset.third, 0L, target.toLong())
+                        },
+                        icon = Icons.Rounded.Refresh,
+                        label = if (isArabicUi) "تصفير" else "Reset"
+                    )
+                }
+
+                if (voiceStatus != null) {
+                    Text(voiceStatus!!, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                }
             }
         }
     }
@@ -809,6 +950,7 @@ private fun TasbihSection(
 
 @Composable
 private fun NamesOfAllahSection(isArabicUi: Boolean, useIndic: Boolean) {
+    val glass = LocalLiquidGlassPalette.current
     var query by remember { mutableStateOf("") }
     var quizMode by remember { mutableStateOf(false) }
     var quizIndex by remember { mutableIntStateOf(0) }
@@ -827,12 +969,15 @@ private fun NamesOfAllahSection(isArabicUi: Boolean, useIndic: Boolean) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(
                 if (isArabicUi) "أسماء الله الحسنى (٩٩ اسماً)" else "Asma al-Husna (99 Names)",
-                style = MaterialTheme.typography.titleLarge
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
             )
-            FilterChip(
+            LiquidGlassPill(
                 selected = quizMode,
                 onClick = { quizMode = !quizMode; quizFeedback = null },
-                label = { Text(if (quizMode) (if (isArabicUi) "عرض القائمة" else "Browse List") else (if (isArabicUi) "اختبار" else "Flashcard Quiz")) }
+                icon = Icons.Rounded.Stars,
+                label = if (quizMode) (if (isArabicUi) "عرض القائمة" else "Browse List") else (if (isArabicUi) "اختبار" else "Flashcard Quiz")
             )
         }
 
@@ -843,18 +988,24 @@ private fun NamesOfAllahSection(isArabicUi: Boolean, useIndic: Boolean) {
                 val others = all.filter { it.number != current.number }.shuffled().take(3)
                 (others + current).shuffled()
             }
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            LiquidGlassCard(
+                shape = RoundedCornerShape(26.dp),
+                containerColor = glass.glassFillStrong,
+                borderColor = BurnishedGold.copy(alpha = 0.45f),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Text(
                         formatNumerals("Score: $quizScore • #${current.number}/99", useIndic),
-                        style = MaterialTheme.typography.labelLarge,
+                        style = MaterialTheme.typography.labelLarge.withTabularNums(),
                         color = MaterialTheme.colorScheme.primary
                     )
-                    Text(current.arabic, fontFamily = AmiriFontFamily, fontSize = 38.sp)
-                    Text(current.transliteration, style = MaterialTheme.typography.headlineMedium)
+                    Text(current.arabic, fontFamily = AmiriFontFamily, fontSize = 40.sp, color = MaterialTheme.colorScheme.primary)
+                    Text(current.transliteration, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                     distractors.forEach { opt ->
                         OutlinedButton(
                             onClick = {
@@ -866,6 +1017,7 @@ private fun NamesOfAllahSection(isArabicUi: Boolean, useIndic: Boolean) {
                                     quizFeedback = "${current.transliteration} = '${current.meaning}'."
                                 }
                             },
+                            shape = RoundedCornerShape(18.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(opt.meaning)
@@ -877,29 +1029,37 @@ private fun NamesOfAllahSection(isArabicUi: Boolean, useIndic: Boolean) {
                 }
             }
         } else {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                label = { Text(if (isArabicUi) "ابحث في الأسماء الحسنى..." else "Search 99 Names...") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+            LiquidGlassCard(shape = RoundedCornerShape(22.dp), contentPadding = 12.dp) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                    label = { Text(if (isArabicUi) "ابحث في الأسماء الحسنى..." else "Search 99 Names...") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
             filtered.forEach { name ->
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                LiquidGlassCard(
+                    shape = RoundedCornerShape(22.dp),
+                    contentPadding = 16.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(14.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("${formatNumerals(name.number.toString(), useIndic)}. ${name.transliteration}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                "${formatNumerals(name.number.toString(), useIndic)}. ${name.transliteration}",
+                                style = MaterialTheme.typography.titleMedium.withTabularNums(),
+                                fontWeight = FontWeight.Bold
+                            )
                             Text(name.meaning, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Text(name.arabic, fontFamily = AmiriFontFamily, fontSize = 26.sp, color = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(10.dp))
+                        Text(name.arabic, fontFamily = AmiriFontFamily, fontSize = 28.sp, color = MaterialTheme.colorScheme.primary)
                     }
                 }
             }
@@ -918,6 +1078,7 @@ private fun JournalAndDuaWallSection(
     communityDuaWallEnabled: Boolean,
     viewModel: MihrabViewModel
 ) {
+    val glass = LocalLiquidGlassPalette.current
     var subMode by remember { mutableIntStateOf(0) } // 0=Private Journal, 1=Community Dua Wall
     var titleInput by remember { mutableStateOf("") }
     var bodyInput by remember { mutableStateOf("") }
@@ -929,39 +1090,38 @@ private fun JournalAndDuaWallSection(
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = subMode == 0, onClick = { subMode = 0 }, label = { Text(strings.duaJournal) })
+            LiquidGlassPill(selected = subMode == 0, onClick = { subMode = 0 }, label = strings.duaJournal)
             if (communityDuaWallEnabled) {
-                FilterChip(selected = subMode == 1, onClick = { subMode = 1 }, label = { Text(strings.communityDuaWall) })
+                LiquidGlassPill(selected = subMode == 1, onClick = { subMode = 1 }, label = strings.communityDuaWall)
             }
         }
 
         if (subMode == 0 || !communityDuaWallEnabled) {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(strings.duaJournal, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(
-                            "DUA" to (if (isArabicUi) "دعاء خاص" else "Personal Dua"),
-                            "GRATITUDE" to (if (isArabicUi) "شكر ونعمة" else "Gratitude"),
-                            "VERSE_NOTE" to (if (isArabicUi) "تأمل" else "Reflection")
-                        ).forEach { (k, lbl) ->
-                            FilterChip(selected = entryType == k, onClick = { entryType = k }, label = { Text(lbl) })
-                        }
+            LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
+                Text(strings.duaJournal, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                        "DUA" to (if (isArabicUi) "دعاء خاص" else "Personal Dua"),
+                        "GRATITUDE" to (if (isArabicUi) "شكر ونعمة" else "Gratitude"),
+                        "VERSE_NOTE" to (if (isArabicUi) "تأمل" else "Reflection")
+                    ).forEach { (k, lbl) ->
+                        LiquidGlassPill(selected = entryType == k, onClick = { entryType = k }, label = lbl)
                     }
-                    OutlinedTextField(value = titleInput, onValueChange = { titleInput = it }, label = { Text(if (isArabicUi) "العنوان" else "Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = bodyInput, onValueChange = { bodyInput = it }, label = { Text(if (isArabicUi) "اكتب دعاءك أو تأملك الخاص..." else "Write your private prayer or gratitude...") }, minLines = 2, modifier = Modifier.fillMaxWidth())
-                    Button(
-                        onClick = {
-                            viewModel.addJournalEntry(entryType, titleInput, bodyInput, null)
-                            titleInput = ""
-                            bodyInput = ""
-                        },
-                        enabled = titleInput.isNotBlank() && bodyInput.isNotBlank()
-                    ) {
-                        Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(strings.save)
-                    }
+                }
+                OutlinedTextField(value = titleInput, onValueChange = { titleInput = it }, label = { Text(if (isArabicUi) "العنوان" else "Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = bodyInput, onValueChange = { bodyInput = it }, label = { Text(if (isArabicUi) "اكتب دعاءك أو تأملك الخاص..." else "Write your private prayer or gratitude...") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                Button(
+                    onClick = {
+                        viewModel.addJournalEntry(entryType, titleInput, bodyInput, null)
+                        titleInput = ""
+                        bodyInput = ""
+                    },
+                    enabled = titleInput.isNotBlank() && bodyInput.isNotBlank(),
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(strings.save)
                 }
             }
 
@@ -970,62 +1130,60 @@ private fun JournalAndDuaWallSection(
                 is UiState.Error -> Text(journalState.message, color = MaterialTheme.colorScheme.error)
                 is UiState.Success -> {
                     journalState.data.forEach { entry ->
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                        LiquidGlassCard(
+                            shape = RoundedCornerShape(22.dp),
+                            borderColor = if (entry.answered) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else glass.glassBorder,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                    Text("${entry.entryType} • ${entry.title}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                                    IconButton(onClick = { viewModel.toggleJournalAnswered(entry) }) {
-                                        Icon(
-                                            Icons.Rounded.CheckCircle,
-                                            contentDescription = "Mark answered",
-                                            tint = if (entry.answered) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                                        )
-                                    }
-                                    IconButton(onClick = { viewModel.deleteJournalEntry(entry.id) }) {
-                                        Icon(Icons.Rounded.Delete, contentDescription = "Delete entry")
-                                    }
-                                }
-                                Text(entry.body, style = MaterialTheme.typography.bodyMedium)
-                                if (entry.answered) {
-                                    Text(
-                                        if (isArabicUi) "الحمد لله — تم استجابة الدعاء" else "Alhamdulillah — Marked as Answered",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = MaterialTheme.colorScheme.primary
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("${entry.entryType} • ${entry.title}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                IconButton(onClick = { viewModel.toggleJournalAnswered(entry) }) {
+                                    Icon(
+                                        Icons.Rounded.CheckCircle,
+                                        contentDescription = "Mark answered",
+                                        tint = if (entry.answered) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                                     )
                                 }
+                                IconButton(onClick = { viewModel.deleteJournalEntry(entry.id) }) {
+                                    Icon(Icons.Rounded.Delete, contentDescription = "Delete entry")
+                                }
+                            }
+                            Text(entry.body, style = MaterialTheme.typography.bodyMedium)
+                            if (entry.answered) {
+                                Text(
+                                    if (isArabicUi) "الحمد لله — تم استجابة الدعاء" else "Alhamdulillah — Marked as Answered",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
                             }
                         }
                     }
                 }
             }
         } else {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(strings.communityDuaWall, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(
-                        if (isArabicUi) "شارك طلب دعاء مجهول الهوية ليؤمّن عليه المسلمون." else "Share a prayer request anonymously. Your real identity is never shown.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("HEALING", "GUIDANCE", "SUSTENANCE", "FAMILY", "DECEASED", "GENERAL").forEach { cat ->
-                            FilterChip(selected = wallCategory == cat, onClick = { wallCategory = cat }, label = { Text(cat) })
-                        }
+            LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
+                Text(strings.communityDuaWall, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    if (isArabicUi) "شارك طلب دعاء مجهول الهوية ليؤمّن عليه المسلمون." else "Share a prayer request anonymously. Your real identity is never shown.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("HEALING", "GUIDANCE", "SUSTENANCE", "FAMILY", "DECEASED", "GENERAL").forEach { cat ->
+                        LiquidGlassPill(selected = wallCategory == cat, onClick = { wallCategory = cat }, label = cat)
                     }
-                    OutlinedTextField(value = wallAlias, onValueChange = { wallAlias = it }, label = { Text(if (isArabicUi) "الاسم المستعار" else "Pen name (anonymous)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = wallRequest, onValueChange = { wallRequest = it }, label = { Text(if (isArabicUi) "طلب الدعاء (٥ أحرف على الأقل)" else "Dua request (min 5 chars)") }, minLines = 2, modifier = Modifier.fillMaxWidth())
-                    Button(
-                        onClick = {
-                            viewModel.postDuaWall(wallAlias, wallCategory, wallRequest)
-                            wallRequest = ""
-                        },
-                        enabled = wallRequest.trim().length >= 5
-                    ) {
-                        Text(if (isArabicUi) "مشاركة في حائط الدعاء" else "Share on Dua Wall")
-                    }
+                }
+                OutlinedTextField(value = wallAlias, onValueChange = { wallAlias = it }, label = { Text(if (isArabicUi) "الاسم المستعار" else "Pen name (anonymous)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = wallRequest, onValueChange = { wallRequest = it }, label = { Text(if (isArabicUi) "طلب الدعاء (٥ أحرف على الأقل)" else "Dua request (min 5 chars)") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                Button(
+                    onClick = {
+                        viewModel.postDuaWall(wallAlias, wallCategory, wallRequest)
+                        wallRequest = ""
+                    },
+                    enabled = wallRequest.trim().length >= 5,
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    Text(if (isArabicUi) "مشاركة في حائط الدعاء" else "Share on Dua Wall")
                 }
             }
 
@@ -1040,26 +1198,25 @@ private fun JournalAndDuaWallSection(
                         )
                     } else {
                         duaWallState.data.forEach { post ->
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                            LiquidGlassCard(
+                                shape = RoundedCornerShape(22.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text("${post.alias} • ${post.category}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                                        if (post.authorUid == currentUserId) {
-                                            IconButton(onClick = { viewModel.deleteMyDuaPost(post.id) }, modifier = Modifier.size(28.dp)) {
-                                                Icon(Icons.Rounded.Delete, contentDescription = "Delete my post", modifier = Modifier.size(18.dp))
-                                            }
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("${post.alias} • ${post.category}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                                    if (post.authorUid == currentUserId) {
+                                        IconButton(onClick = { viewModel.deleteMyDuaPost(post.id) }, modifier = Modifier.size(28.dp)) {
+                                            Icon(Icons.Rounded.Delete, contentDescription = "Delete my post", modifier = Modifier.size(18.dp))
                                         }
                                     }
-                                    Text(post.requestText, style = MaterialTheme.typography.bodyLarge)
-                                    OutlinedButton(onClick = { viewModel.sayAmeen(post.id) }) {
-                                        Icon(Icons.Rounded.Favorite, null, tint = BurnishedGold, modifier = Modifier.size(16.dp))
-                                        Spacer(Modifier.width(6.dp))
-                                        Text("${strings.ameen} (${post.ameenCount})")
-                                    }
                                 }
+                                Text(post.requestText, style = MaterialTheme.typography.bodyLarge)
+                                LiquidGlassPill(
+                                    selected = false,
+                                    onClick = { viewModel.sayAmeen(post.id) },
+                                    icon = Icons.Rounded.Favorite,
+                                    label = "${strings.ameen} (${post.ameenCount})"
+                                )
                             }
                         }
                     }

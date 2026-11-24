@@ -3,8 +3,6 @@ package com.example.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,10 +10,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.AutoStories
@@ -23,10 +22,6 @@ import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Mic
-import com.example.ui.icons.MihrabIcons
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -51,11 +46,14 @@ import com.example.data.firebase.AppOperationsConfig
 import com.example.data.firebase.UserSettingsDoc
 import com.example.domain.ArabicTextNormalizer
 import com.example.domain.QuranCatalog
+import com.example.ui.icons.MihrabIcons
+import com.example.ui.theme.LiquidGlassCard
+import com.example.ui.theme.LiquidGlassPill
+import com.example.ui.theme.withTabularNums
 import com.example.ui.viewmodel.AiViewModel
 import com.example.ui.viewmodel.MihrabViewModel
 import com.example.ui.viewmodel.UiState
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun QuranScreen(
     viewModel: MihrabViewModel,
@@ -81,25 +79,26 @@ fun QuranScreen(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        FlowRow(
+        val tabs = listOf(
+            strings.mushafReader to Icons.Rounded.AutoStories,
+            strings.alMusammi to Icons.Rounded.Mic,
+            strings.khatmahPlan to Icons.Rounded.CheckCircle,
+            strings.bookmarksLabel to MihrabIcons.Bookmark
+        )
+        LazyRow(
             modifier = Modifier
                 .widthIn(max = 640.dp)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            listOf(
-                strings.mushafReader to Icons.Rounded.AutoStories,
-                strings.alMusammi to Icons.Rounded.Mic,
-                strings.khatmahPlan to Icons.Rounded.CheckCircle,
-                strings.bookmarksLabel to MihrabIcons.Bookmark
-            ).forEachIndexed { idx, (label, icon) ->
-                FilterChip(
+            items(tabs.size) { idx ->
+                val (label, icon) = tabs[idx]
+                LiquidGlassPill(
                     selected = activeSection == idx,
                     onClick = { activeSection = idx },
-                    leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    label = { Text(label) },
+                    icon = icon,
+                    label = label,
                     modifier = Modifier.testTag("quran_tab_$idx")
                 )
             }
@@ -179,12 +178,12 @@ fun QuranScreen(
                             is UiState.Success -> {
                                 if (bm.data.isEmpty()) {
                                     item {
-                                        Card(
-                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                                        LiquidGlassCard(
+                                            shape = RoundedCornerShape(24.dp),
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Column(
-                                                modifier = Modifier.padding(18.dp),
+                                                modifier = Modifier.fillMaxWidth(),
                                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                                                 horizontalAlignment = Alignment.CenterHorizontally
                                             ) {
@@ -208,18 +207,16 @@ fun QuranScreen(
                                     items(bm.data, key = { it.id }) { item ->
                                         val surahMeta = QuranCatalog.surahByNumber(item.surahNumber.toInt())
                                         val targetPage = item.pageNumber?.toInt()?.coerceIn(1, 604) ?: surahMeta.startPage
-                                        Card(
+                                        LiquidGlassCard(
                                             onClick = {
                                                 externalTargetPage = targetPage
                                                 activeSection = 0
                                             },
-                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                                            contentPadding = 14.dp,
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(14.dp),
+                                                modifier = Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
@@ -230,7 +227,7 @@ fun QuranScreen(
                                                         } else {
                                                             "Surah ${surahMeta.nameEn} (${item.surahNumber}:${item.ayahNumber}) • ${strings.pageLabel} $targetPage"
                                                         },
-                                                        style = MaterialTheme.typography.titleMedium,
+                                                        style = MaterialTheme.typography.titleMedium.withTabularNums(),
                                                         fontWeight = FontWeight.Bold
                                                     )
                                                     Spacer(Modifier.height(2.dp))

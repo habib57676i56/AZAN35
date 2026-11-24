@@ -2,6 +2,8 @@ package com.example.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,11 +14,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
@@ -30,14 +36,10 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.WaterDrop
-import com.example.ui.icons.MihrabIcons
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,10 +61,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -72,15 +78,21 @@ import com.example.data.firebase.AppOperationsConfig
 import com.example.data.firebase.UserSettingsDoc
 import com.example.domain.CalculatorsEngine
 import com.example.domain.IslamicLibraryData
+import com.example.ui.icons.MihrabIcons
 import com.example.ui.theme.AmiriFontFamily
 import com.example.ui.theme.AppThemeMode
+import com.example.ui.theme.BurnishedGold
+import com.example.ui.theme.IslamicGeometricPatternCanvas
+import com.example.ui.theme.LiquidGlassCard
+import com.example.ui.theme.LiquidGlassPill
+import com.example.ui.theme.LocalLiquidGlassPalette
 import com.example.ui.theme.MihrabThemePreset
 import com.example.ui.theme.MushafPaperTheme
+import com.example.ui.theme.withTabularNums
 import com.example.ui.viewmodel.MihrabViewModel
 import com.example.ui.viewmodel.UiState
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ToolsScreen(
     viewModel: MihrabViewModel,
@@ -126,6 +138,20 @@ fun ToolsScreen(
         }
     }
 
+    val toolsTabs = if (isArabicUi) {
+        listOf(
+            "الحاسبات الشرعية" to MihrabIcons.Calculators,
+            strings.pilgrimGuide to MihrabIcons.KaabaCube,
+            strings.settingsPrivacy to MihrabIcons.Settings
+        )
+    } else {
+        listOf(
+            "Calculators" to MihrabIcons.Calculators,
+            "${strings.pilgrimGuide} & Charity" to MihrabIcons.KaabaCube,
+            strings.settingsPrivacy to MihrabIcons.Settings
+        )
+    }
+
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             modifier = Modifier
@@ -135,26 +161,17 @@ fun ToolsScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val toolsTabs = if (isArabicUi) {
-                        listOf(
-                            "الحاسبات الشرعية" to MihrabIcons.Calculators,
-                            strings.pilgrimGuide to MihrabIcons.KaabaCube,
-                            strings.settingsPrivacy to MihrabIcons.Settings
-                        )
-                    } else {
-                        listOf(
-                            "Calculators" to MihrabIcons.Calculators,
-                            "${strings.pilgrimGuide} & Charity" to MihrabIcons.KaabaCube,
-                            strings.settingsPrivacy to MihrabIcons.Settings
-                        )
-                    }
-                    toolsTabs.forEachIndexed { idx, (lbl, icon) ->
-                        FilterChip(
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(toolsTabs.size) { idx ->
+                        val (lbl, icon) = toolsTabs[idx]
+                        LiquidGlassPill(
                             selected = activeSection == idx,
                             onClick = { activeSection = idx },
-                            leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                            label = { Text(lbl) },
+                            icon = icon,
+                            label = lbl,
                             modifier = Modifier.testTag("tools_tab_$idx")
                         )
                     }
@@ -186,8 +203,10 @@ fun ToolsScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CalculatorsSection() {
+    val glass = LocalLiquidGlassPalette.current
     var calcTab by remember { mutableIntStateOf(0) } // 0=Zakat, 1=Inheritance, 2=Water
 
     // Zakat states
@@ -213,9 +232,10 @@ private fun CalculatorsSection() {
     var tapSeconds by remember { mutableIntStateOf(30) }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("Zakat", "Inheritance (Faraid)", "Wudu Water").forEachIndexed { idx, lbl ->
-                FilterChip(selected = calcTab == idx, onClick = { calcTab = idx }, label = { Text(lbl) })
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            val labels = listOf("Zakat", "Inheritance (Faraid)", "Wudu Water")
+            items(labels.size) { idx ->
+                LiquidGlassPill(selected = calcTab == idx, onClick = { calcTab = idx }, label = labels[idx])
             }
         }
 
@@ -231,38 +251,41 @@ private fun CalculatorsSection() {
                     shortTermDebtsOwed = debtInput.toDoubleOrNull() ?: 0.0,
                     useSilverNisab = useSilverNisab
                 )
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Zakat & Nisab Calculator (2.5%)", style = MaterialTheme.typography.titleLarge)
-                        OutlinedTextField(value = cashInput, onValueChange = { cashInput = it }, label = { Text("Cash & Bank Savings") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(value = goldGramsInput, onValueChange = { goldGramsInput = it }, label = { Text("Gold (g)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
-                            OutlinedTextField(value = goldPriceInput, onValueChange = { goldPriceInput = it }, label = { Text("Gold / g") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(value = tradeInput, onValueChange = { tradeInput = it }, label = { Text("Trade / Stocks") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
-                            OutlinedTextField(value = debtInput, onValueChange = { debtInput = it }, label = { Text("Immediate Debts") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                            Text("Use Silver Nisab (595g — safer for poor)", style = MaterialTheme.typography.bodyMedium)
-                            Switch(checked = useSilverNisab, onCheckedChange = { useSilverNisab = it })
-                        }
-                        HorizontalDivider()
-                        Text("Net Zakatable Wealth: ${String.format("%.2f", res.netZakatableWealth)}", style = MaterialTheme.typography.titleMedium)
-                        Text("Active Nisab Threshold: ${String.format("%.2f", res.activeNisabValue)}", style = MaterialTheme.typography.bodyMedium)
-                        Surface(
-                            color = if (res.isZakatDue) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
-                            shape = MaterialTheme.shapes.medium,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = if (res.isZakatDue) "Zakat Payable (after 1 lunar Hawl): ${String.format("%.2f", res.zakatPayable)}"
-                                else "Below Nisab threshold — Zakat is not obligatory.",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(12.dp)
-                            )
-                        }
+                LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
+                    Text("Zakat & Nisab Calculator (2.5%)", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    OutlinedTextField(value = cashInput, onValueChange = { cashInput = it }, label = { Text("Cash & Bank Savings") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(value = goldGramsInput, onValueChange = { goldGramsInput = it }, label = { Text("Gold (g)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
+                        OutlinedTextField(value = goldPriceInput, onValueChange = { goldPriceInput = it }, label = { Text("Gold / g") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(value = tradeInput, onValueChange = { tradeInput = it }, label = { Text("Trade / Stocks") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
+                        OutlinedTextField(value = debtInput, onValueChange = { debtInput = it }, label = { Text("Immediate Debts") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                        Text("Use Silver Nisab (595g — safer for poor)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        Switch(checked = useSilverNisab, onCheckedChange = { useSilverNisab = it })
+                    }
+                    HorizontalDivider(color = glass.glassBorder)
+                    Text("Net Zakatable Wealth: ${String.format("%.2f", res.netZakatableWealth)}", style = MaterialTheme.typography.titleMedium.withTabularNums())
+                    Text("Active Nisab Threshold: ${String.format("%.2f", res.activeNisabValue)}", style = MaterialTheme.typography.bodyMedium.withTabularNums(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Surface(
+                        color = if (res.isZakatDue) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else glass.glassFill,
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(
+                            1.dp,
+                            if (res.isZakatDue) MaterialTheme.colorScheme.primary.copy(alpha = 0.45f) else glass.glassBorder
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = if (res.isZakatDue) "Zakat Payable (after 1 lunar Hawl): ${String.format("%.2f", res.zakatPayable)}"
+                            else "Below Nisab threshold — Zakat is not obligatory.",
+                            style = MaterialTheme.typography.titleMedium.withTabularNums(),
+                            fontWeight = FontWeight.Bold,
+                            color = if (res.isZakatDue) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(14.dp)
+                        )
                     }
                 }
             }
@@ -275,84 +298,84 @@ private fun CalculatorsSection() {
                     sons = sonsCount,
                     daughters = daughtersCount
                 )
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Islamic Inheritance (Mawarith / Faraid)", style = MaterialTheme.typography.titleLarge)
-                        OutlinedTextField(value = estateInput, onValueChange = { estateInput = it }, label = { Text("Net Estate Value (after debts & Wasiyyah <= 1/3)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf("NONE" to "No Spouse", "HUSBAND" to "Husband", "WIFE" to "Wife").forEach { (k, l) ->
-                                FilterChip(selected = spouseType == k, onClick = { spouseType = k }, label = { Text(l) })
-                            }
+                LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
+                    Text("Islamic Inheritance (Mawarith / Faraid)", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    OutlinedTextField(value = estateInput, onValueChange = { estateInput = it }, label = { Text("Net Estate Value (after debts & Wasiyyah <= 1/3)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("NONE" to "No Spouse", "HUSBAND" to "Husband", "WIFE" to "Wife").forEach { (k, l) ->
+                            LiquidGlassPill(selected = spouseType == k, onClick = { spouseType = k }, label = l)
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(checked = hasFather, onCheckedChange = { hasFather = it })
-                                Text("Father")
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(checked = hasMother, onCheckedChange = { hasMother = it })
-                                Text("Mother")
-                            }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = hasFather, onCheckedChange = { hasFather = it })
+                            Text("Father")
                         }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("Sons: $sonsCount")
-                            Row {
-                                TextButton(onClick = { sonsCount = (sonsCount - 1).coerceAtLeast(0) }) { Text("-") }
-                                TextButton(onClick = { sonsCount = (sonsCount + 1).coerceAtMost(12) }) { Text("+") }
-                            }
-                            Text("Daughters: $daughtersCount")
-                            Row {
-                                TextButton(onClick = { daughtersCount = (daughtersCount - 1).coerceAtLeast(0) }) { Text("-") }
-                                TextButton(onClick = { daughtersCount = (daughtersCount + 1).coerceAtMost(12) }) { Text("+") }
-                            }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = hasMother, onCheckedChange = { hasMother = it })
+                            Text("Mother")
                         }
-                        HorizontalDivider()
-                        shares.forEach { share ->
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("${share.heirLabel} (${share.fractionLabel})", style = MaterialTheme.typography.bodyLarge)
-                                Text(
-                                    "${String.format("%.1f", share.percentage)}% • ${String.format("%.2f", share.amount)}",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Sons: $sonsCount", style = MaterialTheme.typography.bodyLarge.withTabularNums())
+                        Row {
+                            TextButton(onClick = { sonsCount = (sonsCount - 1).coerceAtLeast(0) }) { Text("-") }
+                            TextButton(onClick = { sonsCount = (sonsCount + 1).coerceAtMost(12) }) { Text("+") }
+                        }
+                        Text("Daughters: $daughtersCount", style = MaterialTheme.typography.bodyLarge.withTabularNums())
+                        Row {
+                            TextButton(onClick = { daughtersCount = (daughtersCount - 1).coerceAtLeast(0) }) { Text("-") }
+                            TextButton(onClick = { daughtersCount = (daughtersCount + 1).coerceAtMost(12) }) { Text("+") }
+                        }
+                    }
+                    HorizontalDivider(color = glass.glassBorder)
+                    shares.forEach { share ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("${share.heirLabel} (${share.fractionLabel})", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                            Text(
+                                "${String.format("%.1f", share.percentage)}% • ${String.format("%.2f", share.amount)}",
+                                style = MaterialTheme.typography.titleMedium.withTabularNums(),
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
                     }
                 }
             }
             2 -> {
                 val water = CalculatorsEngine.estimateAblutionWater(isGhusl, tapSeconds)
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.WaterDrop, null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Prophetic Water Conservation (Mudd & Sa')", style = MaterialTheme.typography.titleLarge)
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(selected = !isGhusl, onClick = { isGhusl = false }, label = { Text("Wudu (1 Mudd ~ 0.75L)") })
-                            FilterChip(selected = isGhusl, onClick = { isGhusl = true }, label = { Text("Ghusl (1 Sa' ~ 3L)") })
-                        }
-                        Text("Tap open duration: $tapSeconds seconds", style = MaterialTheme.typography.labelLarge)
-                        Slider(value = tapSeconds.toFloat(), onValueChange = { tapSeconds = it.roundToInt() }, valueRange = 5f..180f)
-                        Text(
-                            "Estimated usage: ${String.format("%.1f", water.estimatedLiters)} L (~${water.ratio}x Prophetic amount)",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(water.feedback, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.WaterDrop, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Prophetic Water Conservation (Mudd & Sa')", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LiquidGlassPill(selected = !isGhusl, onClick = { isGhusl = false }, label = "Wudu (1 Mudd ~ 0.75L)")
+                        LiquidGlassPill(selected = isGhusl, onClick = { isGhusl = true }, label = "Ghusl (1 Sa' ~ 3L)")
+                    }
+                    Text("Tap open duration: $tapSeconds seconds", style = MaterialTheme.typography.labelLarge.withTabularNums())
+                    Slider(value = tapSeconds.toFloat(), onValueChange = { tapSeconds = it.roundToInt() }, valueRange = 5f..180f)
+                    Text(
+                        "Estimated usage: ${String.format("%.1f", water.estimatedLiters)} L (~${water.ratio}x Prophetic amount)",
+                        style = MaterialTheme.typography.titleMedium.withTabularNums(),
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(water.feedback, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PilgrimAndObligationsSection(
     obligationsState: UiState<List<com.example.data.firebase.ObligationDoc>>,
     viewModel: MihrabViewModel
 ) {
+    val glass = LocalLiquidGlassPalette.current
     var tawafRounds by remember { mutableIntStateOf(0) }
     var saiRounds by remember { mutableIntStateOf(0) }
     val checklist = remember { mutableStateListOf(false, false, false, false) }
@@ -362,100 +385,173 @@ private fun PilgrimAndObligationsSection(
     var obAmount by remember { mutableStateOf("") }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Hajj & Umrah Pilgrim Guide", style = MaterialTheme.typography.titleLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Card(modifier = Modifier.weight(1f)) {
-                        Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Tawaf", style = MaterialTheme.typography.titleMedium)
-                            Text("$tawafRounds / 7", style = MaterialTheme.typography.headlineMedium)
-                            Button(onClick = { tawafRounds = (tawafRounds + 1) % 8 }) { Text("+1 Round") }
-                        }
-                    }
-                    Card(modifier = Modifier.weight(1f)) {
-                        Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Sa'i", style = MaterialTheme.typography.titleMedium)
-                            Text("$saiRounds / 7", style = MaterialTheme.typography.headlineMedium)
-                            Button(onClick = { saiRounds = (saiRounds + 1) % 8 }) { Text("+1 Lap") }
-                        }
+        LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
+            Text("Hajj & Umrah Pilgrim Guide", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                LiquidGlassCard(shape = RoundedCornerShape(20.dp), contentPadding = 12.dp, modifier = Modifier.weight(1f)) {
+                    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Tawaf", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("$tawafRounds / 7", style = MaterialTheme.typography.headlineMedium.withTabularNums(), color = MaterialTheme.colorScheme.primary)
+                        Button(onClick = { tawafRounds = (tawafRounds + 1) % 8 }, shape = RoundedCornerShape(14.dp)) { Text("+1 Round") }
                     }
                 }
-                val prepItems = listOf("Ihram garments & Niyyah at Miqat", "Travel Dua & Talbiyah", "Comfortable sandals & hydration", "Updated Wasiyyah & settled debts")
-                prepItems.forEachIndexed { idx, label ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = checklist[idx], onCheckedChange = { checklist[idx] = it })
-                        Text(label, style = MaterialTheme.typography.bodyMedium)
+                LiquidGlassCard(shape = RoundedCornerShape(20.dp), contentPadding = 12.dp, modifier = Modifier.weight(1f)) {
+                    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Sa'i", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("$saiRounds / 7", style = MaterialTheme.typography.headlineMedium.withTabularNums(), color = MaterialTheme.colorScheme.primary)
+                        Button(onClick = { saiRounds = (saiRounds + 1) % 8 }, shape = RoundedCornerShape(14.dp)) { Text("+1 Lap") }
                     }
                 }
             }
-        }
-
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val prepItems = listOf("Ihram garments & Niyyah at Miqat", "Travel Dua & Talbiyah", "Comfortable sandals & hydration", "Updated Wasiyyah & settled debts")
+            prepItems.forEachIndexed { idx, label ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Translate, null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Travel & Umrah Phrasebook", style = MaterialTheme.typography.titleLarge)
-                }
-                IslamicLibraryData.travelPhrases.forEach { p ->
-                    Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                        Text(p.english, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("${p.arabic} (${p.transliteration})", fontFamily = AmiriFontFamily, fontSize = 18.sp, color = MaterialTheme.colorScheme.primary)
-                        Text("TR: ${p.turkish} • UR: ${p.urdu}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    HorizontalDivider()
+                    Checkbox(checked = checklist[idx], onCheckedChange = { checklist[idx] = it })
+                    Text(label, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
 
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Sadaqah, Debts & Wasiyyah Tracker", style = MaterialTheme.typography.titleLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("CHARITY" to "Charity", "DEBT" to "Debt", "WASIYYAH" to "Will Note").forEach { (k, l) ->
-                        FilterChip(selected = obKind == k, onClick = { obKind = k }, label = { Text(l) })
-                    }
+        LiquidGlassCard(shape = RoundedCornerShape(24.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Translate, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Text("Travel & Umrah Phrasebook", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
+            IslamicLibraryData.travelPhrases.forEach { p ->
+                Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                    Text(p.english, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("${p.arabic} (${p.transliteration})", fontFamily = AmiriFontFamily, fontSize = 18.sp, color = MaterialTheme.colorScheme.primary)
+                    Text("TR: ${p.turkish} • UR: ${p.urdu}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                OutlinedTextField(value = obTitle, onValueChange = { obTitle = it }, label = { Text("Description") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = obAmount, onValueChange = { obAmount = it }, label = { Text("Amount (0 if note)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, modifier = Modifier.fillMaxWidth())
-                Button(
-                    onClick = {
-                        viewModel.addObligation(obKind, obTitle, obAmount.toDoubleOrNull() ?: 0.0, null)
-                        obTitle = ""
-                        obAmount = ""
-                    },
-                    enabled = obTitle.isNotBlank()
-                ) {
-                    Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Add Record")
-                }
+                HorizontalDivider(color = glass.glassBorder)
+            }
+        }
 
-                if (obligationsState is UiState.Success) {
-                    obligationsState.data.forEach { ob ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("${ob.kind}: ${ob.title}", style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    "${String.format("%.2f", ob.amount)} • ${if (ob.settled) "Fulfilled" else "Pending"}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            IconButton(onClick = { viewModel.toggleObligation(ob) }) {
-                                Icon(Icons.Rounded.CheckCircle, "Toggle settled", tint = if (ob.settled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
-                            }
-                            IconButton(onClick = { viewModel.deleteObligation(ob.id) }) {
-                                Icon(Icons.Rounded.Delete, "Delete record")
-                            }
+        LiquidGlassCard(shape = RoundedCornerShape(24.dp)) {
+            Text("Sadaqah, Debts & Wasiyyah Tracker", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("CHARITY" to "Charity", "DEBT" to "Debt", "WASIYYAH" to "Will Note").forEach { (k, l) ->
+                    LiquidGlassPill(selected = obKind == k, onClick = { obKind = k }, label = l)
+                }
+            }
+            OutlinedTextField(value = obTitle, onValueChange = { obTitle = it }, label = { Text("Description") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = obAmount, onValueChange = { obAmount = it }, label = { Text("Amount (0 if note)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, modifier = Modifier.fillMaxWidth())
+            Button(
+                onClick = {
+                    viewModel.addObligation(obKind, obTitle, obAmount.toDoubleOrNull() ?: 0.0, null)
+                    obTitle = ""
+                    obAmount = ""
+                },
+                enabled = obTitle.isNotBlank(),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Add Record")
+            }
+
+            if (obligationsState is UiState.Success) {
+                obligationsState.data.forEach { ob ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("${ob.kind}: ${ob.title}", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "${String.format("%.2f", ob.amount)} • ${if (ob.settled) "Fulfilled" else "Pending"}",
+                                style = MaterialTheme.typography.bodyMedium.withTabularNums(),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        IconButton(onClick = { viewModel.toggleObligation(ob) }) {
+                            Icon(Icons.Rounded.CheckCircle, "Toggle settled", tint = if (ob.settled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
+                        }
+                        IconButton(onClick = { viewModel.deleteObligation(ob.id) }) {
+                            Icon(Icons.Rounded.Delete, "Delete record")
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeModePreviewCard(
+    selected: Boolean,
+    onClick: () -> Unit,
+    label: String,
+    icon: ImageVector,
+    swatchBg: Color,
+    swatchAccent: Color,
+    modifier: Modifier = Modifier
+) {
+    val glass = LocalLiquidGlassPalette.current
+    val borderCol = if (selected) MaterialTheme.colorScheme.primary else glass.glassBorder
+    val bgCol = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else glass.glassSubtleFill
+
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(18.dp),
+        color = bgCol,
+        border = BorderStroke(if (selected) 1.5.dp else 1.dp, borderCol),
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Mini visual device swatch preview
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(38.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(swatchBg)
+                    .padding(6.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clip(CircleShape)
+                            .background(swatchAccent)
+                    )
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = swatchAccent,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (selected) {
+                    Icon(
+                        imageVector = Icons.Rounded.CheckCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -478,145 +574,204 @@ private fun SettingsAndPrivacySection(
     viewModel: MihrabViewModel,
     onSignOut: () -> Unit
 ) {
+    val glass = LocalLiquidGlassPalette.current
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         if (isSuperAdmin) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+            LiquidGlassCard(
+                shape = RoundedCornerShape(26.dp),
+                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                borderColor = BurnishedGold.copy(alpha = 0.55f),
+                contentPadding = 0.dp,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("open_admin_dashboard_card")
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(MihrabIcons.AdminShield, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(strings.adminDashboardTitle, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            Text(
-                                text = strings.adminBadgeLabel,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    IslamicGeometricPatternCanvas(
+                        modifier = Modifier.matchParentSize(),
+                        tint = BurnishedGold,
+                        alpha = 0.045f
+                    )
+                    Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Surface(
+                                shape = CircleShape,
+                                color = BurnishedGold.copy(alpha = 0.18f),
+                                border = BorderStroke(1.dp, BurnishedGold.copy(alpha = 0.5f)),
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(MihrabIcons.AdminShield, contentDescription = null, tint = BurnishedGold, modifier = Modifier.size(20.dp))
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(strings.adminDashboardTitle, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = strings.adminBadgeLabel,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         }
-                    }
-                    Button(
-                        onClick = onOpenAdminDashboard,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("open_admin_dashboard_button")
-                    ) {
-                        Icon(MihrabIcons.AdminShield, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (isArabicUi) "فتح لوحة الإدارة الشاملة" else "Open Super Admin Dashboard")
+                        Button(
+                            onClick = onOpenAdminDashboard,
+                            shape = RoundedCornerShape(18.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("open_admin_dashboard_button")
+                        ) {
+                            Icon(MihrabIcons.AdminShield, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (isArabicUi) "فتح لوحة الإدارة الشاملة" else "Open Super Admin Dashboard")
+                        }
                     }
                 }
             }
         }
+
         // 1. Arabic-first Language & RTL Switcher
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(MihrabIcons.Language, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text(strings.languageToggleTitle, style = MaterialTheme.typography.titleLarge)
+        LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(MihrabIcons.Language, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text(strings.languageToggleTitle, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                AppLanguage.entries.forEach { lang ->
+                    LiquidGlassPill(
+                        selected = settings.preferredLanguage == lang.code,
+                        onClick = { viewModel.updateSettings(mapOf("preferredLanguage" to lang.code)) },
+                        label = lang.nativeLabel,
+                        modifier = Modifier.testTag("lang_chip_${lang.code}")
+                    )
                 }
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    AppLanguage.entries.forEach { lang ->
-                        FilterChip(
-                            selected = settings.preferredLanguage == lang.code,
-                            onClick = { viewModel.updateSettings(mapOf("preferredLanguage" to lang.code)) },
-                            label = { Text(lang.nativeLabel) },
-                            modifier = Modifier.testTag("lang_chip_${lang.code}")
-                        )
-                    }
-                }
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(if (isArabicUi) "الأرقام العربية الشرقية (٠١٢٣)" else "Eastern Arabic Numerals (٠١٢٣)")
-                    Switch(checked = useIndic, onCheckedChange = onToggleIndic)
-                }
+            }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(if (isArabicUi) "الأرقام العربية الشرقية (٠١٢٣)" else "Eastern Arabic Numerals (٠١٢٣)", modifier = Modifier.weight(1f))
+                Switch(checked = useIndic, onCheckedChange = onToggleIndic)
             }
         }
 
-        // 2. Persistent 3-Mode Theme Engine + Typography Scale + Mushaf Paper
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(MihrabIcons.ThemePalette, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text(strings.themeModeTitle, style = MaterialTheme.typography.titleLarge)
-                }
+        // 2. Persistent 3-Mode Theme Engine + Visual Previews + Typography Scale + Mushaf Paper
+        LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(MihrabIcons.ThemePalette, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text(strings.themeModeTitle, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = currentThemeMode == AppThemeMode.LIGHT,
-                        onClick = { viewModel.updateSettings(mapOf("themeMode" to AppThemeMode.LIGHT.id)) },
-                        leadingIcon = { Icon(Icons.Rounded.LightMode, null, modifier = Modifier.size(16.dp)) },
-                        label = { Text(strings.themeLight) },
-                        modifier = Modifier.testTag("theme_mode_light")
-                    )
-                    FilterChip(
-                        selected = currentThemeMode == AppThemeMode.DARK,
-                        onClick = { viewModel.updateSettings(mapOf("themeMode" to AppThemeMode.DARK.id)) },
-                        leadingIcon = { Icon(Icons.Rounded.DarkMode, null, modifier = Modifier.size(16.dp)) },
-                        label = { Text(strings.themeDark) },
-                        modifier = Modifier.testTag("theme_mode_dark")
-                    )
-                    FilterChip(
-                        selected = currentThemeMode == AppThemeMode.SYSTEM,
-                        onClick = { viewModel.updateSettings(mapOf("themeMode" to AppThemeMode.SYSTEM.id)) },
-                        leadingIcon = { Icon(Icons.Rounded.BrightnessAuto, null, modifier = Modifier.size(16.dp)) },
-                        label = { Text(strings.themeSystem) },
-                        modifier = Modifier.testTag("theme_mode_system")
-                    )
-                }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ThemeModePreviewCard(
+                    selected = currentThemeMode == AppThemeMode.LIGHT,
+                    onClick = { viewModel.updateSettings(mapOf("themeMode" to AppThemeMode.LIGHT.id)) },
+                    label = strings.themeLight,
+                    icon = Icons.Rounded.LightMode,
+                    swatchBg = Color(0xFFF6F4EE),
+                    swatchAccent = Color(0xFF0D5C4B),
+                    modifier = Modifier.weight(1f).testTag("theme_mode_light")
+                )
+                ThemeModePreviewCard(
+                    selected = currentThemeMode == AppThemeMode.DARK,
+                    onClick = { viewModel.updateSettings(mapOf("themeMode" to AppThemeMode.DARK.id)) },
+                    label = strings.themeDark,
+                    icon = Icons.Rounded.DarkMode,
+                    swatchBg = Color(0xFF081412),
+                    swatchAccent = Color(0xFF3FD9A9),
+                    modifier = Modifier.weight(1f).testTag("theme_mode_dark")
+                )
+                ThemeModePreviewCard(
+                    selected = currentThemeMode == AppThemeMode.SYSTEM,
+                    onClick = { viewModel.updateSettings(mapOf("themeMode" to AppThemeMode.SYSTEM.id)) },
+                    label = strings.themeSystem,
+                    icon = Icons.Rounded.BrightnessAuto,
+                    swatchBg = Color(0xFF1D3A34),
+                    swatchAccent = Color(0xFFE6C26B),
+                    modifier = Modifier.weight(1f).testTag("theme_mode_system")
+                )
+            }
 
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    MihrabThemePreset.entries.forEach { preset ->
-                        FilterChip(
-                            selected = currentThemePreset == preset,
-                            onClick = { onChangeThemePreset(preset) },
-                            label = { Text(preset.label) }
-                        )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                MihrabThemePreset.entries.forEach { preset ->
+                    val swatchColor = when (preset) {
+                        MihrabThemePreset.EMERALD_SANCTUARY -> Color(0xFF0D5C4B)
+                        MihrabThemePreset.ROYAL_GOLD -> Color(0xFFC9982E)
+                        MihrabThemePreset.MOSQUE_BLUE -> Color(0xFF124670)
+                        MihrabThemePreset.WARM_PARCHMENT -> Color(0xFFA97B3A)
                     }
+                    LiquidGlassPill(
+                        selected = currentThemePreset == preset,
+                        onClick = { onChangeThemePreset(preset) },
+                        label = if (isArabicUi) preset.labelAr else preset.label,
+                        activeColor = swatchColor
+                    )
                 }
+            }
 
-                HorizontalDivider()
+            HorizontalDivider(color = glass.glassBorder)
 
-                Text(
-                    text = if (isArabicUi) "ورق مصحف المدينة وحجم الخط" else "Madinah Mushaf Paper & Typography Scale",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MushafPaperTheme.entries.forEach { paper ->
-                        val label = when (paper) {
-                            MushafPaperTheme.WHITE -> strings.paperWhite
-                            MushafPaperTheme.SEPIA -> strings.paperSepia
-                            MushafPaperTheme.DARK -> strings.paperDark
-                        }
-                        FilterChip(
-                            selected = settings.mushafPaper == paper.id,
-                            onClick = { viewModel.updateSettings(mapOf("mushafPaper" to paper.id)) },
-                            label = { Text(label) }
-                        )
+            Text(
+                text = if (isArabicUi) "ورق مصحف المدينة وحجم الخط" else "Madinah Mushaf Paper & Typography Scale",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                MushafPaperTheme.entries.forEach { paper ->
+                    val label = when (paper) {
+                        MushafPaperTheme.WHITE -> strings.paperWhite
+                        MushafPaperTheme.SEPIA -> strings.paperSepia
+                        MushafPaperTheme.DARK -> strings.paperDark
                     }
+                    LiquidGlassPill(
+                        selected = settings.mushafPaper == paper.id,
+                        onClick = { viewModel.updateSettings(mapOf("mushafPaper" to paper.id)) },
+                        label = label
+                    )
                 }
+            }
 
-                val currentScale = settings.fontScale.toFloat().coerceIn(0.85f, 1.35f)
-                Text(
-                    text = "${strings.fontScaleLabel}: ${(currentScale * 100).roundToInt()}%",
-                    style = MaterialTheme.typography.labelLarge
+            val currentScale = settings.fontScale.toFloat().coerceIn(0.85f, 1.35f)
+            Text(
+                text = "${strings.fontScaleLabel}: ${(currentScale * 100).roundToInt()}%",
+                style = MaterialTheme.typography.labelLarge.withTabularNums()
+            )
+            Slider(
+                value = currentScale,
+                onValueChange = { viewModel.updateSettings(mapOf("fontScale" to it.toDouble())) },
+                valueRange = 0.85f..1.35f
+            )
+
+            HorizontalDivider(color = glass.glassBorder)
+
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        if (isArabicUi) "تنبيهات الأذان" else "Adhan Alerts",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        if (isArabicUi) "تفعيل صوت الأذان وتنبيهات أوقات الصلاة" else "Enable Adhan audio & prayer alerts",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = settings.adhanEnabled,
+                    onCheckedChange = { viewModel.updateSettings(mapOf("adhanEnabled" to it)) }
                 )
-                Slider(
-                    value = currentScale,
-                    onValueChange = { viewModel.updateSettings(mapOf("fontScale" to it.toDouble())) },
-                    valueRange = 0.85f..1.35f
-                )
+            }
 
-                HorizontalDivider()
-
+            if (kidsModeEnabledFlag) {
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -624,86 +779,63 @@ private fun SettingsAndPrivacySection(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            if (isArabicUi) "تنبيهات الأذان" else "Adhan Alerts",
+                            if (isArabicUi) "وضع الأطفال" else "Kids Mode",
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            if (isArabicUi) "تفعيل صوت الأذان وتنبيهات أوقات الصلاة" else "Enable Adhan audio & prayer alerts",
+                            if (isArabicUi) "واجهة مبسطة وممتعة لتعليم القرآن والأذكار" else "Simplified joyful learning & star rewards",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     Switch(
-                        checked = settings.adhanEnabled,
-                        onCheckedChange = { viewModel.updateSettings(mapOf("adhanEnabled" to it)) }
+                        checked = settings.kidsMode,
+                        onCheckedChange = { viewModel.updateSettings(mapOf("kidsMode" to it)) }
                     )
-                }
-
-                if (kidsModeEnabledFlag) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                if (isArabicUi) "وضع الأطفال" else "Kids Mode",
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                if (isArabicUi) "واجهة مبسطة وممتعة لتعليم القرآن والأذكار" else "Simplified joyful learning & star rewards",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = settings.kidsMode,
-                            onCheckedChange = { viewModel.updateSettings(mapOf("kidsMode" to it)) }
-                        )
-                    }
                 }
             }
         }
 
         // 3. Privacy, Export & Account Controls
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(strings.settingsPrivacy, style = MaterialTheme.typography.titleLarge)
-                Text(
-                    text = if (isArabicUi) {
-                        "تطبيق محراب: مصحف المدينة التفاعلي بـ ٦٠٤ صفحات ونص عثماني كامل مع القراء والتخزين المحلي، مواقيت الصلاة والقبلة بالواقع المعزز، الأذكار، الزكاة والمواريث."
-                    } else {
-                        "Mihrab: 604-page interactive Uthmani Madinah Mushaf with multi-reciter audio & offline SQLite+Cloud sync, Prayer & AR Qibla, Adhkar, Zakat & Mawarith tools."
-                    },
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                OutlinedButton(
-                    onClick = { viewModel.exportAllData() },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Rounded.Download, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (isArabicUi) "تصدير بياناتي (JSON)" else "Export My Worship Data (JSON)")
-                }
-                OutlinedButton(
-                    onClick = onSignOut,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("sign_out_button")
-                ) {
-                    Icon(Icons.AutoMirrored.Rounded.Logout, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(strings.signOut)
-                }
-                Button(
-                    onClick = { showDeleteConfirm = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Rounded.DeleteForever, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (isArabicUi) "حذف جميع البيانات السحابية وتسجيل الخروج" else "Delete All Cloud Data & Sign Out")
-                }
+        LiquidGlassCard(shape = RoundedCornerShape(24.dp)) {
+            Text(strings.settingsPrivacy, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(
+                text = if (isArabicUi) {
+                    "تطبيق محراب: مصحف المدينة التفاعلي بـ ٦٠٤ صفحات ونص عثماني كامل مع القراء والتخزين المحلي، مواقيت الصلاة والقبلة بالواقع المعزز، الأذكار، الزكاة والمواريث."
+                } else {
+                    "Mihrab: 604-page interactive Uthmani Madinah Mushaf with multi-reciter audio & offline SQLite+Cloud sync, Prayer & AR Qibla, Adhkar, Zakat & Mawarith tools."
+                },
+                style = MaterialTheme.typography.bodyMedium
+            )
+            OutlinedButton(
+                onClick = { viewModel.exportAllData() },
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Rounded.Download, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (isArabicUi) "تصدير بياناتي (JSON)" else "Export My Worship Data (JSON)")
+            }
+            OutlinedButton(
+                onClick = onSignOut,
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("sign_out_button")
+            ) {
+                Icon(Icons.AutoMirrored.Rounded.Logout, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(strings.signOut)
+            }
+            Button(
+                onClick = { showDeleteConfirm = true },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Rounded.DeleteForever, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (isArabicUi) "حذف جميع البيانات السحابية وتسجيل الخروج" else "Delete All Cloud Data & Sign Out")
             }
         }
     }

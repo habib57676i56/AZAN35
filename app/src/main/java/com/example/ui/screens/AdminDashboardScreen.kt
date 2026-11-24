@@ -2,7 +2,7 @@ package com.example.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,13 +14,17 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -31,9 +35,6 @@ import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.UploadFile
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -68,6 +69,12 @@ import com.example.data.firebase.AiRuntimeConfig
 import com.example.data.firebase.AppOperationsConfig
 import com.example.data.firebase.QuranDefaultsConfig
 import com.example.ui.icons.MihrabIcons
+import com.example.ui.theme.BurnishedGold
+import com.example.ui.theme.LiquidGlassCard
+import com.example.ui.theme.LiquidGlassPill
+import com.example.ui.theme.LocalLiquidGlassPalette
+import com.example.ui.theme.SacredAmbientCanvas
+import com.example.ui.theme.withTabularNums
 import com.example.ui.viewmodel.AdminViewModel
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
@@ -81,39 +88,45 @@ fun AdminDashboardScreen(
     strings: LocalizedStrings,
     onBack: () -> Unit
 ) {
+    val glass = LocalLiquidGlassPalette.current
     val isArabicUi = appLanguage == AppLanguage.ARABIC || appLanguage == AppLanguage.URDU
     val currentUser = Firebase.auth.currentUser
 
     // Layer 1 Route Guard: Strictly block UI if not verified habiybullohy@gmail.com
     if (!AdminAccess.isSuperAdmin(currentUser)) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                modifier = Modifier.widthIn(max = 460.dp)
+        SacredAmbientCanvas {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                LiquidGlassCard(
+                    shape = RoundedCornerShape(26.dp),
+                    containerColor = glass.glassFillStrong,
+                    borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.55f),
+                    contentPadding = 24.dp,
+                    modifier = Modifier.widthIn(max = 460.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Lock,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.size(40.dp)
-                    )
-                    Text(
-                        text = strings.adminAccessDenied,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                    Button(onClick = onBack) {
-                        Text(if (isArabicUi) "رجوع" else "Go Back")
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Lock,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(40.dp)
+                        )
+                        Text(
+                            text = strings.adminAccessDenied,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Button(onClick = onBack, shape = RoundedCornerShape(18.dp)) {
+                            Text(if (isArabicUi) "رجوع" else "Go Back")
+                        }
                     }
                 }
             }
@@ -176,147 +189,216 @@ fun AdminDashboardScreen(
         strings.adminTabOperations to MihrabIcons.FeatureFlags
     )
 
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        Column(
+    SacredAmbientCanvas {
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .widthIn(max = 760.dp)
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+            contentAlignment = Alignment.TopCenter
         ) {
-            // Top Super Admin Bar
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
-                modifier = Modifier.fillMaxWidth()
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 760.dp)
             ) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = onBack, modifier = Modifier.testTag("admin_back_btn")) {
-                                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
-                            }
-                            Icon(
-                                imageVector = MihrabIcons.AdminShield,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Column {
-                                Text(
-                                    text = strings.adminDashboardTitle,
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "${strings.adminBadgeLabel} • ${AdminAccess.SUPER_ADMIN_EMAIL}",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                    }
-
-                    if (isBusy) {
-                        Spacer(Modifier.height(6.dp))
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    }
-
-                    if (adminMsg != null) {
-                        Spacer(Modifier.height(6.dp))
-                        Surface(
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            shape = MaterialTheme.shapes.small,
-                            modifier = Modifier.fillMaxWidth()
+                // Frosted Liquid Glass Super Admin Header + KPI Row
+                Surface(
+                    color = glass.dockBackground,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Text(
-                                    text = adminMsg!!,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                IconButton(
-                                    onClick = { adminViewModel.clearMessage() },
-                                    modifier = Modifier.size(28.dp)
+                                IconButton(onClick = onBack, modifier = Modifier.testTag("admin_back_btn")) {
+                                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                                }
+                                Surface(
+                                    shape = CircleShape,
+                                    color = BurnishedGold.copy(alpha = 0.16f),
+                                    border = BorderStroke(1.dp, BurnishedGold.copy(alpha = 0.5f)),
+                                    modifier = Modifier.size(36.dp)
                                 ) {
-                                    Icon(Icons.Rounded.CheckCircle, contentDescription = "Dismiss", modifier = Modifier.size(18.dp))
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = MihrabIcons.AdminShield,
+                                            contentDescription = null,
+                                            tint = BurnishedGold,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = strings.adminDashboardTitle,
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "${strings.adminBadgeLabel} • ${AdminAccess.SUPER_ADMIN_EMAIL}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                 }
                             }
                         }
-                    }
 
-                    Spacer(Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        tabLabels.forEachIndexed { idx, (label, icon) ->
-                            FilterChip(
-                                selected = adminTab == idx,
-                                onClick = { adminTab = idx },
-                                leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(17.dp)) },
-                                label = { Text(label) },
-                                modifier = Modifier.testTag("admin_tab_$idx")
-                            )
+                        // KPI Glass Summary Strip
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            item {
+                                AdminKpiPill(
+                                    label = if (isArabicUi) "المستخدمون" else "Users",
+                                    value = "${users.size}"
+                                )
+                            }
+                            item {
+                                AdminKpiPill(
+                                    label = if (isArabicUi) "القراء النشطون" else "Reciters",
+                                    value = "${reciters.count { it.active }}/${reciters.size}"
+                                )
+                            }
+                            item {
+                                AdminKpiPill(
+                                    label = if (isArabicUi) "الأذكار" else "Adhkar",
+                                    value = "${adhkar.size}"
+                                )
+                            }
+                            item {
+                                AdminKpiPill(
+                                    label = if (isArabicUi) "الذكاء الاصطناعي" else "AI",
+                                    value = "${if (aiConfig.enabled) "ON" else "OFF"} • ${aiConfig.dailyLimitPerUser}/d"
+                                )
+                            }
+                        }
+
+                        if (isBusy) {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
+
+                        if (adminMsg != null) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = adminMsg!!,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    IconButton(
+                                        onClick = { adminViewModel.clearMessage() },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.CheckCircle, contentDescription = "Dismiss", modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
+                        }
+
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(tabLabels.size) { idx ->
+                                val (label, icon) = tabLabels[idx]
+                                LiquidGlassPill(
+                                    selected = adminTab == idx,
+                                    onClick = { adminTab = idx },
+                                    icon = icon,
+                                    label = label,
+                                    modifier = Modifier.testTag("admin_tab_$idx")
+                                )
+                            }
                         }
                     }
                 }
-            }
+                HorizontalDivider(color = glass.glassBorder, thickness = 0.8.dp)
 
-            when (adminTab) {
-                0 -> QuranDefaultsTab(
-                    initialConfig = quranDefaults,
-                    isArabicUi = isArabicUi,
-                    strings = strings,
-                    onSave = { adminViewModel.saveQuranDefaults(it) }
-                )
-                1 -> RecitersCrudTab(
-                    reciters = reciters,
-                    isArabicUi = isArabicUi,
-                    strings = strings,
-                    onUpsert = { adminViewModel.upsertReciter(it) },
-                    onDelete = { adminViewModel.deleteReciter(it) },
-                    onSeedDefaults = { adminViewModel.seedDefaultReciters() }
-                )
-                2 -> AdhkarCrudTab(
-                    adhkarList = adhkar,
-                    isArabicUi = isArabicUi,
-                    strings = strings,
-                    onUpsert = { adminViewModel.upsertAdhkar(it) },
-                    onDelete = { adminViewModel.deleteAdhkar(it) },
-                    onSeedDefaults = { adminViewModel.seedDefaultAdhkar() }
-                )
-                3 -> AdhanAudioCrudTab(
-                    voices = adhanVoices,
-                    adhanAudioPlayer = adhanAudioPlayer,
-                    isArabicUi = isArabicUi,
-                    strings = strings,
-                    onUpsert = { adminViewModel.upsertAdhanVoice(it) },
-                    onDelete = { adminViewModel.deleteAdhanVoice(it) },
-                    onSeedDefaults = { adminViewModel.seedDefaultAdhanVoices() }
-                )
-                4 -> AiControlTab(
-                    initialConfig = aiConfig,
-                    isArabicUi = isArabicUi,
-                    strings = strings,
-                    onSave = { adminViewModel.saveAiConfig(it) }
-                )
-                5 -> AppOperationsTab(
-                    initialOps = appOps,
-                    users = users,
-                    isArabicUi = isArabicUi,
-                    strings = strings,
-                    onSaveOperations = { adminViewModel.saveAppOperations(it) },
-                    onUpdateUser = { uid, fields -> adminViewModel.updateUserAsAdmin(uid, fields) },
-                    onExportBackup = { adminViewModel.exportFullDatabaseBackup() },
-                    onImportBackup = { importBackupLauncher.launch(arrayOf("application/json", "text/*")) }
-                )
+                when (adminTab) {
+                    0 -> QuranDefaultsTab(
+                        initialConfig = quranDefaults,
+                        isArabicUi = isArabicUi,
+                        strings = strings,
+                        onSave = { adminViewModel.saveQuranDefaults(it) }
+                    )
+                    1 -> RecitersCrudTab(
+                        reciters = reciters,
+                        isArabicUi = isArabicUi,
+                        strings = strings,
+                        onUpsert = { adminViewModel.upsertReciter(it) },
+                        onDelete = { adminViewModel.deleteReciter(it) },
+                        onSeedDefaults = { adminViewModel.seedDefaultReciters() }
+                    )
+                    2 -> AdhkarCrudTab(
+                        adhkarList = adhkar,
+                        isArabicUi = isArabicUi,
+                        strings = strings,
+                        onUpsert = { adminViewModel.upsertAdhkar(it) },
+                        onDelete = { adminViewModel.deleteAdhkar(it) },
+                        onSeedDefaults = { adminViewModel.seedDefaultAdhkar() }
+                    )
+                    3 -> AdhanAudioCrudTab(
+                        voices = adhanVoices,
+                        adhanAudioPlayer = adhanAudioPlayer,
+                        isArabicUi = isArabicUi,
+                        strings = strings,
+                        onUpsert = { adminViewModel.upsertAdhanVoice(it) },
+                        onDelete = { adminViewModel.deleteAdhanVoice(it) },
+                        onSeedDefaults = { adminViewModel.seedDefaultAdhanVoices() }
+                    )
+                    4 -> AiControlTab(
+                        initialConfig = aiConfig,
+                        isArabicUi = isArabicUi,
+                        strings = strings,
+                        onSave = { adminViewModel.saveAiConfig(it) }
+                    )
+                    5 -> AppOperationsTab(
+                        initialOps = appOps,
+                        users = users,
+                        isArabicUi = isArabicUi,
+                        strings = strings,
+                        onSaveOperations = { adminViewModel.saveAppOperations(it) },
+                        onUpdateUser = { uid, fields -> adminViewModel.updateUserAsAdmin(uid, fields) },
+                        onExportBackup = { adminViewModel.exportFullDatabaseBackup() },
+                        onImportBackup = { importBackupLauncher.launch(arrayOf("application/json", "text/*")) }
+                    )
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun AdminKpiPill(label: String, value: String) {
+    val glass = LocalLiquidGlassPalette.current
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = glass.glassFill,
+        border = BorderStroke(1.dp, glass.glassBorder)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                value,
+                style = MaterialTheme.typography.labelLarge.withTabularNums(),
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
     }
 }
@@ -329,6 +411,7 @@ private fun QuranDefaultsTab(
     strings: LocalizedStrings,
     onSave: (QuranDefaultsConfig) -> Unit
 ) {
+    val glass = LocalLiquidGlassPalette.current
     var apiPrimary by remember(initialConfig) { mutableStateOf(initialConfig.quranPageApiBase) }
     var apiFallback by remember(initialConfig) { mutableStateOf(initialConfig.quranFallbackApiBase) }
     var audioCdn by remember(initialConfig) { mutableStateOf(initialConfig.audioCdnBase) }
@@ -342,86 +425,85 @@ private fun QuranDefaultsTab(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        if (isArabicUi) "مصادر واجهة برمجة القرآن والصوتيات" else "Quran & Audio API Sources",
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    OutlinedTextField(
-                        value = apiPrimary,
-                        onValueChange = { apiPrimary = it },
-                        label = { Text(if (isArabicUi) "مصدر صفحات المصحف الأساسي (HTTPS)" else "Primary Mushaf API Base (HTTPS)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = apiFallback,
-                        onValueChange = { apiFallback = it },
-                        label = { Text(if (isArabicUi) "مصدر القرآن الاحتياطي والبحث" else "Fallback Quran & Search API Base") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = audioCdn,
-                        onValueChange = { audioCdn = it },
-                        label = { Text(if (isArabicUi) "خادم تلاوات الآيات (EveryAyah CDN)" else "Verse Audio CDN Base") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = defaultReciter,
-                        onValueChange = { defaultReciter = it },
-                        label = { Text(if (isArabicUi) "القارئ الافتراضي للمستخدمين الجدد" else "Default Reciter ID") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+            LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
+                Text(
+                    if (isArabicUi) "مصادر واجهة برمجة القرآن والصوتيات" else "Quran & Audio API Sources",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                OutlinedTextField(
+                    value = apiPrimary,
+                    onValueChange = { apiPrimary = it },
+                    label = { Text(if (isArabicUi) "مصدر صفحات المصحف الأساسي (HTTPS)" else "Primary Mushaf API Base (HTTPS)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = apiFallback,
+                    onValueChange = { apiFallback = it },
+                    label = { Text(if (isArabicUi) "مصدر القرآن الاحتياطي والبحث" else "Fallback Quran & Search API Base") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = audioCdn,
+                    onValueChange = { audioCdn = it },
+                    label = { Text(if (isArabicUi) "خادم تلاوات الآيات (EveryAyah CDN)" else "Verse Audio CDN Base") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = defaultReciter,
+                    onValueChange = { defaultReciter = it },
+                    label = { Text(if (isArabicUi) "القارئ الافتراضي للمستخدمين الجدد" else "Default Reciter ID") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
 
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        if (isArabicUi) "الافتراضيات العامة للمظهر والخط" else "Global Default Paper, Theme & Font Scale",
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    Text(if (isArabicUi) "ورق المصحف الافتراضي" else "Default Mushaf Paper", style = MaterialTheme.typography.labelLarge)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("WHITE" to strings.paperWhite, "SEPIA" to strings.paperSepia, "DARK" to strings.paperDark).forEach { (id, lbl) ->
-                            FilterChip(selected = defaultPaper == id, onClick = { defaultPaper = id }, label = { Text(lbl) })
-                        }
+            LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
+                Text(
+                    if (isArabicUi) "الافتراضيات العامة للمظهر والخط" else "Global Default Paper, Theme & Font Scale",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(if (isArabicUi) "ورق المصحف الافتراضي" else "Default Mushaf Paper", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("WHITE" to strings.paperWhite, "SEPIA" to strings.paperSepia, "DARK" to strings.paperDark).forEach { (id, lbl) ->
+                        LiquidGlassPill(selected = defaultPaper == id, onClick = { defaultPaper = id }, label = lbl)
                     }
-                    Text(if (isArabicUi) "مظهر التطبيق الافتراضي" else "Default App Theme", style = MaterialTheme.typography.labelLarge)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("SYSTEM" to strings.themeSystem, "LIGHT" to strings.themeLight, "DARK" to strings.themeDark).forEach { (id, lbl) ->
-                            FilterChip(selected = defaultTheme == id, onClick = { defaultTheme = id }, label = { Text(lbl) })
-                        }
+                }
+                Text(if (isArabicUi) "مظهر التطبيق الافتراضي" else "Default App Theme", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("SYSTEM" to strings.themeSystem, "LIGHT" to strings.themeLight, "DARK" to strings.themeDark).forEach { (id, lbl) ->
+                        LiquidGlassPill(selected = defaultTheme == id, onClick = { defaultTheme = id }, label = lbl)
                     }
-                    Text("${strings.fontScaleLabel}: ${(defaultScale * 100).roundToInt()}%")
-                    Slider(value = defaultScale, onValueChange = { defaultScale = it }, valueRange = 0.85f..1.35f)
+                }
+                Text("${strings.fontScaleLabel}: ${(defaultScale * 100).roundToInt()}%", style = MaterialTheme.typography.labelLarge.withTabularNums())
+                Slider(value = defaultScale, onValueChange = { defaultScale = it }, valueRange = 0.85f..1.35f)
 
-                    Button(
-                        onClick = {
-                            onSave(
-                                QuranDefaultsConfig(
-                                    quranPageApiBase = apiPrimary,
-                                    quranFallbackApiBase = apiFallback,
-                                    audioCdnBase = audioCdn,
-                                    defaultReciterId = defaultReciter,
-                                    defaultPaper = defaultPaper,
-                                    defaultThemeMode = defaultTheme,
-                                    defaultFontScale = defaultScale.toDouble()
-                                )
+                Button(
+                    onClick = {
+                        onSave(
+                            QuranDefaultsConfig(
+                                quranPageApiBase = apiPrimary,
+                                quranFallbackApiBase = apiFallback,
+                                audioCdnBase = audioCdn,
+                                defaultReciterId = defaultReciter,
+                                defaultPaper = defaultPaper,
+                                defaultThemeMode = defaultTheme,
+                                defaultFontScale = defaultScale.toDouble()
                             )
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.Save, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(strings.adminSaveChanges)
-                    }
+                        )
+                    },
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Rounded.Save, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(strings.adminSaveChanges)
                 }
             }
         }
@@ -436,6 +518,7 @@ private fun AiControlTab(
     strings: LocalizedStrings,
     onSave: (AiRuntimeConfig) -> Unit
 ) {
+    val glass = LocalLiquidGlassPalette.current
     var enabled by remember(initialConfig) { mutableStateOf(initialConfig.enabled) }
     var modelName by remember(initialConfig) { mutableStateOf(initialConfig.modelName) }
     var systemPrompt by remember(initialConfig) { mutableStateOf(initialConfig.systemPrompt) }
@@ -446,78 +529,78 @@ private fun AiControlTab(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                if (isArabicUi) "تفعيل المساعد الإسلامي الذكي" else "Enable Islamic AI Assistant",
-                                style = MaterialTheme.typography.titleLarge
-                            )
-                            Text(
-                                if (isArabicUi) "يتحكم فوراً في التفسير والحفظ والمحادثة لجميع المستخدمين" else "Live control over Tafsir, Hifz quiz & Q&A",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(checked = enabled, onCheckedChange = { enabled = it })
+            LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            if (isArabicUi) "تفعيل المساعد الإسلامي الذكي" else "Enable Islamic AI Assistant",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            if (isArabicUi) "يتحكم فوراً في التفسير والحفظ والمحادثة لجميع المستخدمين" else "Live control over Tafsir, Hifz quiz & Q&A",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
+                    Switch(checked = enabled, onCheckedChange = { enabled = it })
+                }
 
-                    HorizontalDivider()
+                HorizontalDivider(color = glass.glassBorder)
 
-                    Text(if (isArabicUi) "النموذج النشط (Gemini Model ID)" else "Active Model ID", style = MaterialTheme.typography.labelLarge)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("gemini-3.8-flash", "gemini-4-hydrogen", "gemini-3.8-pro").forEach { id ->
-                            FilterChip(selected = modelName == id, onClick = { modelName = id }, label = { Text(id) })
-                        }
+                Text(if (isArabicUi) "النموذج النشط (Gemini Model ID)" else "Active Model ID", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("gemini-3.8-flash", "gemini-4-hydrogen", "gemini-3.8-pro").forEach { id ->
+                        LiquidGlassPill(selected = modelName == id, onClick = { modelName = id }, label = id)
                     }
-                    OutlinedTextField(
-                        value = modelName,
-                        onValueChange = { modelName = it },
-                        label = { Text(if (isArabicUi) "معرّف النموذج" else "Custom Model ID") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                }
+                OutlinedTextField(
+                    value = modelName,
+                    onValueChange = { modelName = it },
+                    label = { Text(if (isArabicUi) "معرّف النموذج" else "Custom Model ID") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-                    OutlinedTextField(
-                        value = dailyLimit,
-                        onValueChange = { v -> dailyLimit = v.filter { it.isDigit() }.take(3) },
-                        label = { Text(if (isArabicUi) "الحد اليومي لكل مستخدم (٥ - ٥٠٠)" else "Daily Rate Limit per User (5-500)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                OutlinedTextField(
+                    value = dailyLimit,
+                    onValueChange = { v -> dailyLimit = v.filter { it.isDigit() }.take(3) },
+                    label = { Text(if (isArabicUi) "الحد اليومي لكل مستخدم (٥ - ٥٠٠)" else "Daily Rate Limit per User (5-500)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-                    OutlinedTextField(
-                        value = systemPrompt,
-                        onValueChange = { systemPrompt = it },
-                        label = { Text(if (isArabicUi) "التوجيه الأساسي للذكاء الاصطناعي (System Prompt)" else "Gemini System Prompt") },
-                        minLines = 5,
-                        maxLines = 10,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                OutlinedTextField(
+                    value = systemPrompt,
+                    onValueChange = { systemPrompt = it },
+                    label = { Text(if (isArabicUi) "التوجيه الأساسي للذكاء الاصطناعي (System Prompt)" else "Gemini System Prompt") },
+                    minLines = 5,
+                    maxLines = 10,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-                    Button(
-                        onClick = {
-                            onSave(
-                                AiRuntimeConfig(
-                                    enabled = enabled,
-                                    modelName = modelName,
-                                    systemPrompt = systemPrompt,
-                                    dailyLimitPerUser = (dailyLimit.toIntOrNull() ?: 30).coerceIn(5, 500)
-                                )
+                Button(
+                    onClick = {
+                        onSave(
+                            AiRuntimeConfig(
+                                enabled = enabled,
+                                modelName = modelName,
+                                systemPrompt = systemPrompt,
+                                dailyLimitPerUser = (dailyLimit.toIntOrNull() ?: 30).coerceIn(5, 500)
                             )
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.Save, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(strings.adminSaveChanges)
-                    }
+                        )
+                    },
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Rounded.Save, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(strings.adminSaveChanges)
                 }
             }
         }
@@ -536,6 +619,7 @@ private fun AppOperationsTab(
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit
 ) {
+    val glass = LocalLiquidGlassPalette.current
     var ops by remember(initialOps) { mutableStateOf(initialOps) }
     var userQuery by remember { mutableStateOf("") }
 
@@ -556,81 +640,79 @@ private fun AppOperationsTab(
     ) {
         // 1. Live In-App Broadcast Banner
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(MihrabIcons.BroadcastBanner, null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(8.dp))
-                            Text(if (isArabicUi) "لافتة البث والإشعارات الفورية" else "Live In-App Broadcast Banner", style = MaterialTheme.typography.titleLarge)
-                        }
-                        Switch(checked = ops.bannerEnabled, onCheckedChange = { ops = ops.copy(bannerEnabled = it) })
+            LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(MihrabIcons.BroadcastBanner, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            if (isArabicUi) "لافتة البث والإشعارات الفورية" else "Live In-App Broadcast Banner",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("INFO" to (if (isArabicUi) "إعلان" else "Info"), "REMINDER" to (if (isArabicUi) "تذكير" else "Reminder"), "ALERT" to (if (isArabicUi) "تنبيه هام" else "Alert")).forEach { (tone, lbl) ->
-                            FilterChip(selected = ops.bannerTone == tone, onClick = { ops = ops.copy(bannerTone = tone) }, label = { Text(lbl) })
-                        }
-                    }
-                    OutlinedTextField(value = ops.bannerTitleAr, onValueChange = { ops = ops.copy(bannerTitleAr = it) }, label = { Text("العنوان بالعربية") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = ops.bannerBodyAr, onValueChange = { ops = ops.copy(bannerBodyAr = it) }, label = { Text("نص الرسالة بالعربية") }, maxLines = 3, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = ops.bannerTitleEn, onValueChange = { ops = ops.copy(bannerTitleEn = it) }, label = { Text("Title (English)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = ops.bannerBodyEn, onValueChange = { ops = ops.copy(bannerBodyEn = it) }, label = { Text("Message (English)") }, maxLines = 3, modifier = Modifier.fillMaxWidth())
+                    Switch(checked = ops.bannerEnabled, onCheckedChange = { ops = ops.copy(bannerEnabled = it) })
                 }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("INFO" to (if (isArabicUi) "إعلان" else "Info"), "REMINDER" to (if (isArabicUi) "تذكير" else "Reminder"), "ALERT" to (if (isArabicUi) "تنبيه هام" else "Alert")).forEach { (tone, lbl) ->
+                        LiquidGlassPill(selected = ops.bannerTone == tone, onClick = { ops = ops.copy(bannerTone = tone) }, label = lbl)
+                    }
+                }
+                OutlinedTextField(value = ops.bannerTitleAr, onValueChange = { ops = ops.copy(bannerTitleAr = it) }, label = { Text("العنوان بالعربية") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = ops.bannerBodyAr, onValueChange = { ops = ops.copy(bannerBodyAr = it) }, label = { Text("نص الرسالة بالعربية") }, maxLines = 3, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = ops.bannerTitleEn, onValueChange = { ops = ops.copy(bannerTitleEn = it) }, label = { Text("Title (English)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = ops.bannerBodyEn, onValueChange = { ops = ops.copy(bannerBodyEn = it) }, label = { Text("Message (English)") }, maxLines = 3, modifier = Modifier.fillMaxWidth())
             }
         }
 
         // 2. Global Feature Flags
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(MihrabIcons.FeatureFlags, null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (isArabicUi) "أعلام الميزات العالمية (Feature Flags)" else "Global Feature Flags", style = MaterialTheme.typography.titleLarge)
-                    }
-                    FlagSwitchRow(if (isArabicUi) "تلاوات القرآن بالصوت" else "Quran Audio Recitation", ops.quranAudioEnabled) { ops = ops.copy(quranAudioEnabled = it) }
-                    FlagSwitchRow(if (isArabicUi) "المساعد الذكي" else "AI Assistant", ops.aiAssistantEnabled) { ops = ops.copy(aiAssistantEnabled = it) }
-                    FlagSwitchRow(if (isArabicUi) "حائط الدعاء المجتمعي" else "Community Dua Wall", ops.communityDuaWallEnabled) { ops = ops.copy(communityDuaWallEnabled = it) }
-                    FlagSwitchRow(if (isArabicUi) "ختمة العائلة المشتركة" else "Family Khatmah Groups", ops.familyKhatmahEnabled) { ops = ops.copy(familyKhatmahEnabled = it) }
-                    FlagSwitchRow(if (isArabicUi) "القبلة بالواقع المعزز" else "AR Qibla Camera", ops.arQiblaEnabled) { ops = ops.copy(arQiblaEnabled = it) }
-                    FlagSwitchRow(if (isArabicUi) "وضع الأطفال" else "Kids Mode", ops.kidsModeEnabled) { ops = ops.copy(kidsModeEnabled = it) }
-                    FlagSwitchRow(if (isArabicUi) "رفع أذان من الجهاز" else "Custom Device Adhan Upload", ops.customAdhanUploadEnabled) { ops = ops.copy(customAdhanUploadEnabled = it) }
-                    FlagSwitchRow(if (isArabicUi) "وضع الصيانة السحابي" else "Maintenance Mode", ops.maintenanceMode) { ops = ops.copy(maintenanceMode = it) }
+            LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(MihrabIcons.FeatureFlags, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (isArabicUi) "أعلام الميزات العالمية (Feature Flags)" else "Global Feature Flags", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                }
+                FlagSwitchRow(if (isArabicUi) "تلاوات القرآن بالصوت" else "Quran Audio Recitation", ops.quranAudioEnabled) { ops = ops.copy(quranAudioEnabled = it) }
+                FlagSwitchRow(if (isArabicUi) "المساعد الذكي" else "AI Assistant", ops.aiAssistantEnabled) { ops = ops.copy(aiAssistantEnabled = it) }
+                FlagSwitchRow(if (isArabicUi) "حائط الدعاء المجتمعي" else "Community Dua Wall", ops.communityDuaWallEnabled) { ops = ops.copy(communityDuaWallEnabled = it) }
+                FlagSwitchRow(if (isArabicUi) "ختمة العائلة المشتركة" else "Family Khatmah Groups", ops.familyKhatmahEnabled) { ops = ops.copy(familyKhatmahEnabled = it) }
+                FlagSwitchRow(if (isArabicUi) "القبلة بالواقع المعزز" else "AR Qibla Camera", ops.arQiblaEnabled) { ops = ops.copy(arQiblaEnabled = it) }
+                FlagSwitchRow(if (isArabicUi) "وضع الأطفال" else "Kids Mode", ops.kidsModeEnabled) { ops = ops.copy(kidsModeEnabled = it) }
+                FlagSwitchRow(if (isArabicUi) "رفع أذان من الجهاز" else "Custom Device Adhan Upload", ops.customAdhanUploadEnabled) { ops = ops.copy(customAdhanUploadEnabled = it) }
+                FlagSwitchRow(if (isArabicUi) "وضع الصيانة السحابي" else "Maintenance Mode", ops.maintenanceMode) { ops = ops.copy(maintenanceMode = it) }
 
-                    Spacer(Modifier.height(4.dp))
-                    Button(onClick = { onSaveOperations(ops) }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Rounded.Save, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(strings.adminSaveChanges)
-                    }
+                Spacer(Modifier.height(4.dp))
+                Button(onClick = { onSaveOperations(ops) }, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Rounded.Save, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(strings.adminSaveChanges)
                 }
             }
         }
 
         // 3. Full JSON Database Backup Export & Import
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(MihrabIcons.DatabaseBackup, null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (isArabicUi) "النسخ الاحتياطي الشامل لقاعدة البيانات" else "Full JSON Database Backup & Restore", style = MaterialTheme.typography.titleLarge)
+            LiquidGlassCard(shape = RoundedCornerShape(24.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(MihrabIcons.DatabaseBackup, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (isArabicUi) "النسخ الاحتياطي الشامل لقاعدة البيانات" else "Full JSON Database Backup & Restore", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Button(onClick = onExportBackup, shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Rounded.Download, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(strings.adminExportBackup)
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        Button(onClick = onExportBackup, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Rounded.Download, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(strings.adminExportBackup)
-                        }
-                        OutlinedButton(onClick = onImportBackup, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Rounded.UploadFile, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(strings.adminImportBackup)
-                        }
+                    OutlinedButton(onClick = onImportBackup, shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Rounded.UploadFile, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(strings.adminImportBackup)
                     }
                 }
             }
@@ -638,34 +720,31 @@ private fun AppOperationsTab(
 
         // 4. Users Directory & Quick Operations
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(MihrabIcons.UsersManager, null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            if (isArabicUi) "إدارة المستخدمين (${users.size})" else "Users Directory (${users.size})",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                    }
-                    OutlinedTextField(
-                        value = userQuery,
-                        onValueChange = { userQuery = it },
-                        leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                        label = { Text(if (isArabicUi) "بحث بالاسم أو المدينة أو UID" else "Search user name, city or UID") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+            LiquidGlassCard(shape = RoundedCornerShape(24.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(MihrabIcons.UsersManager, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (isArabicUi) "إدارة المستخدمين (${users.size})" else "Users Directory (${users.size})",
+                        style = MaterialTheme.typography.titleLarge.withTabularNums(),
+                        fontWeight = FontWeight.Bold
                     )
                 }
+                OutlinedTextField(
+                    value = userQuery,
+                    onValueChange = { userQuery = it },
+                    leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                    label = { Text(if (isArabicUi) "بحث بالاسم أو المدينة أو UID" else "Search user name, city or UID") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
 
         items(filteredUsers, key = { it.userId }) { u ->
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+            LiquidGlassCard(shape = RoundedCornerShape(22.dp), contentPadding = 14.dp) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -673,7 +752,7 @@ private fun AppOperationsTab(
                         Text(u.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text(
                             "${u.city} • ${u.preferredLanguage.uppercase()} • صفحة ${u.lastReadPage} • ختمة ${u.khatmahPagesRead}/604",
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodySmall.withTabularNums(),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(u.userId, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)

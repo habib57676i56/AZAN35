@@ -10,6 +10,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -22,17 +23,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.WarningAmber
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
@@ -56,6 +56,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
@@ -92,8 +93,13 @@ import com.example.ui.screens.PrayerScreen
 import com.example.ui.screens.QuranScreen
 import com.example.ui.screens.ToolsScreen
 import com.example.ui.theme.AppThemeMode
+import com.example.ui.theme.BurnishedGold
+import com.example.ui.theme.FloatingLiquidGlassDock
+import com.example.ui.theme.LiquidGlassCard
+import com.example.ui.theme.LocalLiquidGlassPalette
 import com.example.ui.theme.MihrabTheme
 import com.example.ui.theme.MihrabThemePreset
+import com.example.ui.theme.SacredAmbientCanvas
 import com.example.ui.viewmodel.AdminViewModel
 import com.example.ui.viewmodel.AiViewModel
 import com.example.ui.viewmodel.MihrabViewModel
@@ -326,6 +332,8 @@ private fun AuthenticatedMihrabShell(
 
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab) }
     var learnSubTab by rememberSaveable { mutableIntStateOf(0) }
+    var dhikrSubTab by rememberSaveable { mutableIntStateOf(0) }
+    var dhikrSubTabNonce by rememberSaveable { mutableIntStateOf(0) }
     var showAdminDashboard by rememberSaveable { mutableStateOf(false) }
     var bannerDismissedKey by rememberSaveable { mutableStateOf("") }
 
@@ -361,6 +369,7 @@ private fun AuthenticatedMihrabShell(
         fontScale = fontScale,
         arabicPrimary = arabicPrimary
     ) {
+        val glass = LocalLiquidGlassPalette.current
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             CompositionLocalProvider(LocalLayoutDirection provides appLanguage.layoutDirection) {
                 if (showAdminDashboard && isSuperAdmin) {
@@ -385,275 +394,319 @@ private fun AuthenticatedMihrabShell(
                         onBack = { showAdminDashboard = false }
                     )
                 } else if (effectiveSettings.kidsMode && appOperations.kidsModeEnabled) {
-                    Scaffold(
-                        topBar = {
-                            TopAppBar(
-                                title = { Text("${strings.appTitle} • أطفال") },
-                                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
-                            )
-                        },
-                        contentWindowInsets = WindowInsets(0, 0, 0, 0)
-                    ) { innerPadding ->
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(innerPadding)
-                        ) {
-                            KidsModeScreen(
-                                audioPlayer = audioPlayer,
-                                onExitKidsMode = { mihrabViewModel.updateSettings(mapOf("kidsMode" to false)) }
-                            )
-                        }
-                    }
-                } else {
-                    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                        val useNavRail = maxWidth >= 700.dp
-
+                    SacredAmbientCanvas {
                         Scaffold(
-                            snackbarHost = { SnackbarHost(snackbarHostState) },
+                            containerColor = Color.Transparent,
                             topBar = {
-                                TopAppBar(
-                                    title = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                imageVector = MihrabIcons.MihrabArch,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(24.dp)
-                                            )
-                                            Spacer(Modifier.width(8.dp))
-                                            Text(strings.appTitle, style = MaterialTheme.typography.headlineMedium)
-                                        }
-                                    },
-                                    actions = {
-                                        if (isSuperAdmin) {
-                                            IconButton(
-                                                onClick = { showAdminDashboard = true },
-                                                modifier = Modifier.testTag("top_bar_admin_button")
-                                            ) {
-                                                Icon(
-                                                    imageVector = MihrabIcons.AdminShield,
-                                                    contentDescription = strings.adminDashboardTitle,
-                                                    tint = MaterialTheme.colorScheme.primary
-                                                )
-                                            }
-                                        }
-                                    },
-                                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
-                                )
-                            },
-                            bottomBar = {
-                                if (!useNavRail) {
-                                    NavigationBar {
-                                        navItems.forEachIndexed { idx, (label, filled, outlined) ->
-                                            NavigationBarItem(
-                                                selected = selectedTab == idx,
-                                                onClick = { selectedTab = idx },
-                                                icon = {
-                                                    Icon(
-                                                        imageVector = if (selectedTab == idx) filled else outlined,
-                                                        contentDescription = label
-                                                    )
-                                                },
-                                                label = { Text(label) },
-                                                modifier = Modifier.testTag("nav_tab_$idx")
-                                            )
-                                        }
-                                    }
+                                Column {
+                                    TopAppBar(
+                                        title = { Text("${strings.appTitle} • أطفال", fontWeight = FontWeight.Bold) },
+                                        colors = TopAppBarDefaults.topAppBarColors(containerColor = glass.dockBackground)
+                                    )
+                                    HorizontalDivider(color = glass.glassBorder, thickness = 0.8.dp)
                                 }
-                            }
+                            },
+                            contentWindowInsets = WindowInsets(0, 0, 0, 0)
                         ) { innerPadding ->
-                            Row(
+                            Box(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(innerPadding)
                             ) {
-                                if (useNavRail) {
-                                    NavigationRail {
-                                        navItems.forEachIndexed { idx, (label, filled, outlined) ->
-                                            NavigationRailItem(
-                                                selected = selectedTab == idx,
-                                                onClick = { selectedTab = idx },
-                                                icon = {
-                                                    Icon(
-                                                        imageVector = if (selectedTab == idx) filled else outlined,
-                                                        contentDescription = label
+                                KidsModeScreen(
+                                    audioPlayer = audioPlayer,
+                                    onExitKidsMode = { mihrabViewModel.updateSettings(mapOf("kidsMode" to false)) }
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    SacredAmbientCanvas {
+                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                            val useNavRail = maxWidth >= 700.dp
+
+                            Scaffold(
+                                containerColor = Color.Transparent,
+                                snackbarHost = { SnackbarHost(snackbarHostState) },
+                                topBar = {
+                                    Column {
+                                        TopAppBar(
+                                            title = {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                                ) {
+                                                    Surface(
+                                                        shape = CircleShape,
+                                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                                                        border = BorderStroke(1.dp, glass.glassBorder),
+                                                        modifier = Modifier.size(36.dp)
+                                                    ) {
+                                                        Box(contentAlignment = Alignment.Center) {
+                                                            Icon(
+                                                                imageVector = MihrabIcons.MihrabArch,
+                                                                contentDescription = null,
+                                                                tint = MaterialTheme.colorScheme.primary,
+                                                                modifier = Modifier.size(20.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                    Text(
+                                                        text = strings.appTitle,
+                                                        style = MaterialTheme.typography.headlineMedium,
+                                                        fontWeight = FontWeight.Bold
                                                     )
-                                                },
-                                                label = { Text(label) }
-                                            )
-                                        }
+                                                }
+                                            },
+                                            actions = {
+                                                if (isSuperAdmin) {
+                                                    Surface(
+                                                        onClick = { showAdminDashboard = true },
+                                                        shape = CircleShape,
+                                                        color = BurnishedGold.copy(alpha = 0.14f),
+                                                        border = BorderStroke(1.dp, BurnishedGold.copy(alpha = 0.5f)),
+                                                        modifier = Modifier
+                                                            .padding(end = 8.dp)
+                                                            .size(40.dp)
+                                                            .testTag("top_bar_admin_button")
+                                                    ) {
+                                                        Box(contentAlignment = Alignment.Center) {
+                                                            Icon(
+                                                                imageVector = MihrabIcons.AdminShield,
+                                                                contentDescription = strings.adminDashboardTitle,
+                                                                tint = MaterialTheme.colorScheme.primary,
+                                                                modifier = Modifier.size(20.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            colors = TopAppBarDefaults.topAppBarColors(containerColor = glass.dockBackground)
+                                        )
+                                        HorizontalDivider(color = glass.glassBorder, thickness = 0.8.dp)
+                                    }
+                                },
+                                bottomBar = {
+                                    if (!useNavRail) {
+                                        FloatingLiquidGlassDock(
+                                            items = navItems,
+                                            selectedTab = selectedTab,
+                                            onSelectTab = { selectedTab = it }
+                                        )
                                     }
                                 }
-
-                                Column(
+                            ) { innerPadding ->
+                                Row(
                                     modifier = Modifier
-                                        .weight(1f)
                                         .fillMaxSize()
+                                        .padding(innerPadding)
                                 ) {
-                                    val bannerTitle = if (arabicPrimary) appOperations.bannerTitleAr.ifBlank { appOperations.bannerTitleEn }
-                                    else appOperations.bannerTitleEn.ifBlank { appOperations.bannerTitleAr }
-                                    val bannerBody = if (arabicPrimary) appOperations.bannerBodyAr.ifBlank { appOperations.bannerBodyEn }
-                                    else appOperations.bannerBodyEn.ifBlank { appOperations.bannerBodyAr }
-                                    val bannerSignature = "$bannerTitle|$bannerBody|${appOperations.bannerTone}"
-
-                                    if (appOperations.bannerEnabled &&
-                                        (bannerTitle.isNotBlank() || bannerBody.isNotBlank()) &&
-                                        bannerDismissedKey != bannerSignature
-                                    ) {
-                                        val toneContainer = when (appOperations.bannerTone) {
-                                            "URGENT" -> MaterialTheme.colorScheme.errorContainer
-                                            "SUCCESS" -> MaterialTheme.colorScheme.secondaryContainer
-                                            else -> MaterialTheme.colorScheme.primaryContainer
-                                        }
-                                        val toneContent = when (appOperations.bannerTone) {
-                                            "URGENT" -> MaterialTheme.colorScheme.onErrorContainer
-                                            "SUCCESS" -> MaterialTheme.colorScheme.onSecondaryContainer
-                                            else -> MaterialTheme.colorScheme.onPrimaryContainer
-                                        }
-                                        Card(
-                                            colors = CardDefaults.cardColors(containerColor = toneContainer),
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 16.dp, vertical = 6.dp)
-                                                .testTag("global_broadcast_banner")
+                                    if (useNavRail) {
+                                        NavigationRail(
+                                            containerColor = glass.dockBackground
                                         ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = MihrabIcons.BroadcastBanner,
-                                                    contentDescription = null,
-                                                    tint = toneContent
+                                            navItems.forEachIndexed { idx, (label, filled, outlined) ->
+                                                NavigationRailItem(
+                                                    selected = selectedTab == idx,
+                                                    onClick = { selectedTab = idx },
+                                                    icon = {
+                                                        Icon(
+                                                            imageVector = if (selectedTab == idx) filled else outlined,
+                                                            contentDescription = label
+                                                        )
+                                                    },
+                                                    label = { Text(label) }
                                                 )
-                                                Column(modifier = Modifier.weight(1f)) {
-                                                    if (bannerTitle.isNotBlank()) {
-                                                        Text(
-                                                            text = bannerTitle,
-                                                            style = MaterialTheme.typography.titleSmall,
-                                                            fontWeight = FontWeight.Bold,
-                                                            color = toneContent
-                                                        )
-                                                    }
-                                                    if (bannerBody.isNotBlank()) {
-                                                        Text(
-                                                            text = bannerBody,
-                                                            style = MaterialTheme.typography.bodySmall,
-                                                            color = toneContent
-                                                        )
-                                                    }
-                                                }
-                                                IconButton(onClick = { bannerDismissedKey = bannerSignature }) {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.Close,
-                                                        contentDescription = strings.cancel,
-                                                        tint = toneContent
-                                                    )
-                                                }
                                             }
                                         }
                                     }
 
-                                    if (appOperations.maintenanceMode) {
-                                        Card(
-                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 16.dp, vertical = 4.dp)
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.WarningAmber,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.onTertiaryContainer
-                                                )
-                                                Column {
-                                                    Text(
-                                                        text = strings.maintenanceNoticeTitle,
-                                                        style = MaterialTheme.typography.labelLarge,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = MaterialTheme.colorScheme.onTertiaryContainer
-                                                    )
-                                                    Text(
-                                                        text = strings.maintenanceNoticeBody,
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = MaterialTheme.colorScheme.onTertiaryContainer
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    Box(
+                                    Column(
                                         modifier = Modifier
                                             .weight(1f)
-                                            .fillMaxWidth()
+                                            .fillMaxSize()
                                     ) {
-                                        when (selectedTab) {
-                                            0 -> PrayerScreen(
-                                                viewModel = mihrabViewModel,
-                                                adhanAudioPlayer = adhanAudioPlayer,
-                                                appLanguage = appLanguage,
-                                                strings = strings,
-                                                useIndic = useIndic,
-                                                appOperations = appOperations,
-                                                onOpenKhutbahAi = {
-                                                    learnSubTab = 3
-                                                    selectedTab = 3
+                                        val bannerTitle = if (arabicPrimary) appOperations.bannerTitleAr.ifBlank { appOperations.bannerTitleEn }
+                                        else appOperations.bannerTitleEn.ifBlank { appOperations.bannerTitleAr }
+                                        val bannerBody = if (arabicPrimary) appOperations.bannerBodyAr.ifBlank { appOperations.bannerBodyEn }
+                                        else appOperations.bannerBodyEn.ifBlank { appOperations.bannerBodyAr }
+                                        val bannerSignature = "$bannerTitle|$bannerBody|${appOperations.bannerTone}"
+
+                                        if (appOperations.bannerEnabled &&
+                                            (bannerTitle.isNotBlank() || bannerBody.isNotBlank()) &&
+                                            bannerDismissedKey != bannerSignature
+                                        ) {
+                                            val toneBorder = when (appOperations.bannerTone) {
+                                                "URGENT", "ALERT" -> MaterialTheme.colorScheme.error.copy(alpha = 0.55f)
+                                                "SUCCESS" -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.55f)
+                                                else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                            }
+                                            val toneContent = when (appOperations.bannerTone) {
+                                                "URGENT", "ALERT" -> MaterialTheme.colorScheme.error
+                                                else -> MaterialTheme.colorScheme.primary
+                                            }
+                                            LiquidGlassCard(
+                                                shape = RoundedCornerShape(20.dp),
+                                                containerColor = glass.glassFillStrong,
+                                                borderColor = toneBorder,
+                                                contentPadding = 12.dp,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                                                    .testTag("global_broadcast_banner")
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = MihrabIcons.BroadcastBanner,
+                                                        contentDescription = null,
+                                                        tint = toneContent
+                                                    )
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        if (bannerTitle.isNotBlank()) {
+                                                            Text(
+                                                                text = bannerTitle,
+                                                                style = MaterialTheme.typography.titleSmall,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = toneContent
+                                                            )
+                                                        }
+                                                        if (bannerBody.isNotBlank()) {
+                                                            Text(
+                                                                text = bannerBody,
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.onSurface
+                                                            )
+                                                        }
+                                                    }
+                                                    IconButton(onClick = { bannerDismissedKey = bannerSignature }) {
+                                                        Icon(
+                                                            imageVector = Icons.Rounded.Close,
+                                                            contentDescription = strings.cancel,
+                                                            tint = toneContent
+                                                        )
+                                                    }
                                                 }
-                                            )
-                                            1 -> QuranScreen(
-                                                viewModel = mihrabViewModel,
-                                                aiViewModel = aiViewModel,
-                                                audioPlayer = audioPlayer,
-                                                recitationPlayer = recitationPlayer,
-                                                appLanguage = appLanguage,
-                                                strings = strings,
-                                                appOperations = appOperations,
-                                                onOpenAiAssistant = {
-                                                    learnSubTab = 3
-                                                    selectedTab = 3
+                                            }
+                                        }
+
+                                        if (appOperations.maintenanceMode) {
+                                            LiquidGlassCard(
+                                                shape = RoundedCornerShape(20.dp),
+                                                containerColor = glass.glassFillStrong,
+                                                borderColor = BurnishedGold.copy(alpha = 0.55f),
+                                                contentPadding = 12.dp,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.WarningAmber,
+                                                        contentDescription = null,
+                                                        tint = BurnishedGold
+                                                    )
+                                                    Column {
+                                                        Text(
+                                                            text = strings.maintenanceNoticeTitle,
+                                                            style = MaterialTheme.typography.labelLarge,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = BurnishedGold
+                                                        )
+                                                        Text(
+                                                            text = strings.maintenanceNoticeBody,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurface
+                                                        )
+                                                    }
                                                 }
-                                            )
-                                            2 -> DhikrScreen(
-                                                viewModel = mihrabViewModel,
-                                                audioPlayer = audioPlayer,
-                                                currentUserId = currentUserId,
-                                                appLanguage = appLanguage,
-                                                strings = strings,
-                                                useIndic = useIndic,
-                                                appOperations = appOperations
-                                            )
-                                            3 -> LearnScreen(
-                                                viewModel = mihrabViewModel,
-                                                aiViewModel = aiViewModel,
-                                                audioPlayer = audioPlayer,
-                                                appLanguage = appLanguage,
-                                                strings = strings,
-                                                useIndic = useIndic,
-                                                initialSubTab = learnSubTab,
-                                                appOperations = appOperations
-                                            )
-                                            4 -> ToolsScreen(
-                                                viewModel = mihrabViewModel,
-                                                strings = strings,
-                                                appLanguage = appLanguage,
-                                                currentThemePreset = themePreset,
-                                                onChangeThemePreset = onChangeThemePreset,
-                                                currentThemeMode = themeMode,
-                                                useIndic = useIndic,
-                                                onToggleIndic = { mihrabViewModel.toggleIndicNumerals(it) },
-                                                isSuperAdmin = isSuperAdmin,
-                                                onOpenAdminDashboard = { if (isSuperAdmin) showAdminDashboard = true },
-                                                appOperations = appOperations,
-                                                onSignOut = onSignOut
-                                            )
+                                            }
+                                        }
+
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .fillMaxWidth()
+                                        ) {
+                                            when (selectedTab) {
+                                                0 -> PrayerScreen(
+                                                    viewModel = mihrabViewModel,
+                                                    adhanAudioPlayer = adhanAudioPlayer,
+                                                    appLanguage = appLanguage,
+                                                    strings = strings,
+                                                    useIndic = useIndic,
+                                                    appOperations = appOperations,
+                                                    onOpenKhutbahAi = {
+                                                        learnSubTab = 3
+                                                        selectedTab = 3
+                                                    },
+                                                    onOpenMushaf = {
+                                                        selectedTab = 1
+                                                    },
+                                                    onOpenTasbih = {
+                                                        dhikrSubTab = 1
+                                                        dhikrSubTabNonce += 1
+                                                        selectedTab = 2
+                                                    },
+                                                    onOpenAi = {
+                                                        learnSubTab = 3
+                                                        selectedTab = 3
+                                                    }
+                                                )
+                                                1 -> QuranScreen(
+                                                    viewModel = mihrabViewModel,
+                                                    aiViewModel = aiViewModel,
+                                                    audioPlayer = audioPlayer,
+                                                    recitationPlayer = recitationPlayer,
+                                                    appLanguage = appLanguage,
+                                                    strings = strings,
+                                                    appOperations = appOperations,
+                                                    onOpenAiAssistant = {
+                                                        learnSubTab = 3
+                                                        selectedTab = 3
+                                                    }
+                                                )
+                                                2 -> DhikrScreen(
+                                                    viewModel = mihrabViewModel,
+                                                    audioPlayer = audioPlayer,
+                                                    currentUserId = currentUserId,
+                                                    appLanguage = appLanguage,
+                                                    strings = strings,
+                                                    useIndic = useIndic,
+                                                    appOperations = appOperations,
+                                                    initialSubTab = dhikrSubTab,
+                                                    subTabTriggerNonce = dhikrSubTabNonce
+                                                )
+                                                3 -> LearnScreen(
+                                                    viewModel = mihrabViewModel,
+                                                    aiViewModel = aiViewModel,
+                                                    audioPlayer = audioPlayer,
+                                                    appLanguage = appLanguage,
+                                                    strings = strings,
+                                                    useIndic = useIndic,
+                                                    initialSubTab = learnSubTab,
+                                                    appOperations = appOperations
+                                                )
+                                                4 -> ToolsScreen(
+                                                    viewModel = mihrabViewModel,
+                                                    strings = strings,
+                                                    appLanguage = appLanguage,
+                                                    currentThemePreset = themePreset,
+                                                    onChangeThemePreset = onChangeThemePreset,
+                                                    currentThemeMode = themeMode,
+                                                    useIndic = useIndic,
+                                                    onToggleIndic = { mihrabViewModel.toggleIndicNumerals(it) },
+                                                    isSuperAdmin = isSuperAdmin,
+                                                    onOpenAdminDashboard = { if (isSuperAdmin) showAdminDashboard = true },
+                                                    appOperations = appOperations,
+                                                    onSignOut = onSignOut
+                                                )
+                                            }
                                         }
                                     }
                                 }

@@ -9,6 +9,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -29,10 +31,7 @@ import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -54,7 +53,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -68,6 +66,10 @@ import com.example.data.firebase.UserSettingsDoc
 import com.example.domain.QuranContentData
 import com.example.domain.RecitationCheckResult
 import com.example.ui.theme.AmiriFontFamily
+import com.example.ui.theme.LiquidGlassCard
+import com.example.ui.theme.LiquidGlassPill
+import com.example.ui.theme.LocalLiquidGlassPalette
+import com.example.ui.theme.withTabularNums
 import com.example.ui.viewmodel.AiUiState
 import com.example.ui.viewmodel.AiViewModel
 import com.example.ui.viewmodel.MihrabViewModel
@@ -80,6 +82,7 @@ fun AlMusammiSection(
     aiViewModel: AiViewModel
 ) {
     val context = LocalContext.current
+    val glass = LocalLiquidGlassPalette.current
     val coachState by aiViewModel.recitationCoachState.collectAsStateWithLifecycle()
 
     var selectedSurahIdx by remember { mutableIntStateOf(0) }
@@ -159,190 +162,191 @@ fun AlMusammiSection(
     val visibleThreshold = ((1f - maskFraction) * words.size).roundToInt().coerceAtLeast(hintRevealedWords)
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-            shape = MaterialTheme.shapes.large,
+        LiquidGlassCard(
+            shape = RoundedCornerShape(26.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text("Al-Musammi' Recitation Checker", style = MaterialTheme.typography.titleLarge)
-                        Text("Progressive word masking & AI Tajweed coach", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Exam", style = MaterialTheme.typography.labelLarge)
-                        Spacer(Modifier.width(6.dp))
-                        Switch(checked = examMode, onCheckedChange = {
-                            examMode = it
-                            if (it) maskFraction = 1f
-                        })
-                    }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Al-Musammi' Recitation Checker", style = MaterialTheme.typography.titleLarge)
+                    Text("Progressive word masking & AI Tajweed coach", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Exam", style = MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.width(6.dp))
+                    Switch(checked = examMode, onCheckedChange = {
+                        examMode = it
+                        if (it) maskFraction = 1f
+                    })
+                }
+            }
 
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                QuranContentData.surahs.forEachIndexed { idx, s ->
+                    LiquidGlassPill(
+                        selected = selectedSurahIdx == idx,
+                        onClick = {
+                            selectedSurahIdx = idx
+                            selectedAyahIdx = 0
+                            diffResult = null
+                            hintRevealedWords = 0
+                            aiViewModel.resetRecitationCoach()
+                        },
+                        label = s.nameEn.substringBefore(" (")
+                    )
+                }
+            }
+
+            if (surah.ayahs.size > 1) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    QuranContentData.surahs.forEachIndexed { idx, s ->
-                        FilterChip(
-                            selected = selectedSurahIdx == idx,
+                    surah.ayahs.forEachIndexed { idx, item ->
+                        LiquidGlassPill(
+                            selected = selectedAyahIdx == idx,
                             onClick = {
-                                selectedSurahIdx = idx
-                                selectedAyahIdx = 0
+                                selectedAyahIdx = idx
                                 diffResult = null
                                 hintRevealedWords = 0
-                                aiViewModel.resetRecitationCoach()
                             },
-                            label = { Text(s.nameEn.substringBefore(" (")) }
+                            label = "Ayah ${item.number}"
                         )
                     }
                 }
+            }
 
-                if (surah.ayahs.size > 1) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        surah.ayahs.forEachIndexed { idx, item ->
-                            FilterChip(
-                                selected = selectedAyahIdx == idx,
-                                onClick = {
-                                    selectedAyahIdx = idx
-                                    diffResult = null
-                                    hintRevealedWords = 0
-                                },
-                                label = { Text("Ayah ${item.number}") }
-                            )
-                        }
-                    }
-                }
-
-                if (!examMode) {
-                    Text("Progressive Page Masking: ${(maskFraction * 100).roundToInt()}% hidden", style = MaterialTheme.typography.labelLarge)
-                    Slider(
-                        value = maskFraction,
-                        onValueChange = { maskFraction = it },
-                        valueRange = 0f..1f
-                    )
-                }
-
-                Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    val maskedText = words.mapIndexed { idx, word ->
-                        if (idx < visibleThreshold) word else "••••"
-                    }.joinToString("  ")
-
-                    Text(
-                        text = maskedText,
-                        fontFamily = AmiriFontFamily,
-                        fontSize = 24.sp,
-                        lineHeight = 40.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(16.dp)
-                    )
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (!examMode) {
-                        OutlinedButton(onClick = { hintRevealedWords = (hintRevealedWords + 1).coerceAtMost(words.size) }) {
-                            Icon(Icons.Rounded.Lightbulb, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Hint Word")
-                        }
-                    }
-                    Button(
-                        onClick = {
-                            if (isListening) {
-                                speechRecognizer?.stopListening()
-                                isListening = false
-                            } else {
-                                val granted = ContextCompat.checkSelfPermission(
-                                    context, Manifest.permission.RECORD_AUDIO
-                                ) == PackageManager.PERMISSION_GRANTED
-                                if (granted) startArabicSpeechRecognition()
-                                else audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                            }
-                        },
-                        modifier = Modifier.testTag("musammi_mic_button")
-                    ) {
-                        Icon(if (isListening) Icons.Rounded.Stop else Icons.Rounded.Mic, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (isListening) "Stop" else "Recite by Voice")
-                    }
-                }
-
-                if (micNotice != null) {
-                    Text(micNotice!!, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                }
-
-                OutlinedTextField(
-                    value = spokenAttempt,
-                    onValueChange = { spokenAttempt = it },
-                    label = { Text("Recitation attempt (voice transcript or manual Arabic)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2
+            if (!examMode) {
+                Text("Progressive Page Masking: ${(maskFraction * 100).roundToInt()}% hidden", style = MaterialTheme.typography.labelLarge.withTabularNums())
+                Slider(
+                    value = maskFraction,
+                    onValueChange = { maskFraction = it },
+                    valueRange = 0f..1f
                 )
+            }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = { diffResult = QuranContentData.compareRecitation(ayah.arabic, spokenAttempt) },
-                        enabled = spokenAttempt.isNotBlank()
-                    ) {
-                        Text("Check Words")
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            aiViewModel.evaluateRecitation(
-                                surahName = surah.nameEn,
-                                ayahRef = "${surah.number}:${ayah.number}",
-                                expectedArabic = ayah.arabic,
-                                recitedText = spokenAttempt
-                            )
-                        },
-                        enabled = spokenAttempt.isNotBlank()
-                    ) {
-                        Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(16.dp))
+            Surface(
+                color = glass.glassSubtleFill,
+                border = BorderStroke(1.dp, glass.glassBorder),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                val maskedText = words.mapIndexed { idx, word ->
+                    if (idx < visibleThreshold) word else "••••"
+                }.joinToString("  ")
+
+                Text(
+                    text = maskedText,
+                    fontFamily = AmiriFontFamily,
+                    fontSize = 24.sp,
+                    lineHeight = 40.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!examMode) {
+                    OutlinedButton(onClick = { hintRevealedWords = (hintRevealedWords + 1).coerceAtMost(words.size) }) {
+                        Icon(Icons.Rounded.Lightbulb, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("AI Tajweed Coach")
+                        Text("Hint Word")
                     }
                 }
+                Button(
+                    onClick = {
+                        if (isListening) {
+                            speechRecognizer?.stopListening()
+                            isListening = false
+                        } else {
+                            val granted = ContextCompat.checkSelfPermission(
+                                context, Manifest.permission.RECORD_AUDIO
+                            ) == PackageManager.PERMISSION_GRANTED
+                            if (granted) startArabicSpeechRecognition()
+                            else audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                    modifier = Modifier.testTag("musammi_mic_button")
+                ) {
+                    Icon(if (isListening) Icons.Rounded.Stop else Icons.Rounded.Mic, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (isListening) "Stop" else "Recite by Voice")
+                }
+            }
 
-                diffResult?.let { result ->
-                    HorizontalDivider()
-                    Text(
-                        "Accuracy: ${result.accuracyPercent}% • ${result.missingCount} word(s) to review",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        result.wordDiffs.forEach { diff ->
-                            Surface(
-                                color = if (diff.matched) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
-                                shape = MaterialTheme.shapes.small
-                            ) {
-                                Text(
-                                    text = diff.expectedWord,
-                                    fontFamily = AmiriFontFamily,
-                                    fontSize = 18.sp,
-                                    color = if (diff.matched) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
+            if (micNotice != null) {
+                Text(micNotice!!, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            }
+
+            OutlinedTextField(
+                value = spokenAttempt,
+                onValueChange = { spokenAttempt = it },
+                label = { Text("Recitation attempt (voice transcript or manual Arabic)") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { diffResult = QuranContentData.compareRecitation(ayah.arabic, spokenAttempt) },
+                    enabled = spokenAttempt.isNotBlank()
+                ) {
+                    Text("Check Words")
+                }
+                OutlinedButton(
+                    onClick = {
+                        aiViewModel.evaluateRecitation(
+                            surahName = surah.nameEn,
+                            ayahRef = "${surah.number}:${ayah.number}",
+                            expectedArabic = ayah.arabic,
+                            recitedText = spokenAttempt
+                        )
+                    },
+                    enabled = spokenAttempt.isNotBlank()
+                ) {
+                    Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("AI Tajweed Coach")
+                }
+            }
+
+            diffResult?.let { result ->
+                HorizontalDivider(color = glass.glassBorder)
+                Text(
+                    "Accuracy: ${result.accuracyPercent}% • ${result.missingCount} word(s) to review",
+                    style = MaterialTheme.typography.titleMedium.withTabularNums(),
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    result.wordDiffs.forEach { diff ->
+                        Surface(
+                            color = if (diff.matched) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+                            shape = MaterialTheme.shapes.small
+                        ) {
+                            Text(
+                                text = diff.expectedWord,
+                                fontFamily = AmiriFontFamily,
+                                fontSize = 18.sp,
+                                color = if (diff.matched) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
                         }
                     }
                 }
+            }
 
-                when (val cs = coachState) {
-                    is AiUiState.Loading -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    is AiUiState.Success -> Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-                        Text(cs.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(12.dp))
-                    }
-                    is AiUiState.Error -> Text(cs.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                    else -> Unit
+            when (val cs = coachState) {
+                is AiUiState.Loading -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                is AiUiState.Success -> LiquidGlassCard(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f),
+                    contentPadding = 12.dp
+                ) {
+                    Text(cs.text, style = MaterialTheme.typography.bodyMedium)
                 }
+                is AiUiState.Error -> Text(cs.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                else -> Unit
             }
         }
     }
@@ -356,60 +360,56 @@ fun KhatmahAndGroupsSection(
     viewModel: MihrabViewModel,
     familyKhatmahEnabled: Boolean = true
 ) {
+    val glass = LocalLiquidGlassPalette.current
     var newGroupName by remember { mutableStateOf("") }
     var dailyPagesGoal by remember { mutableIntStateOf(20) }
     val pagesRead = settings.khatmahPagesRead.toInt().coerceIn(0, 604)
     val daysLeft = ((604 - pagesRead).coerceAtLeast(0) + dailyPagesGoal - 1) / dailyPagesGoal
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-            shape = MaterialTheme.shapes.large,
+        LiquidGlassCard(
+            shape = RoundedCornerShape(26.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Personal Khatmah Planner", style = MaterialTheme.typography.titleLarge)
-                Text(
-                    "$pagesRead / 604 Mushaf Pages (${(pagesRead * 100) / 604}%) • Est. $daysLeft days remaining at $dailyPagesGoal pages/day",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                LinearProgressIndicator(
-                    progress = { pagesRead / 604f },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(10.dp)
-                        .clip(CircleShape)
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = {
-                        viewModel.updateSettings(mapOf("khatmahPagesRead" to (pagesRead + 4).coerceAtMost(604).toLong()))
-                    }) {
-                        Text("+4 Pages (1 Wird)")
-                    }
-                    OutlinedButton(onClick = {
-                        viewModel.updateSettings(mapOf("khatmahPagesRead" to (pagesRead + 20).coerceAtMost(604).toLong()))
-                    }) {
-                        Text("+20 Pages (1 Juz')")
-                    }
+            Text("Personal Khatmah Planner", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "$pagesRead / 604 Mushaf Pages (${(pagesRead * 100) / 604}%) • Est. $daysLeft days remaining at $dailyPagesGoal pages/day",
+                style = MaterialTheme.typography.bodyMedium.withTabularNums(),
+                color = MaterialTheme.colorScheme.primary
+            )
+            LinearProgressIndicator(
+                progress = { pagesRead / 604f },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(10.dp)
+                    .clip(CircleShape)
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    viewModel.updateSettings(mapOf("khatmahPagesRead" to (pagesRead + 4).coerceAtMost(604).toLong()))
+                }) {
+                    Text("+4 Pages (1 Wird)")
                 }
-                Text("Daily Pace Goal: $dailyPagesGoal pages/day", style = MaterialTheme.typography.labelLarge)
-                Slider(
-                    value = dailyPagesGoal.toFloat(),
-                    onValueChange = { dailyPagesGoal = it.roundToInt().coerceIn(4, 40) },
-                    valueRange = 4f..40f
-                )
+                OutlinedButton(onClick = {
+                    viewModel.updateSettings(mapOf("khatmahPagesRead" to (pagesRead + 20).coerceAtMost(604).toLong()))
+                }) {
+                    Text("+20 Pages (1 Juz')")
+                }
             }
+            Text("Daily Pace Goal: $dailyPagesGoal pages/day", style = MaterialTheme.typography.labelLarge.withTabularNums())
+            Slider(
+                value = dailyPagesGoal.toFloat(),
+                onValueChange = { dailyPagesGoal = it.roundToInt().coerceIn(4, 40) },
+                valueRange = 4f..40f
+            )
         }
 
         if (familyKhatmahEnabled) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                shape = MaterialTheme.shapes.large,
+            LiquidGlassCard(
+                shape = RoundedCornerShape(26.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Family & Friends Khatmah", style = MaterialTheme.typography.titleLarge)
+                Text("Family & Friends Khatmah", style = MaterialTheme.typography.titleLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = newGroupName,
@@ -440,27 +440,24 @@ fun KhatmahAndGroupsSection(
                             )
                         } else {
                             groupsState.data.forEach { group ->
-                                Card(
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                LiquidGlassCard(
+                                    containerColor = glass.glassSubtleFill,
+                                    contentPadding = 12.dp,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            Text(group.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                            Text("${group.completedJuz.size}/30 Juz • Code ${group.joinCode}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                                        }
-                                        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            (1..30).forEach { juz ->
-                                                val done = juz.toLong() in group.completedJuz
-                                                FilterChip(
-                                                    selected = done,
-                                                    onClick = { viewModel.toggleGroupJuz(group, juz) },
-                                                    label = { Text("J$juz") },
-                                                    leadingIcon = if (done) {
-                                                        { Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(14.dp)) }
-                                                    } else null
-                                                )
-                                            }
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text(group.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                        Text("${group.completedJuz.size}/30 Juz • Code ${group.joinCode}", style = MaterialTheme.typography.labelLarge.withTabularNums(), color = MaterialTheme.colorScheme.primary)
+                                    }
+                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        (1..30).forEach { juz ->
+                                            val done = juz.toLong() in group.completedJuz
+                                            LiquidGlassPill(
+                                                selected = done,
+                                                onClick = { viewModel.toggleGroupJuz(group, juz) },
+                                                icon = if (done) Icons.Rounded.CheckCircle else null,
+                                                label = "J$juz"
+                                            )
                                         }
                                     }
                                 }
@@ -471,5 +468,4 @@ fun KhatmahAndGroupsSection(
             }
         }
     }
-}
 }
