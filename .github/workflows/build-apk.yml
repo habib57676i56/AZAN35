@@ -41,8 +41,10 @@ jobs:
             echo "Using sdkmanager: $SDKMANAGER"
             yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
             "$SDKMANAGER" "platform-tools" "build-tools;36.0.0" "platforms;android-36.1" || \
-              "$SDKMANAGER" "platform-tools" "build-tools;36.0.0" "platforms;android-36" || true
+              "$SDKMANAGER" "platform-tools" "build-tools;36.0.0" "platforms;android-36"
           fi
+          echo "Installed platforms:" && ls -la "$SDK_DIR/platforms" || true
+          echo "Installed build-tools:" && ls -la "$SDK_DIR/build-tools" || true
 
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
@@ -69,10 +71,28 @@ jobs:
       - name: Build Debug APK
         shell: bash
         run: |
+          set -o pipefail
+          GRADLE_CMD="gradle"
           if [ -x ./gradlew ]; then
-            ./gradlew :app:assembleDebug --no-daemon --stacktrace
-          else
-            gradle :app:assembleDebug --no-daemon --stacktrace
+            GRADLE_CMD="./gradlew"
+          fi
+          if ! "$GRADLE_CMD" :app:assembleDebug \
+            --no-daemon \
+            --console=plain \
+            --max-workers=2 \
+            -Dorg.gradle.configuration-cache=false \
+            -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" \
+            2>&1 | tee build-debug.log; then
+            echo "================ BUILD FAILURE SUMMARY ================"
+            grep -n -C 2 -E "^(FAILURE:|\* What went wrong:|Caused by:|e: |> |Execution failed)|OutOfMemoryError" build-debug.log | head -n 50 || true
+            echo "======================================================="
+            {
+              echo "## Debug APK Build Failed"
+              echo '```'
+              grep -C 2 -E "^(FAILURE:|\* What went wrong:|Caused by:|e: |> |Execution failed)|OutOfMemoryError" build-debug.log | head -n 40 || tail -n 40 build-debug.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
 
       - name: Build Signed Release APK (if release signing secrets are set)
@@ -84,11 +104,16 @@ jobs:
         run: |
           if [ -n "$RELEASE_KEYSTORE_B64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ]; then
             printf '%s' "$RELEASE_KEYSTORE_B64" | tr -d '\r\n' | base64 -d > my-upload-key.jks
+            GRADLE_CMD="gradle"
             if [ -x ./gradlew ]; then
-              ./gradlew :app:assembleRelease --no-daemon --stacktrace
-            else
-              gradle :app:assembleRelease --no-daemon --stacktrace
+              GRADLE_CMD="./gradlew"
             fi
+            "$GRADLE_CMD" :app:assembleRelease \
+              --no-daemon \
+              --console=plain \
+              --max-workers=2 \
+              -Dorg.gradle.configuration-cache=false \
+              -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
           else
             echo "Release keystore secrets not configured; skipping signed Release APK."
           fi
