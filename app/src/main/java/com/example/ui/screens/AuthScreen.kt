@@ -59,7 +59,8 @@ import com.example.ui.theme.SacredEmerald
 @Composable
 fun AuthScreen(
     signInButtonText: String,
-    onAuthSuccess: () -> Unit
+    onAuthSuccess: () -> Unit,
+    firebaseConfigMissing: Boolean = false
 ) {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val glass = LocalLiquidGlassPalette.current
@@ -183,6 +184,23 @@ fun AuthScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    if (firebaseConfigMissing) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp)
+                        ) {
+                            Text(
+                                text = "إعدادات Firebase غير مدمجة في هذه النسخة (ملف app/google-services.json مفقود أثناء بناء APK). أضِف الملف في GitHub ثم أعد البناء لتفعيل تسجيل الدخول.",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+
                     if (errorMessage != null) {
                         Surface(
                             color = MaterialTheme.colorScheme.errorContainer,

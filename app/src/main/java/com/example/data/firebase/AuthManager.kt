@@ -36,6 +36,7 @@ import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Companion.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
@@ -48,6 +49,10 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+
+fun isFirebaseInitialized(context: Context): Boolean = runCatching {
+    FirebaseApp.getApps(context).isNotEmpty() || FirebaseApp.initializeApp(context) != null
+}.getOrDefault(false)
 
 internal fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
     val listener = FirebaseAuth.AuthStateListener { auth ->
@@ -64,6 +69,10 @@ fun attemptAutoSignIn(
     onUnauthenticated: () -> Unit,
     scope: CoroutineScope
 ) {
+    if (!isFirebaseInitialized(context)) {
+        onUnauthenticated()
+        return
+    }
     if (Firebase.auth.currentUser != null) {
         onAuthSuccess()
         return
@@ -167,6 +176,10 @@ fun onGoogleSignInClicked(
     scope: CoroutineScope,
     onAuthCancelled: () -> Unit = {}
 ) {
+    if (!isFirebaseInitialized(context)) {
+        onAuthError("إعدادات Firebase (google-services.json) غير مدمجة في هذه النسخة من التطبيق.")
+        return
+    }
     val clientId = resolveDefaultWebClientId(context)
     if (clientId == null) {
         onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
@@ -210,7 +223,7 @@ fun performSignOut(
             } catch (e: Exception) {
                 Log.w("Auth", "Failed to clear credential state: ${e.message}")
             } finally {
-                Firebase.auth.signOut()
+                runCatching { Firebase.auth.signOut() }
                 onSignOutComplete()
             }
         }

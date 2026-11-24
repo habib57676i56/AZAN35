@@ -80,6 +80,7 @@ import com.example.data.firebase.UserSettingsDoc
 import com.example.data.firebase.attemptAutoSignIn
 import com.example.data.firebase.authStateFlow
 import com.example.data.firebase.configureAppCheck
+import com.example.data.firebase.isFirebaseInitialized
 import com.example.data.firebase.performSignOut
 import com.example.data.local.MihrabLocalDatabase
 import com.example.data.quran.MushafRepository
@@ -105,8 +106,10 @@ import com.example.ui.viewmodel.AiViewModel
 import com.example.ui.viewmodel.MihrabViewModel
 import com.example.ui.viewmodel.UiState
 import com.google.firebase.Firebase
+import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.flow.flowOf
 import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
@@ -138,19 +141,30 @@ private fun MihrabRootApp(initialTab: Int) {
     val scope = rememberCoroutineScope()
     val credentialManager = remember(context) { CredentialManager.create(context) }
 
-    val currentUser by remember { Firebase.auth.authStateFlow() }
-        .collectAsStateWithLifecycle(initialValue = Firebase.auth.currentUser)
+    val firebaseReady = remember(context) { isFirebaseInitialized(context) }
+
+    val currentUser by remember(firebaseReady) {
+        if (firebaseReady) {
+            Firebase.auth.authStateFlow()
+        } else {
+            flowOf<FirebaseUser?>(null)
+        }
+    }.collectAsStateWithLifecycle(
+        initialValue = if (firebaseReady) runCatching { Firebase.auth.currentUser }.getOrNull() else null
+    )
 
     var themePreset by rememberSaveable { mutableStateOf(MihrabThemePreset.EMERALD_SANCTUARY) }
 
-    LaunchedEffect(Unit) {
-        attemptAutoSignIn(
-            context = context,
-            credentialManager = credentialManager,
-            onAuthSuccess = {},
-            onUnauthenticated = {},
-            scope = scope
-        )
+    LaunchedEffect(firebaseReady) {
+        if (firebaseReady) {
+            attemptAutoSignIn(
+                context = context,
+                credentialManager = credentialManager,
+                onAuthSuccess = {},
+                onUnauthenticated = {},
+                scope = scope
+            )
+        }
     }
 
     val user = currentUser
@@ -164,7 +178,8 @@ private fun MihrabRootApp(initialTab: Int) {
             Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 AuthScreen(
                     signInButtonText = stringsFor(AppLanguage.ARABIC).signInWithGoogle,
-                    onAuthSuccess = {}
+                    onAuthSuccess = {},
+                    firebaseConfigMissing = !firebaseReady
                 )
             }
         }
