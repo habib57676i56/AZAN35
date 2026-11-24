@@ -2,12 +2,21 @@
   "entities": {
     "UserSettings": {
       "title": "UserSettings",
-      "description": "User preferences, prayer location/method, Qada counters, and Khatmah summary",
+      "description": "User preferences, RTL/theme mode, last read Mushaf position, audio reciter/Adhan settings, prayer location/method, Qada counters, and Khatmah summary",
       "type": "object",
       "properties": {
         "userId": { "type": "string", "description": "Firebase Auth UID" },
         "displayName": { "type": "string", "description": "Display name" },
-        "preferredLanguage": { "type": "string", "enum": ["en", "ar", "tr", "ur"] },
+        "preferredLanguage": { "type": "string", "enum": ["ar", "en", "tr", "ur"] },
+        "themeMode": { "type": "string", "enum": ["LIGHT", "DARK", "SYSTEM"] },
+        "mushafPaper": { "type": "string", "enum": ["WHITE", "SEPIA", "DARK"] },
+        "fontScale": { "type": "number" },
+        "lastReadPage": { "type": "integer" },
+        "lastReadSurah": { "type": "integer" },
+        "lastReadAyah": { "type": "integer" },
+        "preferredReciterId": { "type": "string" },
+        "adhanEnabled": { "type": "boolean" },
+        "adhanVoiceId": { "type": "string" },
         "calculationMethod": { "type": "string", "enum": ["MWL", "ISNA", "UMM_AL_QURA", "EGYPTIAN", "KARACHI"] },
         "city": { "type": "string" },
         "latitude": { "type": "number" },
@@ -26,7 +35,13 @@
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
       },
-      "required": ["userId", "displayName", "preferredLanguage", "calculationMethod", "city", "latitude", "longitude", "hijriOffset", "travelerMode", "ramadanMode", "kidsMode", "qadaFajr", "qadaDhuhr", "qadaAsr", "qadaMaghrib", "qadaIsha", "streakDays", "khatmahPagesRead", "createdAt", "updatedAt"]
+      "required": [
+        "userId", "displayName", "preferredLanguage", "themeMode", "mushafPaper", "fontScale",
+        "lastReadPage", "lastReadSurah", "lastReadAyah", "preferredReciterId", "adhanEnabled", "adhanVoiceId",
+        "calculationMethod", "city", "latitude", "longitude", "hijriOffset", "travelerMode", "ramadanMode",
+        "kidsMode", "qadaFajr", "qadaDhuhr", "qadaAsr", "qadaMaghrib", "qadaIsha", "streakDays",
+        "khatmahPagesRead", "createdAt", "updatedAt"
+      ]
     },
     "PrayerLog": {
       "title": "PrayerLog",
@@ -67,11 +82,12 @@
     },
     "QuranBookmark": {
       "title": "QuranBookmark",
-      "description": "Saved Quran verse bookmarks and custom verse collections",
+      "description": "Saved Quran verse bookmarks, Madinah Mushaf page reference, and custom verse collections",
       "type": "object",
       "properties": {
         "surahNumber": { "type": "integer" },
         "ayahNumber": { "type": "integer" },
+        "pageNumber": { "type": "integer" },
         "collectionName": { "type": "string" },
         "note": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
@@ -108,6 +124,78 @@
       },
       "required": ["kind", "title", "amount", "settled", "createdAt", "updatedAt"]
     },
+    "AdhkarLog": {
+      "title": "AdhkarLog",
+      "description": "Phase 2 prepared collection for daily Adhkar progress tracking",
+      "type": "object",
+      "properties": {
+        "dateKey": { "type": "string" },
+        "category": { "type": "string" },
+        "completedCount": { "type": "integer" },
+        "targetCount": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["dateKey", "category", "completedCount", "targetCount", "createdAt", "updatedAt"]
+    },
+    "AiChatMessage": {
+      "title": "AiChatMessage",
+      "description": "Phase 2 prepared collection for persisted AI Tafsir & scholarly assistant conversations",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string", "enum": ["user", "assistant"] },
+        "content": { "type": "string" },
+        "surahRef": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["role", "content", "createdAt", "updatedAt"]
+    },
+    "Reciter": {
+      "title": "Reciter",
+      "description": "Dynamic Quran reciter catalog editable by Admin in Phase 3",
+      "type": "object",
+      "properties": {
+        "nameAr": { "type": "string" },
+        "nameEn": { "type": "string" },
+        "styleAr": { "type": "string" },
+        "styleEn": { "type": "string" },
+        "editionId": { "type": "string" },
+        "everyAyahFolder": { "type": "string" },
+        "sortOrder": { "type": "integer" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["nameAr", "nameEn", "styleAr", "styleEn", "editionId", "everyAyahFolder", "sortOrder", "active", "createdAt", "updatedAt"]
+    },
+    "AdminConfig": {
+      "title": "AdminConfig",
+      "description": "Phase 3 prepared global application configuration",
+      "type": "object",
+      "properties": {
+        "configKey": { "type": "string" },
+        "valueJson": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["configKey", "valueJson", "createdAt", "updatedAt"]
+    },
+    "AdhanVoice": {
+      "title": "AdhanVoice",
+      "description": "Phase 3 prepared catalog of Adhan voices managed by Admin",
+      "type": "object",
+      "properties": {
+        "nameAr": { "type": "string" },
+        "nameEn": { "type": "string" },
+        "muezzin": { "type": "string" },
+        "audioUrl": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["nameAr", "nameEn", "muezzin", "audioUrl", "active", "createdAt", "updatedAt"]
+    },
     "DuaWallPost": {
       "title": "DuaWallPost",
       "description": "Anonymous community prayer request on the Dua Wall",
@@ -143,7 +231,7 @@
   "firestore": {
     "/users/{userId}": {
       "schema": "UserSettings",
-      "description": "Per-user worship settings and counters"
+      "description": "Per-user worship settings, theme, language, and reading progress"
     },
     "/users/{userId}/prayerLogs/{dateKey}": {
       "schema": "PrayerLog",
@@ -164,6 +252,26 @@
     "/users/{userId}/obligations/{itemId}": {
       "schema": "ObligationRecord",
       "description": "Personal charity, debt, and Wasiyyah obligation records"
+    },
+    "/users/{userId}/adhkarLogs/{logId}": {
+      "schema": "AdhkarLog",
+      "description": "Phase 2 Adhkar completion logs"
+    },
+    "/users/{userId}/aiChats/{chatId}": {
+      "schema": "AiChatMessage",
+      "description": "Phase 2 AI Tafsir and scholarly chat history"
+    },
+    "/reciters/{reciterId}": {
+      "schema": "Reciter",
+      "description": "Dynamic Quran reciter catalog"
+    },
+    "/adminConfigs/{configId}": {
+      "schema": "AdminConfig",
+      "description": "Phase 3 global configuration records"
+    },
+    "/adhanVoices/{voiceId}": {
+      "schema": "AdhanVoice",
+      "description": "Phase 3 Adhan audio voices catalog"
     },
     "/duaWall/{postId}": {
       "schema": "DuaWallPost",

@@ -10,10 +10,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -29,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,14 +40,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.firebase.GoogleSignInButton
-import com.example.ui.theme.AmiriFontFamily
+import com.example.ui.theme.AmiriQuranFontFamily
 import com.example.ui.theme.BurnishedGold
 import com.example.ui.theme.SanctuaryEmerald
 
@@ -57,149 +60,151 @@ fun AuthScreen(
 ) {
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) {
-        Column(
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 20.dp)
-                .widthIn(max = 520.dp)
-                .align(Alignment.Center),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+                .background(MaterialTheme.colorScheme.background)
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(230.dp)
-                        .clip(MaterialTheme.shapes.extraLarge)
-                ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.img_kaaba_horizon),
-                        contentDescription = "Tranquil dawn sanctuary courtyard",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 24.dp, vertical = 20.dp)
+                    .widthIn(max = 520.dp)
+                    .align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        SanctuaryEmerald.copy(alpha = 0.88f)
+                            .fillMaxWidth()
+                            .height(230.dp)
+                            .clip(MaterialTheme.shapes.extraLarge)
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.img_kaaba_horizon),
+                            contentDescription = "إطلالة هادئة نحو المسجد الحرام",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            SanctuaryEmerald.copy(alpha = 0.88f)
+                                        )
                                     )
                                 )
+                        )
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(20.dp)
+                        ) {
+                            Text(
+                                text = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+                                fontFamily = AmiriQuranFontFamily,
+                                fontSize = 24.sp,
+                                color = Color(0xFFFBF6EA)
                             )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "محراب • Mihrab",
+                                style = MaterialTheme.typography.displayMedium,
+                                color = Color.White
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Text(
+                        text = "رفيقك المتكامل للقرآن والصلاة والذكر",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = TextAlign.Center
                     )
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(20.dp)
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "مصحف المدينة الكامل بـ ٦٠٤ صفحات ونص عثماني تفاعلي مع كبار القرّاء، مواقيت الصلاة والقبلة بالواقع المعزز، الأذكار، وأدوات الزكاة والمواريث بمزامنة سحابية آمنة.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                        ),
+                        shape = MaterialTheme.shapes.large,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            text = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
-                            fontFamily = AmiriFontFamily,
-                            fontSize = 24.sp,
-                            color = Color(0xFFFBF6EA)
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Mihrab • محراب",
-                            style = MaterialTheme.typography.displayMedium,
-                            color = Color.White
-                        )
+                        Column(
+                            modifier = Modifier.padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            TrustRow(
+                                icon = Icons.Rounded.Lock,
+                                title = "خصوصية تامة ومزامنة محمية",
+                                subtitle = "موضع قراءتك وعلامات المصحف وأدعيتك محفوظة لحسابك وحدك مع دعم التصفح دون إنترنت."
+                            )
+                            TrustRow(
+                                icon = Icons.Rounded.Mosque,
+                                title = "تجربة خاشعة بلا إعلانات",
+                                subtitle = "قراءة متواصلة في المصحف ومتابعة الصلوات والتسبيح بتركيز وهدوء."
+                            )
+                            TrustRow(
+                                icon = Icons.Rounded.VerifiedUser,
+                                title = "مصحف المدينة وتلاوات متزامنة",
+                                subtitle = "نص عثماني تفاعلي مع تظليل الآية وتقليب الصفحات تلقائياً أثناء التلاوة."
+                            )
+                        }
                     }
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                Text(
-                    text = "Your Complete Sanctuary for Worship & Knowledge",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    text = "Astronomical prayer times, Qibla & AR sighting, Mushaf with Tafsir & Al-Musammi', Adhkar, Hijri calendar, Zakat & Mawarith tools, and private cloud sync.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                    ),
-                    shape = MaterialTheme.shapes.large,
-                    modifier = Modifier.fillMaxWidth()
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Column(
-                        modifier = Modifier.padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        TrustRow(
-                            icon = Icons.Rounded.Lock,
-                            title = "Private & Owner-Isolated",
-                            subtitle = "Your prayer logs, Dua journal, and Quran notes are strictly tied to your account."
-                        )
-                        TrustRow(
-                            icon = Icons.Rounded.Mosque,
-                            title = "Zero Ads During Worship",
-                            subtitle = "Distraction-free Mushaf, Salah, and Tasbih built for Khushu'."
-                        )
-                        TrustRow(
-                            icon = Icons.Rounded.VerifiedUser,
-                            title = "Authentic Citations",
-                            subtitle = "Hadith Takhrij and scholar-referred AI guidance grounded in Quran & Sunnah."
-                        )
+                    if (errorMessage != null) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp)
+                        ) {
+                            Text(
+                                text = errorMessage!!,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
                     }
+
+                    GoogleSignInButton(
+                        buttonText = signInButtonText,
+                        onAuthSuccess = {
+                            errorMessage = null
+                            onAuthSuccess()
+                        },
+                        onAuthError = { msg ->
+                            errorMessage = msg
+                        }
+                    )
                 }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                if (errorMessage != null) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.errorContainer,
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp)
-                    ) {
-                        Text(
-                            text = errorMessage!!,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(12.dp)
-                        )
-                    }
-                }
-
-                GoogleSignInButton(
-                    buttonText = signInButtonText,
-                    onAuthSuccess = {
-                        errorMessage = null
-                        onAuthSuccess()
-                    },
-                    onAuthError = { msg ->
-                        errorMessage = msg
-                    }
-                )
             }
         }
     }

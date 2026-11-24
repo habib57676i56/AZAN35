@@ -27,6 +27,9 @@ class AiViewModel(
     private val _companionState = MutableStateFlow<AiUiState>(AiUiState.Idle)
     val companionState: StateFlow<AiUiState> = _companionState.asStateFlow()
 
+    private val _ayahTafsirState = MutableStateFlow<AiUiState>(AiUiState.Idle)
+    val ayahTafsirState: StateFlow<AiUiState> = _ayahTafsirState.asStateFlow()
+
     private val _recitationCoachState = MutableStateFlow<AiUiState>(AiUiState.Idle)
     val recitationCoachState: StateFlow<AiUiState> = _recitationCoachState.asStateFlow()
 
@@ -47,18 +50,62 @@ class AiViewModel(
                 if (latest.isNotBlank()) {
                     _companionState.value = AiUiState.Success(latest)
                 } else {
-                    _companionState.value = AiUiState.Error("No response received. Please try again.")
+                    _companionState.value = AiUiState.Error("لم يتم استلام رد. حاول مرة أخرى.")
                 }
             } catch (e: TimeoutCancellationException) {
                 Log.e(TAG, "Companion stream timed out", e)
-                _companionState.value = AiUiState.Error("Request timed out after 60 seconds. Please retry.")
+                _companionState.value = AiUiState.Error("انتهت مهلة الطلب. يرجى المحاولة مجدداً.")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Companion stream failed", e)
-                _companionState.value = AiUiState.Error(e.localizedMessage ?: "AI Companion failed.")
+                _companionState.value = AiUiState.Error(e.localizedMessage ?: "تعذر الاتصال بالمساعد الذكي.")
             }
         }
+    }
+
+    /**
+     * Phase 1 hook wired to Firebase AI Logic for instant Ayah Tafsir & Tadabbur from the Mushaf Action Bar.
+     */
+    fun askAiTafsirForAyah(
+        surahNameAr: String,
+        surahNumber: Int,
+        ayahNumber: Int,
+        arabicText: String,
+        languageName: String
+    ) {
+        val prompt = """
+            اشرح باختصار ووضوح تفسير وتدبر هذه الآية الكريمة بالاعتماد على كتب التفسير المعتبرة (ابن كثير والسعدي والميسر):
+            سورة $surahNameAr ($surahNumber:$ayahNumber)
+            النص: $arabicText
+            اذكر المعنى الإجمالي، معاني المفردات الغريبة، وهداية عملية للمؤمن.
+        """.trimIndent()
+        viewModelScope.launch {
+            _ayahTafsirState.value = AiUiState.Loading
+            var latest = ""
+            try {
+                aiRepository.askScholarlyCompanionStream(prompt, languageName).collect { chunk ->
+                    latest = chunk
+                    _ayahTafsirState.value = AiUiState.Streaming(chunk)
+                }
+                if (latest.isNotBlank()) {
+                    _ayahTafsirState.value = AiUiState.Success(latest)
+                } else {
+                    _ayahTafsirState.value = AiUiState.Error("لم يتم استلام التفسير.")
+                }
+            } catch (e: TimeoutCancellationException) {
+                _ayahTafsirState.value = AiUiState.Error("انتهت مهلة التفسير. حاول مجدداً.")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Ayah AI Tafsir failed", e)
+                _ayahTafsirState.value = AiUiState.Error(e.localizedMessage ?: "تعذر جلب التفسير بالذكاء الاصطناعي.")
+            }
+        }
+    }
+
+    fun resetAyahTafsir() {
+        _ayahTafsirState.value = AiUiState.Idle
     }
 
     fun evaluateRecitation(

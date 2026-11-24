@@ -9,8 +9,17 @@ import com.google.firebase.firestore.IgnoreExtraProperties
 @IgnoreExtraProperties
 data class UserSettingsDoc(
     val userId: String = "",
-    val displayName: String = "Believer",
-    val preferredLanguage: String = "en",
+    val displayName: String = "مؤمن",
+    val preferredLanguage: String = "ar",
+    val themeMode: String = "SYSTEM",
+    val mushafPaper: String = "WHITE",
+    val fontScale: Double = 1.0,
+    val lastReadPage: Long = 1L,
+    val lastReadSurah: Long = 1L,
+    val lastReadAyah: Long = 1L,
+    val preferredReciterId: String = "ar.alafasy",
+    val adhanEnabled: Boolean = true,
+    val adhanVoiceId: String = "makkah",
     val calculationMethod: String = "MWL",
     val city: String = "Makkah",
     val latitude: Double = 21.4225,
@@ -68,6 +77,7 @@ data class BookmarkDoc(
     @DocumentId val id: String = "",
     val surahNumber: Long = 1L,
     val ayahNumber: Long = 1L,
+    val pageNumber: Long? = null,
     val collectionName: String = "Favorites",
     val note: String? = null,
     val createdAt: Timestamp? = null,
@@ -95,6 +105,46 @@ data class ObligationDoc(
     val amount: Double = 0.0,
     val settled: Boolean = false,
     val notes: String? = null,
+    val createdAt: Timestamp? = null,
+    val updatedAt: Timestamp? = null
+)
+
+@Keep
+@IgnoreExtraProperties
+data class ReciterDoc(
+    @DocumentId val id: String = "",
+    val nameAr: String = "",
+    val nameEn: String = "",
+    val styleAr: String = "مرتل",
+    val styleEn: String = "Murattal",
+    val editionId: String = "ar.alafasy",
+    val everyAyahFolder: String = "Alafasy_128kbps",
+    val sortOrder: Long = 1L,
+    val active: Boolean = true,
+    val createdAt: Timestamp? = null,
+    val updatedAt: Timestamp? = null
+)
+
+// Phase 2 Prepared Models
+@Keep
+@IgnoreExtraProperties
+data class AdhkarLogDoc(
+    @DocumentId val id: String = "",
+    val dateKey: String = "",
+    val category: String = "",
+    val completedCount: Long = 0L,
+    val targetCount: Long = 1L,
+    val createdAt: Timestamp? = null,
+    val updatedAt: Timestamp? = null
+)
+
+@Keep
+@IgnoreExtraProperties
+data class AiChatDoc(
+    @DocumentId val id: String = "",
+    val role: String = "user",
+    val content: String = "",
+    val surahRef: String? = null,
     val createdAt: Timestamp? = null,
     val updatedAt: Timestamp? = null
 )

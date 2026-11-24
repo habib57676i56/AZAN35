@@ -10,6 +10,56 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
+enum class AppThemeMode(val id: String) {
+    LIGHT("LIGHT"),
+    DARK("DARK"),
+    SYSTEM("SYSTEM");
+
+    companion object {
+        fun fromId(id: String): AppThemeMode =
+            entries.firstOrNull { it.id == id } ?: SYSTEM
+    }
+}
+
+enum class MushafPaperTheme(
+    val id: String,
+    val bg: Color,
+    val cardInner: Color,
+    val fg: Color,
+    val accent: Color,
+    val border: Color
+) {
+    WHITE(
+        id = "WHITE",
+        bg = Color(0xFFFCFBF7),
+        cardInner = Color(0xFFF6F2E7),
+        fg = Color(0xFF151E19),
+        accent = Color(0xFF0C3B2E),
+        border = Color(0xFFC89B3C)
+    ),
+    SEPIA(
+        id = "SEPIA",
+        bg = Color(0xFFF3E7CE),
+        cardInner = Color(0xFFEBDCB9),
+        fg = Color(0xFF2D2111),
+        accent = Color(0xFF6B4B1B),
+        border = Color(0xFFB58634)
+    ),
+    DARK(
+        id = "DARK",
+        bg = Color(0xFF0C1512),
+        cardInner = Color(0xFF12211C),
+        fg = Color(0xFFEDE5D3),
+        accent = Color(0xFF7AD3AF),
+        border = Color(0xFFE2B95B)
+    );
+
+    companion object {
+        fun fromId(id: String): MushafPaperTheme =
+            entries.firstOrNull { it.id == id } ?: WHITE
+    }
+}
+
 enum class MihrabThemePreset(val label: String) {
     EMERALD_SANCTUARY("Emerald Sanctuary"),
     MOSQUE_BLUE("Mosque Blue"),
@@ -102,10 +152,17 @@ val MihrabShapes = Shapes(
 @Composable
 fun MihrabTheme(
     preset: MihrabThemePreset = MihrabThemePreset.EMERALD_SANCTUARY,
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    fontScale: Float = 1.0f,
+    arabicPrimary: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    val useDark = darkTheme || preset == MihrabThemePreset.MIDNIGHT_QIYAM
+    val systemDark = isSystemInDarkTheme()
+    val useDark = when (themeMode) {
+        AppThemeMode.LIGHT -> false
+        AppThemeMode.DARK -> true
+        AppThemeMode.SYSTEM -> systemDark || preset == MihrabThemePreset.MIDNIGHT_QIYAM
+    }
     val colorScheme = when {
         preset == MihrabThemePreset.MOSQUE_BLUE && useDark -> MosqueBlueDarkScheme
         preset == MihrabThemePreset.MOSQUE_BLUE -> MosqueBlueLightScheme
@@ -116,7 +173,7 @@ fun MihrabTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = MihrabTypography,
+        typography = buildMihrabTypography(fontScale = fontScale, arabicPrimary = arabicPrimary),
         shapes = MihrabShapes,
         content = content
     )

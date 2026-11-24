@@ -21,10 +21,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.BrightnessAuto
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material3.AlertDialog
@@ -68,7 +71,9 @@ import com.example.data.firebase.UserSettingsDoc
 import com.example.domain.CalculatorsEngine
 import com.example.domain.IslamicLibraryData
 import com.example.ui.theme.AmiriFontFamily
+import com.example.ui.theme.AppThemeMode
 import com.example.ui.theme.MihrabThemePreset
+import com.example.ui.theme.MushafPaperTheme
 import com.example.ui.viewmodel.MihrabViewModel
 import com.example.ui.viewmodel.UiState
 import kotlin.math.roundToInt
@@ -78,10 +83,10 @@ import kotlin.math.roundToInt
 fun ToolsScreen(
     viewModel: MihrabViewModel,
     strings: LocalizedStrings,
+    appLanguage: AppLanguage,
     currentThemePreset: MihrabThemePreset,
     onChangeThemePreset: (MihrabThemePreset) -> Unit,
-    darkModeOverride: Boolean?,
-    onChangeDarkMode: (Boolean?) -> Unit,
+    currentThemeMode: AppThemeMode,
     useIndic: Boolean,
     onToggleIndic: (Boolean) -> Unit,
     onSignOut: () -> Unit
@@ -92,6 +97,7 @@ fun ToolsScreen(
     val exportedJson by viewModel.exportedJson.collectAsStateWithLifecycle()
 
     val settings = (settingsState as? UiState.Success)?.data ?: UserSettingsDoc()
+    val isArabicUi = appLanguage == AppLanguage.ARABIC || appLanguage == AppLanguage.URDU
     var activeSection by remember { mutableIntStateOf(0) } // 0=Calculators, 1=Pilgrim&Charity, 2=Settings
 
     val createDocLauncher = rememberLauncherForActivityResult(
@@ -125,7 +131,12 @@ fun ToolsScreen(
         ) {
             item {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("Calculators", "${strings.pilgrimGuide} & Charity", strings.settingsPrivacy).forEachIndexed { idx, lbl ->
+                    val toolsTabs = if (isArabicUi) {
+                        listOf("الحاسبات الشرعية", strings.pilgrimGuide, strings.settingsPrivacy)
+                    } else {
+                        listOf("Calculators", "${strings.pilgrimGuide} & Charity", strings.settingsPrivacy)
+                    }
+                    toolsTabs.forEachIndexed { idx, lbl ->
                         FilterChip(
                             selected = activeSection == idx,
                             onClick = { activeSection = idx },
@@ -143,10 +154,10 @@ fun ToolsScreen(
                     SettingsAndPrivacySection(
                         settings = settings,
                         strings = strings,
+                        isArabicUi = isArabicUi,
                         currentThemePreset = currentThemePreset,
                         onChangeThemePreset = onChangeThemePreset,
-                        darkModeOverride = darkModeOverride,
-                        onChangeDarkMode = onChangeDarkMode,
+                        currentThemeMode = currentThemeMode,
                         useIndic = useIndic,
                         onToggleIndic = onToggleIndic,
                         viewModel = viewModel,
@@ -250,7 +261,7 @@ private fun CalculatorsSection() {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Islamic Inheritance (Mawarith / Faraid)", style = MaterialTheme.typography.titleLarge)
-                        OutlinedTextField(value = estateInput, onValueChange = { estateInput = it }, label = { Text("Net Estate Value (after debts & Wasiyyah ≤ ⅓)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = estateInput, onValueChange = { estateInput = it }, label = { Text("Net Estate Value (after debts & Wasiyyah <= 1/3)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf("NONE" to "No Spouse", "HUSBAND" to "Husband", "WIFE" to "Wife").forEach { (k, l) ->
                                 FilterChip(selected = spouseType == k, onClick = { spouseType = k }, label = { Text(l) })
@@ -302,8 +313,8 @@ private fun CalculatorsSection() {
                             Text("Prophetic Water Conservation (Mudd & Sa')", style = MaterialTheme.typography.titleLarge)
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(selected = !isGhusl, onClick = { isGhusl = false }, label = { Text("Wudu (1 Mudd ≈ 0.75L)") })
-                            FilterChip(selected = isGhusl, onClick = { isGhusl = true }, label = { Text("Ghusl (1 Sa' ≈ 3L)") })
+                            FilterChip(selected = !isGhusl, onClick = { isGhusl = false }, label = { Text("Wudu (1 Mudd ~ 0.75L)") })
+                            FilterChip(selected = isGhusl, onClick = { isGhusl = true }, label = { Text("Ghusl (1 Sa' ~ 3L)") })
                         }
                         Text("Tap open duration: $tapSeconds seconds", style = MaterialTheme.typography.labelLarge)
                         Slider(value = tapSeconds.toFloat(), onValueChange = { tapSeconds = it.roundToInt() }, valueRange = 5f..180f)
@@ -438,10 +449,10 @@ private fun PilgrimAndObligationsSection(
 private fun SettingsAndPrivacySection(
     settings: UserSettingsDoc,
     strings: LocalizedStrings,
+    isArabicUi: Boolean,
     currentThemePreset: MihrabThemePreset,
     onChangeThemePreset: (MihrabThemePreset) -> Unit,
-    darkModeOverride: Boolean?,
-    onChangeDarkMode: (Boolean?) -> Unit,
+    currentThemeMode: AppThemeMode,
     useIndic: Boolean,
     onToggleIndic: (Boolean) -> Unit,
     viewModel: MihrabViewModel,
@@ -450,29 +461,61 @@ private fun SettingsAndPrivacySection(
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        // 1. Arabic-first Language & RTL Switcher
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Languages, Numerals & RTL", style = MaterialTheme.typography.titleLarge)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(strings.languageToggleTitle, style = MaterialTheme.typography.titleLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     AppLanguage.entries.forEach { lang ->
                         FilterChip(
                             selected = settings.preferredLanguage == lang.code,
                             onClick = { viewModel.updateSettings(mapOf("preferredLanguage" to lang.code)) },
-                            label = { Text(lang.nativeLabel) }
+                            label = { Text(lang.nativeLabel) },
+                            modifier = Modifier.testTag("lang_chip_${lang.code}")
                         )
                     }
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Eastern Arabic Numerals (٠١٢٣)")
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(if (isArabicUi) "الأرقام العربية الشرقية (٠١٢٣)" else "Eastern Arabic Numerals (٠١٢٣)")
                     Switch(checked = useIndic, onCheckedChange = onToggleIndic)
                 }
             }
         }
 
+        // 2. Persistent 3-Mode Theme Engine + Typography Scale + Mushaf Paper
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Appearance & Kids Mode", style = MaterialTheme.typography.titleLarge)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(strings.themeModeTitle, style = MaterialTheme.typography.titleLarge)
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = currentThemeMode == AppThemeMode.LIGHT,
+                        onClick = { viewModel.updateSettings(mapOf("themeMode" to AppThemeMode.LIGHT.id)) },
+                        leadingIcon = { Icon(Icons.Rounded.LightMode, null, modifier = Modifier.size(16.dp)) },
+                        label = { Text(strings.themeLight) },
+                        modifier = Modifier.testTag("theme_mode_light")
+                    )
+                    FilterChip(
+                        selected = currentThemeMode == AppThemeMode.DARK,
+                        onClick = { viewModel.updateSettings(mapOf("themeMode" to AppThemeMode.DARK.id)) },
+                        leadingIcon = { Icon(Icons.Rounded.DarkMode, null, modifier = Modifier.size(16.dp)) },
+                        label = { Text(strings.themeDark) },
+                        modifier = Modifier.testTag("theme_mode_dark")
+                    )
+                    FilterChip(
+                        selected = currentThemeMode == AppThemeMode.SYSTEM,
+                        onClick = { viewModel.updateSettings(mapOf("themeMode" to AppThemeMode.SYSTEM.id)) },
+                        leadingIcon = { Icon(Icons.Rounded.BrightnessAuto, null, modifier = Modifier.size(16.dp)) },
+                        label = { Text(strings.themeSystem) },
+                        modifier = Modifier.testTag("theme_mode_system")
+                    )
+                }
+
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     MihrabThemePreset.entries.forEach { preset ->
                         FilterChip(
                             selected = currentThemePreset == preset,
@@ -481,15 +524,78 @@ private fun SettingsAndPrivacySection(
                         )
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(selected = darkModeOverride == null, onClick = { onChangeDarkMode(null) }, label = { Text("System Theme") })
-                    FilterChip(selected = darkModeOverride == false, onClick = { onChangeDarkMode(false) }, label = { Text("Light") })
-                    FilterChip(selected = darkModeOverride == true, onClick = { onChangeDarkMode(true) }, label = { Text("Dark") })
+
+                HorizontalDivider()
+
+                Text(
+                    text = if (isArabicUi) "ورق مصحف المدينة وحجم الخط" else "Madinah Mushaf Paper & Typography Scale",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MushafPaperTheme.entries.forEach { paper ->
+                        val label = when (paper) {
+                            MushafPaperTheme.WHITE -> strings.paperWhite
+                            MushafPaperTheme.SEPIA -> strings.paperSepia
+                            MushafPaperTheme.DARK -> strings.paperDark
+                        }
+                        FilterChip(
+                            selected = settings.mushafPaper == paper.id,
+                            onClick = { viewModel.updateSettings(mapOf("mushafPaper" to paper.id)) },
+                            label = { Text(label) }
+                        )
+                    }
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+
+                val currentScale = settings.fontScale.toFloat().coerceIn(0.85f, 1.35f)
+                Text(
+                    text = "${strings.fontScaleLabel}: ${(currentScale * 100).roundToInt()}%",
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Slider(
+                    value = currentScale,
+                    onValueChange = { viewModel.updateSettings(mapOf("fontScale" to it.toDouble())) },
+                    valueRange = 0.85f..1.35f
+                )
+
+                HorizontalDivider()
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Kids Mode", style = MaterialTheme.typography.titleMedium)
-                        Text("Simplified joyful learning & star rewards", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            if (isArabicUi) "تنبيهات الأذان" else "Adhan Alerts",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            if (isArabicUi) "تفعيل صوت الأذان وتنبيهات أوقات الصلاة" else "Enable Adhan audio & prayer alerts",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = settings.adhanEnabled,
+                        onCheckedChange = { viewModel.updateSettings(mapOf("adhanEnabled" to it)) }
+                    )
+                }
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            if (isArabicUi) "وضع الأطفال" else "Kids Mode",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            if (isArabicUi) "واجهة مبسطة وممتعة لتعليم القرآن والأذكار" else "Simplified joyful learning & star rewards",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                     Switch(
                         checked = settings.kidsMode,
@@ -499,11 +605,16 @@ private fun SettingsAndPrivacySection(
             }
         }
 
+        // 3. Privacy, Export & Account Controls
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("What's New & Privacy Pledge", style = MaterialTheme.typography.titleLarge)
+                Text(strings.settingsPrivacy, style = MaterialTheme.typography.titleLarge)
                 Text(
-                    "Mihrab Complete V2: Astronomical Prayer & Qiyam engine, CameraX AR Qibla, Mushaf with 3 Tafsirs & Al-Musammi', Voice Tasbih, Hijri & Ramadan Mode, Zakat & Mawarith calculators, and Firebase AI Logic Scholarly Companion.",
+                    text = if (isArabicUi) {
+                        "تطبيق محراب: مصحف المدينة التفاعلي بـ ٦٠٤ صفحات ونص عثماني كامل مع القراء والتخزين المحلي، مواقيت الصلاة والقبلة بالواقع المعزز، الأذكار، الزكاة والمواريث."
+                    } else {
+                        "Mihrab: 604-page interactive Uthmani Madinah Mushaf with multi-reciter audio & offline SQLite+Cloud sync, Prayer & AR Qibla, Adhkar, Zakat & Mawarith tools."
+                    },
                     style = MaterialTheme.typography.bodyMedium
                 )
                 OutlinedButton(
@@ -512,11 +623,13 @@ private fun SettingsAndPrivacySection(
                 ) {
                     Icon(Icons.Rounded.Download, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Export My Worship Data (JSON)")
+                    Text(if (isArabicUi) "تصدير بياناتي (JSON)" else "Export My Worship Data (JSON)")
                 }
                 OutlinedButton(
                     onClick = onSignOut,
-                    modifier = Modifier.fillMaxWidth().testTag("sign_out_button")
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("sign_out_button")
                 ) {
                     Icon(Icons.AutoMirrored.Rounded.Logout, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
@@ -529,7 +642,7 @@ private fun SettingsAndPrivacySection(
                 ) {
                     Icon(Icons.Rounded.DeleteForever, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Delete All Cloud Data & Sign Out")
+                    Text(if (isArabicUi) "حذف جميع البيانات السحابية وتسجيل الخروج" else "Delete All Cloud Data & Sign Out")
                 }
             }
         }
@@ -538,8 +651,16 @@ private fun SettingsAndPrivacySection(
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Delete All Cloud Data?") },
-            text = { Text("This permanently deletes your cloud prayer logs, Dua journal, bookmarks, Tasbih counters, and obligations from Firestore.") },
+            title = { Text(if (isArabicUi) "حذف جميع البيانات السحابية؟" else "Delete All Cloud Data?") },
+            text = {
+                Text(
+                    if (isArabicUi) {
+                        "سيتم حذف سجلات الصلوات ومفكرة الدعاء وعلامات المصحف وعدادات التسبيح نهائياً من السحابة."
+                    } else {
+                        "This permanently deletes your cloud prayer logs, Dua journal, bookmarks, Tasbih counters, and obligations from Firestore."
+                    }
+                )
+            },
             confirmButton = {
                 Button(
                     onClick = {
@@ -547,10 +668,10 @@ private fun SettingsAndPrivacySection(
                         viewModel.deleteAccountAndData(onComplete = onSignOut)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("Delete Everything") }
+                ) { Text(if (isArabicUi) "حذف الكل" else "Delete Everything") }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+                TextButton(onClick = { showDeleteConfirm = false }) { Text(strings.cancel) }
             }
         )
     }

@@ -12,14 +12,21 @@ import com.example.data.firebase.ObligationDoc
 import com.example.data.firebase.PrayerLogDoc
 import com.example.data.firebase.TasbihCounterDoc
 import com.example.data.firebase.UserSettingsDoc
+import com.example.data.local.LocalUserPrefsEntity
+import com.example.data.local.ReciterEntity
+import com.example.data.quran.MushafRepository
+import com.example.data.quran.QuranSearchHit
 import com.example.domain.CalculationMethod
 import com.example.domain.CityPreset
 import com.example.domain.DailyPrayerSchedule
 import com.example.domain.HijriCalendarEngine
 import com.example.domain.HijriDate
+import com.example.domain.MushafPageModel
 import com.example.domain.PrayerTimesEngine
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -41,6 +48,7 @@ sealed interface UiState<out T> {
 
 class MihrabViewModel(
     private val repository: MihrabRepository,
+    private val mushafRepository: MushafRepository,
     private val currentUserId: String,
     private val initialDisplayName: String
 ) : ViewModel() {
@@ -51,16 +59,33 @@ class MihrabViewModel(
     private val _manualOffsets = MutableStateFlow<Map<String, Int>>(emptyMap())
     val manualOffsets: StateFlow<Map<String, Int>> = _manualOffsets.asStateFlow()
 
-    private val _useIndicNumerals = MutableStateFlow(false)
+    private val _useIndicNumerals = MutableStateFlow(true)
     val useIndicNumerals: StateFlow<Boolean> = _useIndicNumerals.asStateFlow()
 
     private val _exportedJson = MutableStateFlow<String?>(null)
     val exportedJson: StateFlow<String?> = _exportedJson.asStateFlow()
 
+    // Phase 1 Mushaf State
+    private val _mushafPages = MutableStateFlow<Map<Int, UiState<MushafPageModel>>>(emptyMap())
+    val mushafPages: StateFlow<Map<Int, UiState<MushafPageModel>>> = _mushafPages.asStateFlow()
+
+    private val _offlineSyncProgress = MutableStateFlow<Float?>(null)
+    val offlineSyncProgress: StateFlow<Float?> = _offlineSyncProgress.asStateFlow()
+
+    private val _searchResults = MutableStateFlow<List<QuranSearchHit>>(emptyList())
+    val searchResults: StateFlow<List<QuranSearchHit>> = _searchResults.asStateFlow()
+
+    private val _isSearching = MutableStateFlow(false)
+    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
+
+    private var savePositionJob: Job? = null
+    private var searchJob: Job? = null
+
     init {
         viewModelScope.launch {
+            repository.ensureDefaultRecitersSeededLocally()
             repository.ensureUserSettings(initialDisplayName).onFailure { err ->
-                _statusMessage.value = err.localizedMessage ?: "Failed to sync user profile"
+                _statusMessage.value = err.localizedMessage ?: "تعذر مزامنة الملف الشخصي"
             }
         }
     }
@@ -85,6 +110,23 @@ class MihrabViewModel(
     val settingsState: StateFlow<UiState<UserSettingsDoc?>> =
         repository.observeUserSettings(currentUserId).toUiStateFlow("user settings")
 
+    val localPrefsState: StateFlow<LocalUserPrefsEntity?> =
+        repository.observeLocalPrefs(currentUserId)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), null)
+
+    val recitersState: StateFlow<List<ReciterEntity>> =
+        repository.observeReciters(currentUserId)
+            .catch { emit(MihrabRepository.DEFAULT_RECITERS) }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000L),
+                initialValue = MihrabRepository.DEFAULT_RECITERS
+            )
+
+    val cachedMushafPageCount: StateFlow<Int> =
+        mushafRepository.cachedPageCount
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), 0)
+
     val prayerLogsState: StateFlow<UiState<List<PrayerLogDoc>>> =
         repository.observePrayerLogs(currentUserId).toUiStateFlow("prayer logs")
 
@@ -105,6 +147,82 @@ class MihrabViewModel(
 
     val khatmahGroupsState: StateFlow<UiState<List<KhatmahGroupDoc>>> =
         repository.observeKhatmahGroups(currentUserId).toUiStateFlow("family khatmah")
+
+    // --- PHASE 1 MUSHAF ACTIONS ---
+    fun ensureMushafPageLoaded(page: Int) {
+        val safePage = page.coerceIn(1, 604)
+        val existing = _mushafPages.value[safePage]
+        if (existing is UiState.Success || existing is UiState.Loading) return
+
+        _mushafPages.value = _mushafPages.value + (safePage to UiState.Loading)
+        viewModelScope.launch {
+            mushafRepository.getPage(safePage)
+                .onSuccess { model ->
+                    _mushafPages.value = _mushafPages.value + (safePage to UiState.Success(model))
+                    mushafRepository.prefetchPages(safePage)
+                }
+                .onFailure { err ->
+                    _mushafPages.value = _mushafPages.value + (
+                        safePage to UiState.Error(err.localizedMessage ?: "تعذر تحميل الصفحة")
+                    )
+                }
+        }
+    }
+
+    fun retryMushafPage(page: Int) {
+        val safePage = page.coerceIn(1, 604)
+        _mushafPages.value = _mushafPages.value - safePage
+        ensureMushafPageLoaded(safePage)
+    }
+
+    fun saveLastReadPosition(page: Int, surah: Int, ayah: Int) {
+        val safePage = page.coerceIn(1, 604)
+        val safeSurah = surah.coerceIn(1, 114)
+        val safeAyah = ayah.coerceIn(1, 286)
+        savePositionJob?.cancel()
+        savePositionJob = viewModelScope.launch {
+            delay(500L)
+            repository.updateUserSettings(
+                mapOf(
+                    "lastReadPage" to safePage.toLong(),
+                    "lastReadSurah" to safeSurah.toLong(),
+                    "lastReadAyah" to safeAyah.toLong()
+                )
+            )
+        }
+    }
+
+    fun syncFullQuranOffline() {
+        if (_offlineSyncProgress.value != null) return
+        viewModelScope.launch {
+            _offlineSyncProgress.value = 0.05f
+            mushafRepository.downloadFullQuranOffline { progress ->
+                _offlineSyncProgress.value = progress
+            }.onSuccess { count ->
+                _offlineSyncProgress.value = null
+                _statusMessage.value = "تم حفظ $count صفحة من مصحف المدينة للقراءة دون إنترنت"
+            }.onFailure { err ->
+                _offlineSyncProgress.value = null
+                _statusMessage.value = err.localizedMessage ?: "تعذر تنزيل المصحف"
+            }
+        }
+    }
+
+    fun searchQuran(query: String) {
+        searchJob?.cancel()
+        if (query.trim().length < 2) {
+            _searchResults.value = emptyList()
+            _isSearching.value = false
+            return
+        }
+        searchJob = viewModelScope.launch {
+            _isSearching.value = true
+            delay(250L)
+            val hits = mushafRepository.searchQuran(query)
+            _searchResults.value = hits
+            _isSearching.value = false
+        }
+    }
 
     fun todayDateKey(): String {
         val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
@@ -130,6 +248,10 @@ class MihrabViewModel(
 
     fun clearMessage() {
         _statusMessage.value = null
+    }
+
+    fun showMessage(msg: String) {
+        _statusMessage.value = msg
     }
 
     fun clearExportedJson() {
@@ -161,7 +283,7 @@ class MihrabViewModel(
     fun updateLocationCoordinates(cityLabel: String, lat: Double, lng: Double) {
         updateSettings(
             mapOf(
-                "city" to cityLabel.trim().ifBlank { "Current GPS" }.take(80),
+                "city" to cityLabel.trim().ifBlank { "GPS" }.take(80),
                 "latitude" to lat.coerceIn(-90.0, 90.0),
                 "longitude" to lng.coerceIn(-180.0, 180.0)
             )
@@ -171,7 +293,7 @@ class MihrabViewModel(
     fun updateSettings(fields: Map<String, Any>) {
         viewModelScope.launch {
             repository.updateUserSettings(fields).onFailure {
-                _statusMessage.value = it.localizedMessage ?: "Failed to update settings"
+                _statusMessage.value = it.localizedMessage ?: "تعذر حفظ الإعدادات"
             }
         }
     }
@@ -193,7 +315,7 @@ class MihrabViewModel(
         }
         viewModelScope.launch {
             repository.upsertPrayerLog(updated).onFailure {
-                _statusMessage.value = it.localizedMessage ?: "Could not save prayer log"
+                _statusMessage.value = it.localizedMessage ?: "تعذر حفظ سجل الصلاة"
             }
         }
     }
@@ -203,7 +325,7 @@ class MihrabViewModel(
         val base = currentLog ?: PrayerLogDoc(dateKey = dateKey)
         viewModelScope.launch {
             repository.upsertPrayerLog(base.copy(fastingType = fastingType)).onFailure {
-                _statusMessage.value = it.localizedMessage ?: "Could not save fasting status"
+                _statusMessage.value = it.localizedMessage ?: "تعذر حفظ حالة الصيام"
             }
         }
     }
@@ -213,7 +335,7 @@ class MihrabViewModel(
         val base = currentLog ?: PrayerLogDoc(dateKey = dateKey)
         viewModelScope.launch {
             repository.upsertPrayerLog(base.copy(khushuRating = rating.toLong())).onFailure {
-                _statusMessage.value = it.localizedMessage ?: "Could not save khushu reflection"
+                _statusMessage.value = it.localizedMessage ?: "تعذر حفظ الخشوع"
             }
         }
     }
@@ -226,15 +348,15 @@ class MihrabViewModel(
     fun addJournalEntry(entryType: String, title: String, body: String, reference: String?) {
         viewModelScope.launch {
             repository.addJournalEntry(entryType, title, body, reference)
-                .onSuccess { _statusMessage.value = "Saved to your private journal." }
-                .onFailure { _statusMessage.value = it.localizedMessage ?: "Could not save entry" }
+                .onSuccess { _statusMessage.value = "تم الحفظ في مفكرتك الخاصة" }
+                .onFailure { _statusMessage.value = it.localizedMessage ?: "تعذر الحفظ" }
         }
     }
 
     fun toggleJournalAnswered(entry: JournalEntryDoc) {
         viewModelScope.launch {
             repository.toggleJournalAnswered(entry.id, !entry.answered)
-                .onFailure { _statusMessage.value = it.localizedMessage ?: "Failed to update entry" }
+                .onFailure { _statusMessage.value = it.localizedMessage ?: "تعذر التحديث" }
         }
     }
 
@@ -244,11 +366,17 @@ class MihrabViewModel(
         }
     }
 
-    fun addBookmark(surahNumber: Int, ayahNumber: Int, collectionName: String, note: String?) {
+    fun addBookmark(
+        surahNumber: Int,
+        ayahNumber: Int,
+        collectionName: String,
+        note: String?,
+        pageNumber: Int? = null
+    ) {
         viewModelScope.launch {
-            repository.addBookmark(surahNumber, ayahNumber, collectionName, note)
-                .onSuccess { _statusMessage.value = "Bookmarked $surahNumber:$ayahNumber in $collectionName" }
-                .onFailure { _statusMessage.value = it.localizedMessage ?: "Bookmark failed" }
+            repository.addBookmark(surahNumber, ayahNumber, collectionName, note, pageNumber)
+                .onSuccess { _statusMessage.value = "تم حفظ العلامة $surahNumber:$ayahNumber" }
+                .onFailure { _statusMessage.value = it.localizedMessage ?: "تعذر حفظ العلامة" }
         }
     }
 
@@ -261,15 +389,15 @@ class MihrabViewModel(
     fun saveTasbihCounter(id: String, label: String, arabicText: String, count: Long, target: Long) {
         viewModelScope.launch {
             repository.upsertTasbihCounter(id, label, arabicText, count, target)
-                .onFailure { _statusMessage.value = it.localizedMessage ?: "Failed to save Tasbih counter" }
+                .onFailure { _statusMessage.value = it.localizedMessage ?: "تعذر حفظ التسبيح" }
         }
     }
 
     fun addObligation(kind: String, title: String, amount: Double, notes: String?) {
         viewModelScope.launch {
             repository.addObligation(kind, title, amount, notes)
-                .onSuccess { _statusMessage.value = "Saved record." }
-                .onFailure { _statusMessage.value = it.localizedMessage ?: "Failed to save record" }
+                .onSuccess { _statusMessage.value = "تم حفظ السجل" }
+                .onFailure { _statusMessage.value = it.localizedMessage ?: "تعذر الحفظ" }
         }
     }
 
@@ -288,15 +416,15 @@ class MihrabViewModel(
     fun postDuaWall(alias: String, category: String, requestText: String) {
         viewModelScope.launch {
             repository.postToDuaWall(alias, category, requestText)
-                .onSuccess { _statusMessage.value = "Shared anonymously on the Dua Wall." }
-                .onFailure { _statusMessage.value = it.localizedMessage ?: "Failed to post Dua" }
+                .onSuccess { _statusMessage.value = "تمت مشاركة دعائك في حائط الدعاء" }
+                .onFailure { _statusMessage.value = it.localizedMessage ?: "تعذر نشر الدعاء" }
         }
     }
 
     fun sayAmeen(postId: String) {
         viewModelScope.launch {
             repository.incrementAmeen(postId)
-                .onFailure { _statusMessage.value = it.localizedMessage ?: "Could not record Ameen" }
+                .onFailure { _statusMessage.value = it.localizedMessage ?: "تعذر تسجيل آمين" }
         }
     }
 
@@ -309,8 +437,8 @@ class MihrabViewModel(
     fun createKhatmahGroup(title: String) {
         viewModelScope.launch {
             repository.createKhatmahGroup(title)
-                .onSuccess { _statusMessage.value = "Family Khatmah created!" }
-                .onFailure { _statusMessage.value = it.localizedMessage ?: "Failed to create group" }
+                .onSuccess { _statusMessage.value = "تم إنشاء ختمة العائلة" }
+                .onFailure { _statusMessage.value = it.localizedMessage ?: "تعذر إنشاء المجموعة" }
         }
     }
 
@@ -324,7 +452,7 @@ class MihrabViewModel(
         viewModelScope.launch {
             repository.exportUserDataJson()
                 .onSuccess { _exportedJson.value = it }
-                .onFailure { _statusMessage.value = it.localizedMessage ?: "Export failed" }
+                .onFailure { _statusMessage.value = it.localizedMessage ?: "تعذر التصدير" }
         }
     }
 
@@ -332,10 +460,10 @@ class MihrabViewModel(
         viewModelScope.launch {
             repository.deleteAllUserData()
                 .onSuccess {
-                    _statusMessage.value = "All cloud worship data deleted."
+                    _statusMessage.value = "تم حذف جميع بياناتك السحابية"
                     onComplete()
                 }
-                .onFailure { _statusMessage.value = it.localizedMessage ?: "Delete failed" }
+                .onFailure { _statusMessage.value = it.localizedMessage ?: "تعذر الحذف" }
         }
     }
 

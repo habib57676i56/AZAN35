@@ -2,6 +2,10 @@ package com.example.data.firebase
 
 import android.content.Context
 import com.example.R
+import com.example.data.local.LocalPrefsDao
+import com.example.data.local.LocalUserPrefsEntity
+import com.example.data.local.ReciterDao
+import com.example.data.local.ReciterEntity
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
@@ -17,16 +21,19 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.tasks.await
 import org.json.JSONArray
 import org.json.JSONObject
 
 class MihrabRepository(
     private val db: FirebaseFirestore,
+    private val localPrefsDao: LocalPrefsDao? = null,
+    private val reciterDao: ReciterDao? = null,
     private val auth: FirebaseAuth = Firebase.auth
 ) {
     constructor(context: Context) : this(
-        FirebaseFirestore.getInstance(
+        db = FirebaseFirestore.getInstance(
             context.applicationContext.getString(R.string.firestore_database_id)
         )
     )
@@ -57,7 +64,7 @@ class MihrabRepository(
         )
     }
 
-    // --- USER SETTINGS ---
+    // --- USER SETTINGS (SYNCED FIRESTORE + ROOM LOCAL CACHE) ---
     fun observeUserSettings(uid: String): Flow<UserSettingsDoc?> {
         val path = "users/$uid"
         return safeFirestoreFlow(path, OperationType.GET, uid) {
@@ -65,8 +72,31 @@ class MihrabRepository(
                 if (snap.exists()) {
                     snap.toObject(UserSettingsDoc::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
                 } else null
+            }.onEach { doc ->
+                if (doc != null && localPrefsDao != null) {
+                    localPrefsDao.upsertPrefs(
+                        LocalUserPrefsEntity(
+                            userId = uid,
+                            preferredLanguage = doc.preferredLanguage,
+                            themeMode = doc.themeMode,
+                            mushafPaper = doc.mushafPaper,
+                            fontScale = doc.fontScale.toFloat(),
+                            lastReadPage = doc.lastReadPage.toInt().coerceIn(1, 604),
+                            lastReadSurah = doc.lastReadSurah.toInt().coerceIn(1, 114),
+                            lastReadAyah = doc.lastReadAyah.toInt().coerceIn(1, 286),
+                            preferredReciterId = doc.preferredReciterId,
+                            adhanEnabled = doc.adhanEnabled,
+                            adhanVoiceId = doc.adhanVoiceId,
+                            khatmahPagesRead = doc.khatmahPagesRead.toInt().coerceIn(0, 604)
+                        )
+                    )
+                }
             }
         }
+    }
+
+    fun observeLocalPrefs(uid: String): Flow<LocalUserPrefsEntity?> {
+        return localPrefsDao?.observePrefs(uid) ?: flow { emit(null) }
     }
 
     suspend fun ensureUserSettings(displayName: String): Result<Unit> {
@@ -76,11 +106,20 @@ class MihrabRepository(
             val docRef = db.collection("users").document(uid)
             val snap = docRef.get().await()
             if (!snap.exists()) {
-                val safeName = displayName.trim().ifBlank { "Believer" }.take(60)
+                val safeName = displayName.trim().ifBlank { "مؤمن" }.take(60)
                 val payload = mapOf(
                     "userId" to uid,
                     "displayName" to safeName,
-                    "preferredLanguage" to "en",
+                    "preferredLanguage" to "ar",
+                    "themeMode" to "SYSTEM",
+                    "mushafPaper" to "WHITE",
+                    "fontScale" to 1.0,
+                    "lastReadPage" to 1L,
+                    "lastReadSurah" to 1L,
+                    "lastReadAyah" to 1L,
+                    "preferredReciterId" to "ar.alafasy",
+                    "adhanEnabled" to true,
+                    "adhanVoiceId" to "makkah",
                     "calculationMethod" to "MWL",
                     "city" to "Makkah",
                     "latitude" to 21.4225,
@@ -100,6 +139,23 @@ class MihrabRepository(
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
                 docRef.set(payload).await()
+            } else {
+                // Backfill any newly added Phase 1 fields on existing user documents safely
+                val data = snap.data ?: emptyMap()
+                val backfill = mutableMapOf<String, Any>()
+                if (!data.containsKey("themeMode")) backfill["themeMode"] = "SYSTEM"
+                if (!data.containsKey("mushafPaper")) backfill["mushafPaper"] = "WHITE"
+                if (!data.containsKey("fontScale")) backfill["fontScale"] = 1.0
+                if (!data.containsKey("lastReadPage")) backfill["lastReadPage"] = 1L
+                if (!data.containsKey("lastReadSurah")) backfill["lastReadSurah"] = 1L
+                if (!data.containsKey("lastReadAyah")) backfill["lastReadAyah"] = 1L
+                if (!data.containsKey("preferredReciterId")) backfill["preferredReciterId"] = "ar.alafasy"
+                if (!data.containsKey("adhanEnabled")) backfill["adhanEnabled"] = true
+                if (!data.containsKey("adhanVoiceId")) backfill["adhanVoiceId"] = "makkah"
+                if (backfill.isNotEmpty()) {
+                    backfill["updatedAt"] = FieldValue.serverTimestamp()
+                    docRef.update(backfill).await()
+                }
             }
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -115,6 +171,27 @@ class MihrabRepository(
         val path = "users/$uid"
         return try {
             requireUserId()
+            // Mirror immediately into local SQLite for instant zero-jank reactivity
+            localPrefsDao?.let { dao ->
+                val cur = dao.getPrefs(uid) ?: LocalUserPrefsEntity(userId = uid)
+                dao.upsertPrefs(
+                    cur.copy(
+                        preferredLanguage = (fields["preferredLanguage"] as? String) ?: cur.preferredLanguage,
+                        themeMode = (fields["themeMode"] as? String) ?: cur.themeMode,
+                        mushafPaper = (fields["mushafPaper"] as? String) ?: cur.mushafPaper,
+                        fontScale = (fields["fontScale"] as? Number)?.toFloat() ?: cur.fontScale,
+                        lastReadPage = (fields["lastReadPage"] as? Number)?.toInt() ?: cur.lastReadPage,
+                        lastReadSurah = (fields["lastReadSurah"] as? Number)?.toInt() ?: cur.lastReadSurah,
+                        lastReadAyah = (fields["lastReadAyah"] as? Number)?.toInt() ?: cur.lastReadAyah,
+                        preferredReciterId = (fields["preferredReciterId"] as? String) ?: cur.preferredReciterId,
+                        adhanEnabled = (fields["adhanEnabled"] as? Boolean) ?: cur.adhanEnabled,
+                        adhanVoiceId = (fields["adhanVoiceId"] as? String) ?: cur.adhanVoiceId,
+                        khatmahPagesRead = (fields["khatmahPagesRead"] as? Number)?.toInt() ?: cur.khatmahPagesRead,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+            }
+
             val clean = fields.toMutableMap()
             clean.remove("userId")
             clean.remove("createdAt")
@@ -126,6 +203,45 @@ class MihrabRepository(
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.UPDATE, path)
             Result.failure(e)
+        }
+    }
+
+    // --- RECITERS CATALOG (DYNAMIC FIRESTORE + SEEDED ROOM SQLITE CACHE) ---
+    suspend fun ensureDefaultRecitersSeededLocally() {
+        val dao = reciterDao ?: return
+        if (dao.getActiveReciters().isEmpty()) {
+            dao.upsertAll(DEFAULT_RECITERS)
+        }
+    }
+
+    fun observeReciters(uid: String): Flow<List<ReciterEntity>> {
+        val path = "reciters"
+        return safeFirestoreFlow(path, OperationType.LIST, uid) {
+            db.collection("reciters")
+                .whereEqualTo("active", true)
+                .snapshots()
+                .map { snap ->
+                    val docs = snap.toObjects(ReciterDoc::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                    if (docs.isNotEmpty()) {
+                        val mapped = docs.sortedBy { it.sortOrder }.map { d ->
+                            ReciterEntity(
+                                id = d.id.ifBlank { d.editionId },
+                                nameAr = d.nameAr,
+                                nameEn = d.nameEn,
+                                styleAr = d.styleAr,
+                                styleEn = d.styleEn,
+                                editionId = d.editionId,
+                                everyAyahFolder = d.everyAyahFolder,
+                                sortOrder = d.sortOrder.toInt(),
+                                active = d.active
+                            )
+                        }
+                        reciterDao?.upsertAll(mapped)
+                        mapped
+                    } else {
+                        reciterDao?.getActiveReciters()?.takeIf { it.isNotEmpty() } ?: DEFAULT_RECITERS
+                    }
+                }
         }
     }
 
@@ -239,6 +355,7 @@ class MihrabRepository(
         val path = "users/$uid/duaJournal/$entryId"
         return try {
             requireUserId()
+            require(entryId.isNotBlank()) { "Invalid journal ID" }
             db.collection("users").document(uid).collection("duaJournal").document(entryId)
                 .update(mapOf("answered" to answered, "updatedAt" to FieldValue.serverTimestamp()))
                 .await()
@@ -256,6 +373,7 @@ class MihrabRepository(
         val path = "users/$uid/duaJournal/$entryId"
         return try {
             requireUserId()
+            require(entryId.isNotBlank()) { "Invalid journal ID" }
             db.collection("users").document(uid).collection("duaJournal").document(entryId).delete().await()
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -276,7 +394,13 @@ class MihrabRepository(
         }
     }
 
-    suspend fun addBookmark(surahNumber: Int, ayahNumber: Int, collectionName: String, note: String?): Result<Unit> {
+    suspend fun addBookmark(
+        surahNumber: Int,
+        ayahNumber: Int,
+        collectionName: String,
+        note: String?,
+        pageNumber: Int? = null
+    ): Result<Unit> {
         val uid = auth.currentUser?.uid ?: return Result.failure(IllegalStateException("Not authenticated"))
         val docId = "bm_${surahNumber}_$ayahNumber"
         val path = "users/$uid/bookmarks/$docId"
@@ -284,6 +408,7 @@ class MihrabRepository(
             requireUserId()
             val cleanCol = collectionName.trim().ifBlank { "Favorites" }.take(60)
             val cleanNote = note?.trim()?.take(500)?.takeIf { it.isNotEmpty() }
+            val safePage = pageNumber?.coerceIn(1, 604)?.toLong()
             val docRef = db.collection("users").document(uid).collection("bookmarks").document(docId)
             val snap = docRef.get().await()
             if (snap.exists()) {
@@ -292,11 +417,13 @@ class MihrabRepository(
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
                 if (cleanNote != null) updates["note"] = cleanNote
+                if (safePage != null) updates["pageNumber"] = safePage
                 docRef.update(updates).await()
             } else {
                 val payload = mapOf(
                     "surahNumber" to surahNumber.toLong(),
                     "ayahNumber" to ayahNumber.toLong(),
+                    "pageNumber" to safePage,
                     "collectionName" to cleanCol,
                     "note" to cleanNote,
                     "createdAt" to FieldValue.serverTimestamp(),
@@ -318,6 +445,7 @@ class MihrabRepository(
         val path = "users/$uid/bookmarks/$bookmarkId"
         return try {
             requireUserId()
+            require(bookmarkId.isNotBlank()) { "Invalid bookmark ID" }
             db.collection("users").document(uid).collection("bookmarks").document(bookmarkId).delete().await()
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -423,6 +551,7 @@ class MihrabRepository(
         val path = "users/$uid/obligations/${doc.id}"
         return try {
             requireUserId()
+            require(doc.id.isNotBlank()) { "Invalid obligation ID" }
             db.collection("users").document(uid).collection("obligations").document(doc.id)
                 .update(mapOf("settled" to !doc.settled, "updatedAt" to FieldValue.serverTimestamp()))
                 .await()
@@ -440,12 +569,73 @@ class MihrabRepository(
         val path = "users/$uid/obligations/$id"
         return try {
             requireUserId()
+            require(id.isNotBlank()) { "Invalid obligation ID" }
             db.collection("users").document(uid).collection("obligations").document(id).delete().await()
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.DELETE, path)
+            Result.failure(e)
+        }
+    }
+
+    // --- PHASE 2 PREPARED: ADHKAR LOGS & AI CHATS ---
+    suspend fun saveAdhkarLog(dateKey: String, category: String, completedCount: Long, targetCount: Long): Result<Unit> {
+        val uid = auth.currentUser?.uid ?: return Result.failure(IllegalStateException("Not authenticated"))
+        val docId = "${dateKey}_${category.replace(Regex("[^a-zA-Z0-9_\\-]"), "_")}".take(64)
+        val path = "users/$uid/adhkarLogs/$docId"
+        return try {
+            requireUserId()
+            val ref = db.collection("users").document(uid).collection("adhkarLogs").document(docId)
+            val snap = ref.get().await()
+            if (snap.exists()) {
+                ref.update(
+                    mapOf(
+                        "completedCount" to completedCount.coerceIn(0L, 10000L),
+                        "targetCount" to targetCount.coerceIn(1L, 10000L),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            } else {
+                ref.set(
+                    mapOf(
+                        "dateKey" to dateKey,
+                        "category" to category.take(60),
+                        "completedCount" to completedCount.coerceIn(0L, 10000L),
+                        "targetCount" to targetCount.coerceIn(1L, 10000L),
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun saveAiChatMessage(role: String, content: String, surahRef: String?): Result<Unit> {
+        val uid = auth.currentUser?.uid ?: return Result.failure(IllegalStateException("Not authenticated"))
+        val path = "users/$uid/aiChats"
+        return try {
+            requireUserId()
+            val payload = mapOf(
+                "role" to if (role == "assistant") "assistant" else "user",
+                "content" to content.trim().take(8000),
+                "surahRef" to surahRef?.trim()?.take(64)?.takeIf { it.isNotEmpty() },
+                "createdAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            ).filterValues { it != null }
+            db.collection("users").document(uid).collection("aiChats").document().set(payload).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, path)
             Result.failure(e)
         }
     }
@@ -468,7 +658,7 @@ class MihrabRepository(
             requireUserId()
             val cleanText = requestText.trim().take(500)
             require(cleanText.length >= 5) { "Please write at least 5 characters for your Dua request." }
-            val cleanAlias = alias.trim().ifBlank { "Anonymous Believer" }.take(40)
+            val cleanAlias = alias.trim().ifBlank { "طالب دعاء" }.take(40)
             val payload = mapOf(
                 "authorUid" to uid,
                 "alias" to cleanAlias,
@@ -493,6 +683,7 @@ class MihrabRepository(
         val path = "duaWall/$postId"
         return try {
             requireUserId()
+            require(postId.isNotBlank()) { "Invalid post ID" }
             db.collection("duaWall").document(postId)
                 .update(
                     mapOf(
@@ -514,6 +705,7 @@ class MihrabRepository(
         val path = "duaWall/$postId"
         return try {
             requireUserId()
+            require(postId.isNotBlank()) { "Invalid post ID" }
             db.collection("duaWall").document(postId).delete().await()
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -540,7 +732,7 @@ class MihrabRepository(
         val path = "khatmahGroups"
         return try {
             requireUserId()
-            val cleanTitle = title.trim().ifBlank { "Family Khatmah" }.take(80)
+            val cleanTitle = title.trim().ifBlank { "ختمة العائلة" }.take(80)
             val code = ("NOOR" + (1000..9999).random()).take(10)
             val payload = mapOf(
                 "ownerUid" to uid,
@@ -565,6 +757,7 @@ class MihrabRepository(
         val path = "khatmahGroups/${group.id}"
         return try {
             requireUserId()
+            require(group.id.isNotBlank()) { "Invalid group ID" }
             val updated = group.completedJuz.toMutableSet()
             val juzLong = juz.toLong()
             if (juzLong in updated) updated.remove(juzLong) else updated.add(juzLong)
@@ -620,7 +813,7 @@ class MihrabRepository(
         return try {
             requireUserId()
             val userRef = db.collection("users").document(uid)
-            val subCollections = listOf("prayerLogs", "duaJournal", "bookmarks", "tasbihCounters", "obligations")
+            val subCollections = listOf("prayerLogs", "duaJournal", "bookmarks", "tasbihCounters", "obligations", "adhkarLogs", "aiChats")
             for (sub in subCollections) {
                 val docs = userRef.collection(sub).get().await()
                 for (doc in docs.documents) {
@@ -628,6 +821,7 @@ class MihrabRepository(
                 }
             }
             userRef.delete().await()
+            localPrefsDao?.deletePrefs(uid)
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -635,5 +829,18 @@ class MihrabRepository(
             handleFirestoreError(e, OperationType.DELETE, "users/$uid")
             Result.failure(e)
         }
+    }
+
+    companion object {
+        val DEFAULT_RECITERS: List<ReciterEntity> = listOf(
+            ReciterEntity("ar.husary", "محمود خليل الحصري", "Mahmoud Khalil Al-Husary", "مرتل مجوّد", "Murattal", "ar.husary", "Husary_128kbps", 1, true),
+            ReciterEntity("ar.minshawi", "محمد صديق المنشاوي", "Muhammad Siddiq Al-Minshawi", "مرتل خاشع", "Murattal", "ar.minshawi", "Minshawy_Murattal_128kbps", 2, true),
+            ReciterEntity("ar.abdulbasitmurattal", "عبد الباسط عبد الصمد", "Abdul Basit 'Abdus-Samad", "مرتل", "Murattal", "ar.abdulbasitmurattal", "Abdul_Basit_Murattal_192kbps", 3, true),
+            ReciterEntity("ar.alafasy", "مشاري راشد العفاسي", "Mishary Rashid Alafasy", "مرتل", "Murattal", "ar.alafasy", "Alafasy_128kbps", 4, true),
+            ReciterEntity("ar.mahermuaiqly", "ماهر المعيقلي", "Maher Al-Muaiqly", "إمام الحرم المكي", "Haramain", "ar.mahermuaiqly", "MaherAlMuaiqly128kbps", 5, true),
+            ReciterEntity("ar.abdurrahmaansudais", "عبد الرحمن السديس", "Abdurrahman As-Sudais", "إمام الحرم المكي", "Haramain", "ar.abdurrahmaansudais", "Abdurrahmaan_As-Sudais_192kbps", 6, true),
+            ReciterEntity("ar.yasseraldossari", "ياسر الدوسري", "Yasser Al-Dosari", "إمام الحرم المكي", "Haramain", "ar.alafasy", "Yasser_Ad-Dussary_128kbps", 7, true),
+            ReciterEntity("ar.saoodshuraym", "سعود الشريم", "Saud Al-Shuraim", "إمام الحرم المكي", "Haramain", "ar.saoodshuraym", "Saood_ash-Shuraym_128kbps", 8, true)
+        )
     }
 }

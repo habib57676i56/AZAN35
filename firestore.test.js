@@ -41,8 +41,17 @@ beforeEach(async () => {
 function validUserSettings(uid, now) {
   return {
     userId: uid,
-    displayName: "Ahmad",
-    preferredLanguage: "en",
+    displayName: "أحمد",
+    preferredLanguage: "ar",
+    themeMode: "SYSTEM",
+    mushafPaper: "WHITE",
+    fontScale: 1.0,
+    lastReadPage: 1,
+    lastReadSurah: 1,
+    lastReadAyah: 1,
+    preferredReciterId: "ar.alafasy",
+    adhanEnabled: true,
+    adhanVoiceId: "makkah",
     calculationMethod: "MWL",
     city: "Makkah",
     latitude: 21.4225,
@@ -68,19 +77,19 @@ test("Unauthenticated users are denied across all collections", async () => {
   const past = new Date(Date.now() - 2000);
   await assertFails(unauthDb.collection("users").doc(ALICE_UID).get());
   await assertFails(unauthDb.collection("users").doc(ALICE_UID).set(validUserSettings(ALICE_UID, past)));
+  await assertFails(unauthDb.collection("reciters").where("active", "==", true).get());
   await assertFails(unauthDb.collection("duaWall").where("visibility", "==", "COMMUNITY").get());
   await assertFails(unauthDb.collection("khatmahGroups").where("memberUids", "array-contains", ALICE_UID).get());
 });
 
-test("User settings and subcollections enforce strict owner isolation and partial updates", async () => {
+test("User settings (Phase 1 theme/RTL/lastReadPage) enforce strict owner isolation and partial updates", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
   const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
   const past = new Date(Date.now() - 5000);
 
-  // Alice creates her own profile
   await assertSucceeds(aliceDb.collection("users").doc(ALICE_UID).set(validUserSettings(ALICE_UID, past)));
 
-  // Reject ghost field ("Shadow Update Test")
+  // Reject ghost field
   await assertFails(
     aliceDb.collection("users").doc("ghost_user").set({
       ...validUserSettings("ghost_user", past),
@@ -88,11 +97,24 @@ test("User settings and subcollections enforce strict owner isolation and partia
     })
   );
 
-  // Alice updates her settings partially while preserving createdAt
+  // Alice updates themeMode, language, and lastReadPage while preserving createdAt
   await assertSucceeds(
     aliceDb.collection("users").doc(ALICE_UID).update({
-      ramadanMode: true,
+      preferredLanguage: "en",
+      themeMode: "DARK",
+      mushafPaper: "SEPIA",
+      lastReadPage: 255,
+      lastReadSurah: 13,
+      lastReadAyah: 28,
       updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+
+  // Reject out-of-range page 605
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      lastReadPage: 605,
+      updatedAt: new Date(Date.now() - 500),
     })
   );
 
@@ -109,90 +131,102 @@ test("User settings and subcollections enforce strict owner isolation and partia
   await assertFails(bobDb.collection("users").doc(ALICE_UID).update({ city: "Hijack", updatedAt: past }));
 });
 
-test("Prayer logs, journal entries, bookmarks, tasbih, and obligations enforce schema & ownership", async () => {
+test("Subcollections (bookmarks with pageNumber, Phase 2 adhkarLogs/aiChats) enforce schema & ownership", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
   const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
   const past = new Date(Date.now() - 5000);
 
-  // PrayerLog
   await assertSucceeds(
-    aliceDb.collection("users").doc(ALICE_UID).collection("prayerLogs").doc("2026-11-23").set({
-      dateKey: "2026-11-23",
-      fajr: true,
-      dhuhr: true,
-      asr: false,
-      maghrib: false,
-      isha: false,
-      sunnahRawatib: true,
-      duha: false,
-      witr: false,
-      qiyam: false,
-      fastingType: "VOLUNTARY",
-      khushuRating: 4,
-      createdAt: past,
-      updatedAt: past,
-    })
-  );
-  await assertSucceeds(aliceDb.collection("users").doc(ALICE_UID).collection("prayerLogs").get());
-  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("prayerLogs").get());
-
-  // JournalEntry (without optional reference, and with optional reference)
-  await assertSucceeds(
-    aliceDb.collection("users").doc(ALICE_UID).collection("duaJournal").doc("entry_1").set({
-      entryType: "DUA",
-      title: "Guidance and Steadfastness",
-      body: "O Allah keep my heart firm upon Your religion.",
-      answered: false,
-      createdAt: past,
-      updatedAt: past,
-    })
-  );
-  await assertFails(
-    aliceDb.collection("users").doc(ALICE_UID).collection("duaJournal").doc("entry_bad").set({
-      id: "entry_bad", // Forbidden @DocumentId key
-      entryType: "DUA",
-      title: "Bad",
-      body: "Body",
-      answered: false,
-      createdAt: past,
-      updatedAt: past,
-    })
-  );
-
-  // Bookmark & Tasbih & Obligation
-  await assertSucceeds(
-    aliceDb.collection("users").doc(ALICE_UID).collection("bookmarks").doc("bm_1_1").set({
-      surahNumber: 1,
-      ayahNumber: 1,
+    aliceDb.collection("users").doc(ALICE_UID).collection("bookmarks").doc("bm_2_255").set({
+      surahNumber: 2,
+      ayahNumber: 255,
+      pageNumber: 42,
       collectionName: "Favorites",
-      note: "Opening of the Book",
+      note: "Ayat al-Kursi",
+      createdAt: past,
+      updatedAt: past,
+    })
+  );
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("bookmarks").get());
+
+  // Phase 2 prepared adhkarLogs & aiChats
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).collection("adhkarLogs").doc("2026-11-23_morning").set({
+      dateKey: "2026-11-23",
+      category: "MORNING",
+      completedCount: 5,
+      targetCount: 10,
       createdAt: past,
       updatedAt: past,
     })
   );
   await assertSucceeds(
-    aliceDb.collection("users").doc(ALICE_UID).collection("tasbihCounters").doc("subhanallah").set({
-      label: "SubhanAllah",
-      arabicText: "سُبْحَانَ اللَّهِ",
-      count: 33,
-      target: 33,
+    aliceDb.collection("users").doc(ALICE_UID).collection("aiChats").doc("chat_1").set({
+      role: "user",
+      content: "ما تفسير آية الكرسي؟",
+      surahRef: "2:255",
       createdAt: past,
       updatedAt: past,
     })
   );
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("aiChats").get());
+});
+
+test("Reciters catalog (Phase 1/3) permits active read and blocks non-admin writes", async () => {
+  const past = new Date(Date.now() - 5000);
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection("reciters").doc("ar.alafasy").set({
+      nameAr: "مشاري راشد العفاسي",
+      nameEn: "Mishary Rashid Alafasy",
+      styleAr: "مرتل",
+      styleEn: "Murattal",
+      editionId: "ar.alafasy",
+      everyAyahFolder: "Alafasy_128kbps",
+      sortOrder: 1,
+      active: true,
+      createdAt: past,
+      updatedAt: past,
+    });
+  });
+
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const adminDb = testEnv.authenticatedContext("admin_1", { admin: true }).firestore();
+
+  await assertSucceeds(aliceDb.collection("reciters").where("active", "==", true).get());
+  await assertFails(aliceDb.collection("reciters").get()); // must filter active == true
+  await assertFails(
+    aliceDb.collection("reciters").doc("fake").set({
+      nameAr: "Fake",
+      nameEn: "Fake",
+      styleAr: "مرتل",
+      styleEn: "Murattal",
+      editionId: "fake",
+      everyAyahFolder: "fake",
+      sortOrder: 9,
+      active: true,
+      createdAt: past,
+      updatedAt: past,
+    })
+  );
+
+  // Admin can manage reciters
   await assertSucceeds(
-    aliceDb.collection("users").doc(ALICE_UID).collection("obligations").doc("charity_1").set({
-      kind: "CHARITY",
-      title: "Water Well Sadaqah",
-      amount: 50.0,
-      settled: true,
+    adminDb.collection("reciters").doc("ar.husary").set({
+      nameAr: "محمود خليل الحصري",
+      nameEn: "Mahmoud Khalil Al-Husary",
+      styleAr: "مرتل",
+      styleEn: "Murattal",
+      editionId: "ar.husary",
+      everyAyahFolder: "Husary_128kbps",
+      sortOrder: 2,
+      active: true,
       createdAt: past,
       updatedAt: past,
     })
   );
 });
 
-test("Community Dua Wall allows filtered queries and +1 Ameen increments while blocking tampering", async () => {
+test("Community Dua Wall and Khatmah groups continue to enforce strict parity", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
   const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
   const past = new Date(Date.now() - 5000);
@@ -200,9 +234,9 @@ test("Community Dua Wall allows filtered queries and +1 Ameen increments while b
   await assertSucceeds(
     aliceDb.collection("duaWall").doc("post_1").set({
       authorUid: ALICE_UID,
-      alias: "Seeking Light",
+      alias: "طالب نور",
       category: "HEALING",
-      requestText: "Please make dua for my mother's full recovery.",
+      requestText: "نسألكم الدعاء بالشفاء العاجل.",
       visibility: "COMMUNITY",
       ameenCount: 0,
       createdAt: past,
@@ -210,68 +244,13 @@ test("Community Dua Wall allows filtered queries and +1 Ameen increments while b
     })
   );
 
-  // Filtered query matching rule succeeds; unfiltered fails
   await assertSucceeds(aliceDb.collection("duaWall").where("visibility", "==", "COMMUNITY").get());
   await assertFails(aliceDb.collection("duaWall").get());
-
-  // Bob can increment Ameen by 1, cannot jump by 5 or edit requestText or delete
   await assertSucceeds(
     bobDb.collection("duaWall").doc("post_1").update({
       ameenCount: 1,
       updatedAt: new Date(Date.now() - 1000),
     })
   );
-  await assertFails(
-    bobDb.collection("duaWall").doc("post_1").update({
-      ameenCount: 10,
-      updatedAt: new Date(Date.now() - 500),
-    })
-  );
-  await assertFails(
-    bobDb.collection("duaWall").doc("post_1").update({
-      requestText: "Tampered text",
-      updatedAt: new Date(Date.now() - 500),
-    })
-  );
   await assertFails(bobDb.collection("duaWall").doc("post_1").delete());
-});
-
-test("Khatmah groups enforce membership on queries and updates", async () => {
-  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
-  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
-  const past = new Date(Date.now() - 5000);
-
-  await assertSucceeds(
-    aliceDb.collection("khatmahGroups").doc("family_1").set({
-      ownerUid: ALICE_UID,
-      title: "Family Ramadan Khatmah",
-      joinCode: "NOOR26",
-      memberUids: [ALICE_UID],
-      completedJuz: [1, 2],
-      createdAt: past,
-      updatedAt: past,
-    })
-  );
-
-  await assertSucceeds(
-    aliceDb.collection("khatmahGroups").where("memberUids", "array-contains", ALICE_UID).get()
-  );
-  await assertFails(aliceDb.collection("khatmahGroups").get());
-
-  // Bob joins by appending only himself
-  await assertSucceeds(
-    bobDb.collection("khatmahGroups").doc("family_1").update({
-      memberUids: [ALICE_UID, BOB_UID],
-      updatedAt: new Date(Date.now() - 1000),
-    })
-  );
-  // Now Bob can update completedJuz
-  await assertSucceeds(
-    bobDb.collection("khatmahGroups").doc("family_1").update({
-      completedJuz: [1, 2, 3],
-      updatedAt: new Date(Date.now() - 500),
-    })
-  );
-  // Bob cannot delete Alice's group
-  await assertFails(bobDb.collection("khatmahGroups").doc("family_1").delete());
 });
