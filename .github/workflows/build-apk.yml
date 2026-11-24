@@ -49,6 +49,8 @@ jobs:
           gradle-version: "9.3.1"
 
       - name: Prepare Debug Keystore & Optional Firebase Config
+        env:
+          GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
         shell: bash
         run: |
           if [ ! -f debug.keystore ] && [ -f debug.keystore.base64 ]; then
@@ -59,8 +61,8 @@ jobs:
               -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
               -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
-          if [ -n "${{ secrets.GOOGLE_SERVICES_JSON_B64 }}" ]; then
-            echo "${{ secrets.GOOGLE_SERVICES_JSON_B64 }}" | tr -d '\r\n' | base64 -d > app/google-services.json
+          if [ -n "$GOOGLE_SERVICES_JSON_B64" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON_B64" | tr -d '\r\n' | base64 -d > app/google-services.json
           fi
 
       - name: Build Debug APK
@@ -73,17 +75,21 @@ jobs:
           fi
 
       - name: Build Signed Release APK (if release signing secrets are set)
-        if: ${{ secrets.RELEASE_KEYSTORE_B64 != '' && secrets.STORE_PASSWORD != '' && secrets.KEY_PASSWORD != '' }}
         env:
+          RELEASE_KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         shell: bash
         run: |
-          echo "${{ secrets.RELEASE_KEYSTORE_B64 }}" | tr -d '\r\n' | base64 -d > my-upload-key.jks
-          if [ -x ./gradlew ]; then
-            ./gradlew :app:assembleRelease --no-daemon --stacktrace
+          if [ -n "$RELEASE_KEYSTORE_B64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ]; then
+            printf '%s' "$RELEASE_KEYSTORE_B64" | tr -d '\r\n' | base64 -d > my-upload-key.jks
+            if [ -x ./gradlew ]; then
+              ./gradlew :app:assembleRelease --no-daemon --stacktrace
+            else
+              gradle :app:assembleRelease --no-daemon --stacktrace
+            fi
           else
-            gradle :app:assembleRelease --no-daemon --stacktrace
+            echo "Release keystore secrets not configured; skipping signed Release APK."
           fi
 
       - name: Collect APK Outputs
