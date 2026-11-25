@@ -7,9 +7,11 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,6 +51,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SupportAgent
 import androidx.compose.material.icons.rounded.Translate
@@ -78,6 +81,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -101,6 +105,7 @@ import com.example.core.hardware.LauncherShortcutTarget
 import com.example.core.hardware.LocationAndMosqueLocator
 import com.example.core.hardware.PrayerStatusNotificationManager
 import com.example.core.hardware.RemoteAvatarImage
+import com.example.core.hardware.encodeCompressedAvatarBitmapFromUri
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
 import com.example.core.i18n.formatNumerals
@@ -130,6 +135,9 @@ import com.example.ui.viewmodel.MihrabViewModel
 import com.example.ui.viewmodel.UiState
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -197,6 +205,33 @@ fun ToolsScreen(
     val isVerifiedAccount = settings.accountVerified || AdminAccess.isSuperAdmin(authUser)
     var showEditNameDialog by remember { mutableStateOf(false) }
     var editedNameInput by remember(settings.displayName) { mutableStateOf(settings.displayName) }
+    val coroutineScope = rememberCoroutineScope()
+    var isUploadingAvatar by remember { mutableStateOf(false) }
+
+    val avatarPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            isUploadingAvatar = true
+            coroutineScope.launch {
+                val encoded = withContext(Dispatchers.IO) {
+                    encodeCompressedAvatarBitmapFromUri(context, uri)
+                }
+                isUploadingAvatar = false
+                if (encoded != null) {
+                    viewModel.updateProfilePhoto(encoded)
+                } else {
+                    viewModel.showMessage(
+                        appLanguage.pick(
+                            "تعذر معالجة الصورة المختارة، جرب صورة أخرى",
+                            "Could not process selected image",
+                            "Tanlangan rasmni qayta ishlab bo'lmadi"
+                        )
+                    )
+                }
+            }
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
@@ -214,10 +249,21 @@ fun ToolsScreen(
                     isVerified = isVerifiedAccount,
                     isAdmin = isSuperAdmin,
                     isSuperAdminAccount = AdminAccess.isSuperAdmin(authUser),
+                    isUploadingAvatar = isUploadingAvatar,
+                    hasCustomAvatar = profilePhotoUrl.startsWith("data:image", ignoreCase = true),
+                    hasGoogleAvatar = !authUser?.photoUrl?.toString().isNullOrBlank(),
                     appLanguage = appLanguage,
                     onEditNameClick = {
                         editedNameInput = settings.displayName
                         showEditNameDialog = true
+                    },
+                    onPickPhotoClick = {
+                        avatarPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    onResetPhotoClick = {
+                        viewModel.resetProfilePhotoToGoogle()
                     },
                     onOpenSupport = { activeSection = 3 }
                 )
@@ -334,8 +380,13 @@ private fun GoogleProfileCard(
     isVerified: Boolean,
     isAdmin: Boolean,
     isSuperAdminAccount: Boolean,
+    isUploadingAvatar: Boolean,
+    hasCustomAvatar: Boolean,
+    hasGoogleAvatar: Boolean,
     appLanguage: AppLanguage,
     onEditNameClick: () -> Unit,
+    onPickPhotoClick: () -> Unit,
+    onResetPhotoClick: () -> Unit,
     onOpenSupport: () -> Unit
 ) {
     val glass = LocalLiquidGlassPalette.current
@@ -352,11 +403,51 @@ private fun GoogleProfileCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            RemoteAvatarImage(
-                photoUrl = photoUrl,
-                displayName = displayName,
-                size = 58.dp
-            )
+            Box(
+                modifier = Modifier
+                    .clickable(enabled = !isUploadingAvatar, onClick = onPickPhotoClick)
+                    .testTag("edit_profile_photo_button"),
+                contentAlignment = Alignment.Center
+            ) {
+                RemoteAvatarImage(
+                    photoUrl = photoUrl,
+                    displayName = displayName,
+                    size = 60.dp
+                )
+                if (isUploadingAvatar) {
+                    Surface(
+                        shape = CircleShape,
+                        color = Color.Black.copy(alpha = 0.45f),
+                        modifier = Modifier.size(60.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                strokeWidth = 2.5.dp,
+                                color = Color.White
+                            )
+                        }
+                    }
+                } else {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary,
+                        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.surface),
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(22.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.PhotoCamera,
+                                contentDescription = appLanguage.pick("تغيير صورة الحساب", "Change photo", "Rasmni o'zgartirish"),
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                    }
+                }
+            }
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp)
@@ -430,7 +521,7 @@ private fun GoogleProfileCard(
             }
             Column(
                 horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 OutlinedButton(
                     onClick = onEditNameClick,
@@ -444,6 +535,34 @@ private fun GoogleProfileCard(
                         text = appLanguage.pick("تعديل الاسم", "Edit Name", "Tahrirlash"),
                         style = MaterialTheme.typography.labelMedium
                     )
+                }
+                OutlinedButton(
+                    onClick = onPickPhotoClick,
+                    enabled = !isUploadingAvatar,
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    modifier = Modifier.testTag("change_profile_photo_chip")
+                ) {
+                    Icon(Icons.Rounded.PhotoCamera, null, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = appLanguage.pick("تغيير الصورة", "Change Photo", "Rasm"),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+                if (hasCustomAvatar && hasGoogleAvatar) {
+                    TextButton(
+                        onClick = onResetPhotoClick,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.testTag("reset_google_photo_button")
+                    ) {
+                        Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = appLanguage.pick("استعادة صورة جوجل", "Use Google Photo", "Google rasm"),
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
                 }
                 TextButton(
                     onClick = onOpenSupport,

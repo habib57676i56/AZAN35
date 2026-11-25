@@ -43,6 +43,7 @@ import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.OndemandVideo
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SupportAgent
@@ -112,6 +113,8 @@ fun AdminDashboardScreen(
     adhanAudioPlayer: AdhanAudioPlayer,
     appLanguage: AppLanguage,
     strings: LocalizedStrings,
+    initialAdminTab: Int = 0,
+    adminTabNonce: Int = 0,
     onBack: () -> Unit
 ) {
     val glass = LocalLiquidGlassPalette.current
@@ -170,6 +173,7 @@ fun AdminDashboardScreen(
     val quranDefaults by adminViewModel.quranDefaultsState.collectAsStateWithLifecycle()
     val aiConfig by adminViewModel.aiConfigState.collectAsStateWithLifecycle()
     val appOps by adminViewModel.appOperationsState.collectAsStateWithLifecycle()
+    val videos by adminViewModel.videosAdminState.collectAsStateWithLifecycle()
 
     val exportBackupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -204,14 +208,18 @@ fun AdminDashboardScreen(
         }
     }
 
-    var adminTab by remember { mutableIntStateOf(0) }
+    var adminTab by remember { mutableIntStateOf(initialAdminTab) }
+    LaunchedEffect(initialAdminTab, adminTabNonce) {
+        adminTab = initialAdminTab
+    }
     val tabLabels = listOf(
         strings.adminTabDefaults to MihrabIcons.ScholarBook,
         strings.adminTabReciters to MihrabIcons.AdhanVoice,
         strings.adminTabAdhkar to MihrabIcons.TasbihBeads,
         strings.adminTabAdhan to MihrabIcons.BroadcastBanner,
         strings.adminTabAiControl to MihrabIcons.AiSpark,
-        strings.adminTabOperations to MihrabIcons.FeatureFlags
+        strings.adminTabOperations to MihrabIcons.FeatureFlags,
+        appLanguage.pick("الفيديوهات", "Videos", "Videolar") to Icons.Rounded.OndemandVideo
     )
 
     SacredAmbientCanvas {
@@ -298,6 +306,12 @@ fun AdminDashboardScreen(
                                 AdminKpiPill(
                                     label = appLanguage.pick("الأذكار", "Adhkar", "Zikrlar"),
                                     value = "${adhkar.size}"
+                                )
+                            }
+                            item {
+                                AdminKpiPill(
+                                    label = appLanguage.pick("الفيديوهات", "Videos", "Videolar"),
+                                    value = "${videos.count { it.active }}/${videos.size}"
                                 )
                             }
                             item {
@@ -405,6 +419,13 @@ fun AdminDashboardScreen(
                         onSetUserAdminRole = { uid, makeAdmin -> adminViewModel.setUserAdminRole(uid, makeAdmin) },
                         onExportBackup = { adminViewModel.exportFullDatabaseBackup() },
                         onImportBackup = { importBackupLauncher.launch(arrayOf("application/json", "text/*")) }
+                    )
+                    6 -> VideosCrudTab(
+                        videos = videos,
+                        appLanguage = appLanguage,
+                        strings = strings,
+                        onUpsert = { adminViewModel.upsertVideo(it) },
+                        onDelete = { adminViewModel.deleteVideo(it) }
                     )
                 }
             }
@@ -1074,6 +1095,7 @@ private fun AppOperationsTab(
                 FlagSwitchRow(appLanguage.pick("بطاقة الآيات والأحاديث الحية", "Live Rotating Verses & Hadiths", "Jonli oyat va hadislar kartasi"), ops.liveVersesCardEnabled) { ops = ops.copy(liveVersesCardEnabled = it) }
                 FlagSwitchRow(appLanguage.pick("المساجد القريبة بالخريطة (GPS)", "Nearby Mosques (GPS / OSM)", "Yaqin atrofdagi masjidlar"), ops.nearbyMosquesEnabled) { ops = ops.copy(nearbyMosquesEnabled = it) }
                 FlagSwitchRow(appLanguage.pick("شريط المواقيت الدائم بالإشعارات", "Persistent Prayer Shade Notification", "Doimiy namoz vaqtlari paneli"), ops.persistentPrayerNotificationAllowed) { ops = ops.copy(persistentPrayerNotificationAllowed = it) }
+                FlagSwitchRow(appLanguage.pick("قسم الفيديوهات الإسلامية والكرتون", "Islamic Videos & Cartoons Section", "Islomiy videolar bo'limi"), ops.videosEnabled) { ops = ops.copy(videosEnabled = it) }
                 FlagSwitchRow(appLanguage.pick("وضع الصيانة السحابي", "Maintenance Mode", "Texnik xizmat rejimi"), ops.maintenanceMode) { ops = ops.copy(maintenanceMode = it) }
 
                 Spacer(Modifier.height(4.dp))

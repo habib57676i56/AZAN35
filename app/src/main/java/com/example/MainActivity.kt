@@ -431,7 +431,18 @@ private fun AuthenticatedMihrabShell(
     val strings = remember(appLanguage) { stringsFor(appLanguage) }
     val manualOffsets by mihrabViewModel.manualOffsets.collectAsStateWithLifecycle()
 
-    LaunchedEffect(effectiveSettings, manualOffsets, appLanguage, useIndic, appOperations) {
+    LaunchedEffect(
+        effectiveSettings.city,
+        effectiveSettings.latitude,
+        effectiveSettings.longitude,
+        effectiveSettings.calculationMethod,
+        effectiveSettings.travelerMode,
+        effectiveSettings.hijriOffset,
+        manualOffsets,
+        appLanguage,
+        useIndic,
+        appOperations.persistentPrayerNotificationAllowed
+    ) {
         PrayerStatusNotificationManager.syncAndSchedule(
             context = context,
             settings = effectiveSettings,
@@ -442,7 +453,21 @@ private fun AuthenticatedMihrabShell(
         )
     }
 
-    LaunchedEffect(effectiveSettings, manualOffsets, appLanguage, useIndic, localPrefs?.customAdhanLocalPath) {
+    LaunchedEffect(
+        effectiveSettings.city,
+        effectiveSettings.latitude,
+        effectiveSettings.longitude,
+        effectiveSettings.calculationMethod,
+        effectiveSettings.travelerMode,
+        effectiveSettings.hijriOffset,
+        effectiveSettings.adhanEnabled,
+        effectiveSettings.adhanVoiceId,
+        effectiveSettings.perPrayerAdhanModes,
+        manualOffsets,
+        appLanguage,
+        useIndic,
+        localPrefs?.customAdhanLocalPath
+    ) {
         MihrabReminderManager.syncAndScheduleAll(
             context = context,
             settings = effectiveSettings,
@@ -467,6 +492,8 @@ private fun AuthenticatedMihrabShell(
     var dhikrSubTabNonce by rememberSaveable { mutableIntStateOf(0) }
     var toolsSubTab by rememberSaveable { mutableIntStateOf(0) }
     var toolsSubTabNonce by rememberSaveable { mutableIntStateOf(0) }
+    var adminSubTab by rememberSaveable { mutableIntStateOf(0) }
+    var adminSubTabNonce by rememberSaveable { mutableIntStateOf(0) }
     var pendingAiPrompt by rememberSaveable { mutableStateOf<String?>(null) }
     var showAdminDashboard by rememberSaveable { mutableStateOf(false) }
     var bannerDismissedKey by rememberSaveable { mutableStateOf("") }
@@ -664,6 +691,8 @@ private fun AuthenticatedMihrabShell(
                         adhanAudioPlayer = adhanAudioPlayer,
                         appLanguage = appLanguage,
                         strings = strings,
+                        initialAdminTab = adminSubTab,
+                        adminTabNonce = adminSubTabNonce,
                         onBack = { showAdminDashboard = false }
                     )
                 } else if (effectiveSettings.kidsMode && appOperations.kidsModeEnabled) {
@@ -741,7 +770,11 @@ private fun AuthenticatedMihrabShell(
                                             actions = {
                                                 if (isAdmin) {
                                                     Surface(
-                                                        onClick = { showAdminDashboard = true },
+                                                        onClick = {
+                                                            adminSubTab = 0
+                                                            adminSubTabNonce += 1
+                                                            showAdminDashboard = true
+                                                        },
                                                         shape = CircleShape,
                                                         color = BurnishedGold.copy(alpha = 0.14f),
                                                         border = BorderStroke(1.dp, BurnishedGold.copy(alpha = 0.5f)),
@@ -1234,6 +1267,11 @@ private fun AuthenticatedMihrabShell(
                                                         toolsSubTab = 0
                                                         toolsSubTabNonce += 1
                                                         selectedTab = 4
+                                                    },
+                                                    onOpenVideos = {
+                                                        learnSubTab = 4
+                                                        learnSubTabNonce += 1
+                                                        selectedTab = 3
                                                     }
                                                 )
                                                 1 -> QuranScreen(
@@ -1274,7 +1312,15 @@ private fun AuthenticatedMihrabShell(
                                                     subTabTriggerNonce = learnSubTabNonce,
                                                     prefilledAiQuestion = pendingAiPrompt,
                                                     onConsumePrefilledQuestion = { pendingAiPrompt = null },
-                                                    appOperations = appOperations
+                                                    appOperations = appOperations,
+                                                    isAdmin = isAdmin,
+                                                    onOpenAdminVideos = {
+                                                        if (isAdmin) {
+                                                            adminSubTab = 6
+                                                            adminSubTabNonce += 1
+                                                            showAdminDashboard = true
+                                                        }
+                                                    }
                                                 )
                                                 4 -> ToolsScreen(
                                                     viewModel = mihrabViewModel,
@@ -1286,7 +1332,13 @@ private fun AuthenticatedMihrabShell(
                                                     useIndic = useIndic,
                                                     onToggleIndic = { mihrabViewModel.toggleIndicNumerals(it) },
                                                     isSuperAdmin = isAdmin,
-                                                    onOpenAdminDashboard = { if (isAdmin) showAdminDashboard = true },
+                                                    onOpenAdminDashboard = {
+                                                        if (isAdmin) {
+                                                            adminSubTab = 0
+                                                            adminSubTabNonce += 1
+                                                            showAdminDashboard = true
+                                                        }
+                                                    },
                                                     initialSection = toolsSubTab,
                                                     sectionNonce = toolsSubTabNonce,
                                                     appOperations = appOperations,

@@ -39,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -118,32 +119,49 @@ fun IslamicGeometricPatternCanvas(
     tint: Color = Color.White,
     alpha: Float = 0.055f
 ) {
-    Canvas(modifier = modifier) {
-        val step = 64.dp.toPx()
-        val strokeCol = tint.copy(alpha = alpha.coerceIn(0.02f, 0.08f))
-        val cols = (size.width / step).toInt() + 2
-        val rows = (size.height / step).toInt() + 2
-        val rOuter = step * 0.36f
-        val rInner = step * 0.16f
+    Box(
+        modifier = modifier.drawWithCache {
+            val step = 64.dp.toPx()
+            val strokeCol = tint.copy(alpha = alpha.coerceIn(0.02f, 0.08f))
+            val cols = (size.width / step).toInt() + 2
+            val rows = (size.height / step).toInt() + 2
+            val rOuter = step * 0.36f
+            val rInner = step * 0.16f
+            val combinedPath = Path()
+            val centers = ArrayList<Offset>((rows + 1) * (cols + 1))
 
-        for (row in 0..rows) {
-            for (col in 0..cols) {
-                val cx = col * step + (if (row % 2 == 1) step * 0.5f else 0f)
-                val cy = row * step
-                val path = Path()
-                for (i in 0 until 16) {
-                    val angle = (i * Math.PI / 8.0)
-                    val radius = if (i % 2 == 0) rOuter else rInner
-                    val px = cx + (cos(angle) * radius).toFloat()
-                    val py = cy + (sin(angle) * radius).toFloat()
-                    if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
+            for (row in 0..rows) {
+                for (col in 0..cols) {
+                    val cx = col * step + (if (row % 2 == 1) step * 0.5f else 0f)
+                    val cy = row * step
+                    centers.add(Offset(cx, cy))
+                    for (i in 0 until 16) {
+                        val angle = (i * Math.PI / 8.0)
+                        val radius = if (i % 2 == 0) rOuter else rInner
+                        val px = cx + (cos(angle) * radius).toFloat()
+                        val py = cy + (sin(angle) * radius).toFloat()
+                        if (i == 0) combinedPath.moveTo(px, py) else combinedPath.lineTo(px, py)
+                    }
+                    combinedPath.close()
                 }
-                path.close()
-                drawPath(path = path, color = strokeCol, style = Stroke(width = 1.dp.toPx()))
-                drawCircle(color = strokeCol, radius = rInner * 0.45f, center = Offset(cx, cy), style = Stroke(width = 0.8.dp.toPx()))
+            }
+            val outerStroke = Stroke(width = 1.dp.toPx())
+            val innerStroke = Stroke(width = 0.8.dp.toPx())
+            val innerCircleRadius = rInner * 0.45f
+
+            onDrawBehind {
+                drawPath(path = combinedPath, color = strokeCol, style = outerStroke)
+                for (c in centers) {
+                    drawCircle(
+                        color = strokeCol,
+                        radius = innerCircleRadius,
+                        center = c,
+                        style = innerStroke
+                    )
+                }
             }
         }
-    }
+    )
 }
 
 /**
@@ -168,32 +186,31 @@ fun LiquidGlassCard(
     val fill = containerColor ?: glass.glassFill
     val border = borderColor ?: glass.glassBorder
 
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (pressed && onClick != null) 0.975f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "glassScale"
-    )
-
-    val cardModifier = modifier
-        .graphicsLayer {
-            scaleX = scale
-            scaleY = scale
-        }
-        .clip(shape)
-        .then(
-            if (onClick != null) {
-                Modifier.clickable(
-                    interactionSource = interactionSource,
-                    indication = androidx.compose.material3.ripple(),
-                    onClick = onClick
-                )
-            } else Modifier
+    val cardModifier = if (onClick != null) {
+        val interactionSource = remember { MutableInteractionSource() }
+        val pressed by interactionSource.collectIsPressedAsState()
+        val scale by animateFloatAsState(
+            targetValue = if (pressed) 0.975f else 1f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium
+            ),
+            label = "glassScale"
         )
+        modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(shape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = androidx.compose.material3.ripple(),
+                onClick = onClick
+            )
+    } else {
+        modifier.clip(shape)
+    }
 
     Surface(
         modifier = cardModifier,

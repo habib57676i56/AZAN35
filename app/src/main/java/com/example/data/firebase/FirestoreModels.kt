@@ -247,6 +247,46 @@ data class AdhkarItemDoc(
     val updatedAt: Timestamp? = null
 )
 
+enum class VideoCategory(
+    val id: String,
+    val labelAr: String,
+    val labelEn: String,
+    val labelUz: String
+) {
+    EXPLAIN_ISLAM("EXPLAIN_ISLAM", "شرح الإسلام", "Explaining Islam", "Islomni tushuntirish"),
+    ISLAMIC_CARTOON("ISLAMIC_CARTOON", "كرتون إسلامي", "Islamic Cartoons", "Islomiy multfilmlar"),
+    QURAN_LESSONS("QURAN_LESSONS", "دروس القرآن", "Quran Lessons", "Qur'on darslari"),
+    PROPHET_STORIES("PROPHET_STORIES", "قصص الأنبياء", "Prophet Stories", "Payg'ambarlar qissasi");
+
+    fun labelFor(language: com.example.core.i18n.AppLanguage): String =
+        language.pick(labelAr, labelEn, labelUz)
+
+    companion object {
+        fun fromId(id: String?): VideoCategory =
+            entries.firstOrNull { it.id == id } ?: EXPLAIN_ISLAM
+    }
+}
+
+@Keep
+@IgnoreExtraProperties
+data class VideoItemDoc(
+    @DocumentId val id: String = "",
+    val category: String = "EXPLAIN_ISLAM",
+    val titleAr: String = "",
+    val titleEn: String = "",
+    val titleUz: String = "",
+    val descriptionAr: String = "",
+    val descriptionEn: String = "",
+    val descriptionUz: String = "",
+    val videoUrl: String = "",
+    val thumbnailUrl: String = "",
+    val durationLabel: String = "",
+    val sortOrder: Long = 1L,
+    val active: Boolean = true,
+    val createdAt: Timestamp? = null,
+    val updatedAt: Timestamp? = null
+)
+
 data class AiRuntimeConfig(
     val enabled: Boolean = true,
     val modelName: String = "gemini-3.8-flash",
@@ -296,6 +336,7 @@ data class AppOperationsConfig(
     val liveVersesCardEnabled: Boolean = true,
     val nearbyMosquesEnabled: Boolean = true,
     val persistentPrayerNotificationAllowed: Boolean = true,
+    val videosEnabled: Boolean = true,
     val maintenanceMode: Boolean = false,
     val supportWhatsapp: String = DEFAULT_SUPPORT_WHATSAPP,
     val supportTelegram: String = DEFAULT_SUPPORT_TELEGRAM,

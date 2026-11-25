@@ -68,7 +68,7 @@ service cloud.firestore {
       return data.userId == userId &&
              data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60 &&
              (!('email' in data) || (data.email is string && data.email.size() <= 160)) &&
-             (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 1000)) &&
+             (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 80000)) &&
              (!('accountVerified' in data) || data.accountVerified is bool) &&
              (!('accountSuspended' in data) || data.accountSuspended is bool) &&
              (!('adminRole' in data) || data.adminRole in ['USER', 'ADMIN']) &&
@@ -244,6 +244,23 @@ service cloud.firestore {
              data.memberUids[0] is string &&
              data.completedJuz is list && data.completedJuz.size() <= 30 &&
              (data.completedJuz.size() == 0 || data.completedJuz[0] is int) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidIslamicVideo(data) {
+      return data.category in ['EXPLAIN_ISLAM', 'ISLAMIC_CARTOON', 'QURAN_LESSONS', 'PROPHET_STORIES'] &&
+             data.titleAr is string && data.titleAr.size() >= 1 && data.titleAr.size() <= 160 &&
+             data.titleEn is string && data.titleEn.size() >= 1 && data.titleEn.size() <= 160 &&
+             (!('titleUz' in data) || (data.titleUz is string && data.titleUz.size() <= 160)) &&
+             data.descriptionAr is string && data.descriptionAr.size() <= 2000 &&
+             data.descriptionEn is string && data.descriptionEn.size() <= 2000 &&
+             (!('descriptionUz' in data) || (data.descriptionUz is string && data.descriptionUz.size() <= 2000)) &&
+             data.videoUrl is string && data.videoUrl.size() >= 1 && data.videoUrl.size() <= 1000 &&
+             (!('thumbnailUrl' in data) || (data.thumbnailUrl is string && data.thumbnailUrl.size() <= 180000)) &&
+             (!('durationLabel' in data) || (data.durationLabel is string && data.durationLabel.size() <= 40)) &&
+             data.sortOrder is int && data.sortOrder >= 0 && data.sortOrder <= 10000 &&
+             data.active is bool &&
              isValidTimestamp(data.createdAt) &&
              isValidTimestamp(data.updatedAt);
     }
@@ -478,6 +495,14 @@ service cloud.firestore {
       allow list: if (isSignedIn() && existing().active == true) || isAdmin();
       allow create, update: if isAdmin() && isValidId(itemId) && isValidAdhkarItem(incoming());
       allow delete: if isAdmin() && isValidId(itemId);
+    }
+
+    // --- ISLAMIC VIDEOS & CARTOONS CATALOG ---
+    match /islamicVideos/{videoId} {
+      allow get: if isSignedIn() && isValidId(videoId);
+      allow list: if (isSignedIn() && existing().active == true) || isAdmin();
+      allow create, update: if isAdmin() && isValidId(videoId) && isValidIslamicVideo(incoming());
+      allow delete: if isAdmin() && isValidId(videoId);
     }
 
     // --- COMMUNITY ANONYMOUS DUA WALL ---

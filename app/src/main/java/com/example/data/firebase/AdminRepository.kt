@@ -95,6 +95,14 @@ class AdminRepository(
             }
         }
 
+    fun observeAllVideosAdmin(): Flow<List<VideoItemDoc>> =
+        safeAdminFlow("islamicVideos", OperationType.LIST) {
+            db.collection("islamicVideos").snapshots().map { snap ->
+                snap.toObjects(VideoItemDoc::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                    .sortedBy { it.sortOrder }
+            }
+        }
+
     // --- ADMIN CONFIG SAVES ---
     suspend fun saveAdminConfig(configKey: String, jsonObject: JSONObject): Result<Unit> {
         val path = "adminConfigs/$configKey"
@@ -187,6 +195,7 @@ class AdminRepository(
             put("liveVersesCardEnabled", cfg.liveVersesCardEnabled)
             put("nearbyMosquesEnabled", cfg.nearbyMosquesEnabled)
             put("persistentPrayerNotificationAllowed", cfg.persistentPrayerNotificationAllowed)
+            put("videosEnabled", cfg.videosEnabled)
             put("maintenanceMode", cfg.maintenanceMode)
             put("supportWhatsapp", cfg.supportWhatsapp.trim().ifBlank { AppOperationsConfig.DEFAULT_SUPPORT_WHATSAPP }.take(60))
             put("supportTelegram", cfg.supportTelegram.trim().ifBlank { AppOperationsConfig.DEFAULT_SUPPORT_TELEGRAM }.take(80))
@@ -438,6 +447,64 @@ class AdminRepository(
         }
     }
 
+    // --- ISLAMIC VIDEOS & CARTOONS CRUD ---
+    suspend fun upsertVideo(video: VideoItemDoc): Result<Unit> {
+        val safeId = video.id
+            .replace(Regex("[^a-zA-Z0-9._\\-]"), "_")
+            .take(80)
+            .ifBlank { "vid_${System.currentTimeMillis()}" }
+        val path = "islamicVideos/$safeId"
+        return try {
+            requireAdminAccess()
+            val cleanUrl = video.videoUrl.trim().take(1000)
+            require(cleanUrl.isNotBlank()) { "Video URL cannot be empty" }
+            val cleanTitleAr = video.titleAr.trim().ifBlank { video.titleEn.trim() }.ifBlank { "فيديو إسلامي" }.take(160)
+            val cleanTitleEn = video.titleEn.trim().ifBlank { cleanTitleAr }.take(160)
+            val cleanTitleUz = video.titleUz.trim().take(160)
+            val ref = db.collection("islamicVideos").document(safeId)
+            val snap = ref.get().await()
+            val validCat = VideoCategory.fromId(video.category).id
+            val payload = mutableMapOf<String, Any>(
+                "category" to validCat,
+                "titleAr" to cleanTitleAr,
+                "titleEn" to cleanTitleEn,
+                "titleUz" to cleanTitleUz,
+                "descriptionAr" to video.descriptionAr.trim().take(2000),
+                "descriptionEn" to video.descriptionEn.trim().take(2000),
+                "descriptionUz" to video.descriptionUz.trim().take(2000),
+                "videoUrl" to cleanUrl,
+                "thumbnailUrl" to video.thumbnailUrl.trim().take(175000),
+                "durationLabel" to video.durationLabel.trim().take(40),
+                "sortOrder" to video.sortOrder.coerceIn(0L, 10000L),
+                "active" to video.active,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            payload["createdAt"] = snap.getTimestamp("createdAt") ?: FieldValue.serverTimestamp()
+            ref.set(payload).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteVideo(videoId: String): Result<Unit> {
+        val path = "islamicVideos/$videoId"
+        return try {
+            requireAdminAccess()
+            require(videoId.isNotBlank()) { "Invalid video ID" }
+            db.collection("islamicVideos").document(videoId).delete().await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, path)
+            Result.failure(e)
+        }
+    }
+
     // --- USER MANAGEMENT & GOVERNANCE ---
     suspend fun updateUserAsAdmin(targetUid: String, fields: Map<String, Any>): Result<Unit> {
         val path = "users/$targetUid"
@@ -535,6 +602,7 @@ class AdminRepository(
             val recitersSnap = db.collection("reciters").get().await()
             val adhkarSnap = db.collection("adhkarItems").get().await()
             val adhanSnap = db.collection("adhanVoices").get().await()
+            val videosSnap = db.collection("islamicVideos").get().await()
             val usersSnap = db.collection("users").limit(200).get().await()
 
             fun docsToArray(docs: List<DocumentSnapshot>): JSONArray {
@@ -550,13 +618,14 @@ class AdminRepository(
             }
 
             val root = JSONObject().apply {
-                put("backupVersion", 3)
+                put("backupVersion", 4)
                 put("exportedAt", System.currentTimeMillis())
                 put("exportedBy", AdminAccess.SUPER_ADMIN_EMAIL)
                 put("adminConfigs", docsToArray(configsSnap.documents))
                 put("reciters", docsToArray(recitersSnap.documents))
                 put("adhkarItems", docsToArray(adhkarSnap.documents))
                 put("adhanVoices", docsToArray(adhanSnap.documents))
+                put("islamicVideos", docsToArray(videosSnap.documents))
                 put("usersSummary", docsToArray(usersSnap.documents))
             }
             Result.success(root.toString(2))
@@ -644,6 +713,31 @@ class AdminRepository(
                             nameEn = obj.optString("nameEn", "Adhan"),
                             muezzin = obj.optString("muezzin", "Muezzin"),
                             audioUrl = obj.optString("audioUrl", ""),
+                            active = obj.optBoolean("active", true)
+                        )
+                    ).getOrThrow()
+                    importedCount++
+                }
+            }
+
+            root.optJSONArray("islamicVideos")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    val id = obj.optString("_id").ifBlank { "vid_imp_$i" }
+                    upsertVideo(
+                        VideoItemDoc(
+                            id = id,
+                            category = obj.optString("category", "EXPLAIN_ISLAM"),
+                            titleAr = obj.optString("titleAr", "فيديو إسلامي"),
+                            titleEn = obj.optString("titleEn", "Islamic Video"),
+                            titleUz = obj.optString("titleUz", ""),
+                            descriptionAr = obj.optString("descriptionAr", ""),
+                            descriptionEn = obj.optString("descriptionEn", ""),
+                            descriptionUz = obj.optString("descriptionUz", ""),
+                            videoUrl = obj.optString("videoUrl", ""),
+                            thumbnailUrl = obj.optString("thumbnailUrl", ""),
+                            durationLabel = obj.optString("durationLabel", ""),
+                            sortOrder = obj.optLong("sortOrder", (i + 1).toLong()),
                             active = obj.optBoolean("active", true)
                         )
                     ).getOrThrow()

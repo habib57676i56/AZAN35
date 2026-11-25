@@ -475,4 +475,83 @@ test("User profile fields, anti-self-promotion, verification, suspension, and de
   await assertFails(aliceDb.collection("users").get());
 });
 
+test("Custom profile photo data URI and islamicVideos catalog enforce rules parity", async () => {
+  const past = new Date(Date.now() - 5000);
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID, { email: "alice@example.com", email_verified: true }).firestore();
+  const superAdminDb = testEnv.authenticatedContext("super_admin", { email: "habiybullohy@gmail.com", email_verified: true }).firestore();
 
+  await assertSucceeds(aliceDb.collection("users").doc(ALICE_UID).set(validUserSettings(ALICE_UID, past)));
+
+  // User can upload a compressed base64 avatar (~18 KB)
+  const compressedAvatar = "data:image/jpeg;base64," + "A".repeat(18000);
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      photoUrl: compressedAvatar,
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+
+  // Regular user cannot create an islamicVideos entry
+  await assertFails(
+    aliceDb.collection("islamicVideos").doc("vid_1").set({
+      category: "EXPLAIN_ISLAM",
+      titleAr: "مقدمة عن الإسلام",
+      titleEn: "Introduction to Islam",
+      titleUz: "Islomga kirish",
+      descriptionAr: "شرح مبسط لأركان الإسلام",
+      descriptionEn: "Simple explanation of Islam",
+      descriptionUz: "Islom asoslari haqida",
+      videoUrl: "https://example.com/intro.mp4",
+      thumbnailUrl: "",
+      durationLabel: "05:30",
+      sortOrder: 1,
+      active: true,
+      createdAt: past,
+      updatedAt: past,
+    })
+  );
+
+  // Admin can publish EXPLAIN_ISLAM and ISLAMIC_CARTOON videos
+  await assertSucceeds(
+    superAdminDb.collection("islamicVideos").doc("vid_1").set({
+      category: "ISLAMIC_CARTOON",
+      titleAr: "كرتون أمانة المسلم",
+      titleEn: "Cartoon: Honesty in Islam",
+      titleUz: "Multfilm: Omonatdorlik",
+      descriptionAr: "قصة كرتونية تعليمية للأطفال",
+      descriptionEn: "Educational Islamic cartoon for children",
+      descriptionUz: "Bolalar uchun tarbiyaviy multfilm",
+      videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      thumbnailUrl: "https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+      durationLabel: "04:15",
+      sortOrder: 1,
+      active: true,
+      createdAt: past,
+      updatedAt: past,
+    })
+  );
+
+  await assertSucceeds(
+    superAdminDb.collection("islamicVideos").doc("vid_hidden").set({
+      category: "EXPLAIN_ISLAM",
+      titleAr: "مسودة مخفية",
+      titleEn: "Hidden Draft",
+      titleUz: "Yashirin",
+      descriptionAr: "محتوى غير منشور",
+      descriptionEn: "Draft",
+      descriptionUz: "Draft",
+      videoUrl: "https://example.com/draft.mp4",
+      thumbnailUrl: "",
+      durationLabel: "03:00",
+      sortOrder: 2,
+      active: false,
+      createdAt: past,
+      updatedAt: past,
+    })
+  );
+
+  // Signed-in users can list active videos, but unfiltered list is denied
+  await assertSucceeds(aliceDb.collection("islamicVideos").where("active", "==", true).get());
+  await assertFails(aliceDb.collection("islamicVideos").get());
+  await assertSucceeds(superAdminDb.collection("islamicVideos").get());
+});

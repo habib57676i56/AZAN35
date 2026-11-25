@@ -184,7 +184,9 @@ class MihrabRepository(
                 if (!data.containsKey("email") || (currentEmail.isNotEmpty() && data["email"] != currentEmail)) {
                     backfill["email"] = currentEmail
                 }
-                if (!data.containsKey("photoUrl") || (currentPhoto.isNotEmpty() && data["photoUrl"] != currentPhoto)) {
+                val existingPhoto = (data["photoUrl"] as? String).orEmpty()
+                val isCustomEncodedAvatar = existingPhoto.startsWith("data:image", ignoreCase = true)
+                if (!data.containsKey("photoUrl") || (!isCustomEncodedAvatar && currentPhoto.isNotEmpty() && existingPhoto != currentPhoto)) {
                     backfill["photoUrl"] = currentPhoto
                 }
                 if (!data.containsKey("themeMode")) backfill["themeMode"] = "SYSTEM"
@@ -243,6 +245,57 @@ class MihrabRepository(
                     userProfileChangeRequest { displayName = cleanName }
                 ).await()
             }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateProfilePhoto(photoUrl: String): Result<Unit> {
+        val currentUser = auth.currentUser ?: return Result.failure(IllegalStateException("Not authenticated"))
+        val cleanPhoto = photoUrl.trim().take(78_000)
+        if (cleanPhoto.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Photo cannot be empty"))
+        }
+        val uid = currentUser.uid
+        val path = "users/$uid"
+        return try {
+            requireUserId()
+            db.collection("users").document(uid)
+                .update(
+                    mapOf(
+                        "photoUrl" to cleanPhoto,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+                .await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun resetProfilePhotoToGoogle(): Result<Unit> {
+        val currentUser = auth.currentUser ?: return Result.failure(IllegalStateException("Not authenticated"))
+        val googlePhoto = currentUser.photoUrl?.toString()?.trim().orEmpty().take(1000)
+        val uid = currentUser.uid
+        val path = "users/$uid"
+        return try {
+            requireUserId()
+            db.collection("users").document(uid)
+                .update(
+                    mapOf(
+                        "photoUrl" to googlePhoto,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+                .await()
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -449,6 +502,19 @@ class MihrabRepository(
         }
     }
 
+    fun observeActiveVideos(uid: String): Flow<List<VideoItemDoc>> {
+        val path = "islamicVideos"
+        return safeFirestoreFlow(path, OperationType.LIST, uid) {
+            db.collection("islamicVideos")
+                .whereEqualTo("active", true)
+                .snapshots()
+                .map { snap ->
+                    snap.toObjects(VideoItemDoc::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                        .sortedBy { it.sortOrder }
+                }
+        }
+    }
+
     fun observeAiConfig(uid: String): Flow<AiRuntimeConfig> {
         val path = "adminConfigs/ai_settings"
         return safeFirestoreFlow(path, OperationType.GET, uid) {
@@ -554,6 +620,7 @@ class MihrabRepository(
                                 liveVersesCardEnabled = obj.optBoolean("liveVersesCardEnabled", true),
                                 nearbyMosquesEnabled = obj.optBoolean("nearbyMosquesEnabled", true),
                                 persistentPrayerNotificationAllowed = obj.optBoolean("persistentPrayerNotificationAllowed", true),
+                                videosEnabled = obj.optBoolean("videosEnabled", true),
                                 maintenanceMode = obj.optBoolean("maintenanceMode", false),
                                 supportWhatsapp = obj.optString("supportWhatsapp", "").ifBlank { AppOperationsConfig.DEFAULT_SUPPORT_WHATSAPP },
                                 supportTelegram = obj.optString("supportTelegram", "").ifBlank { AppOperationsConfig.DEFAULT_SUPPORT_TELEGRAM },

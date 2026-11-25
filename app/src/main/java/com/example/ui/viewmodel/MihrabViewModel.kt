@@ -20,6 +20,7 @@ import com.example.data.firebase.PrayerLogDoc
 import com.example.data.firebase.QuranDefaultsConfig
 import com.example.data.firebase.TasbihCounterDoc
 import com.example.data.firebase.UserSettingsDoc
+import com.example.data.firebase.VideoItemDoc
 import com.example.data.local.AdhanVoiceEntity
 import com.example.data.local.AdhkarEntity
 import com.example.data.local.LocalUserPrefsEntity
@@ -112,6 +113,7 @@ class MihrabViewModel(
     private var savePositionJob: Job? = null
     private var searchJob: Job? = null
     private var mosqueFetchJob: Job? = null
+    private var lastMosqueQueryKey: String? = null
 
     init {
         viewModelScope.launch {
@@ -234,6 +236,15 @@ class MihrabViewModel(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000L),
                 initialValue = AppOperationsConfig()
+            )
+
+    val videosState: StateFlow<List<VideoItemDoc>> =
+        repository.observeActiveVideos(currentUserId)
+            .catch { emit(emptyList()) }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000L),
+                initialValue = emptyList()
             )
 
     // --- PHASE 1 MUSHAF ACTIONS ---
@@ -423,8 +434,16 @@ class MihrabViewModel(
     fun refreshNearbyMosques(
         settings: UserSettingsDoc,
         offsets: Map<String, Int>,
-        language: AppLanguage
+        language: AppLanguage,
+        force: Boolean = false
     ) {
+        val roundedLat = (settings.latitude * 1000.0).toInt()
+        val roundedLng = (settings.longitude * 1000.0).toInt()
+        val queryKey = "${settings.city}|$roundedLat|$roundedLng|${language.code}"
+        if (!force && queryKey == lastMosqueQueryKey && _nearbyMosques.value.isNotEmpty()) {
+            return
+        }
+        lastMosqueQueryKey = queryKey
         mosqueFetchJob?.cancel()
         mosqueFetchJob = viewModelScope.launch {
             _nearbyMosquesLoading.value = true
@@ -468,6 +487,34 @@ class MihrabViewModel(
                 }
                 .onFailure {
                     _statusMessage.value = it.localizedMessage ?: "تعذر تحديث الاسم"
+                    onDone(false)
+                }
+        }
+    }
+
+    fun updateProfilePhoto(photoUrl: String, onDone: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            repository.updateProfilePhoto(photoUrl)
+                .onSuccess {
+                    _statusMessage.value = "تم تحديث الصورة الشخصية بنجاح"
+                    onDone(true)
+                }
+                .onFailure {
+                    _statusMessage.value = it.localizedMessage ?: "تعذر تحديث الصورة"
+                    onDone(false)
+                }
+        }
+    }
+
+    fun resetProfilePhotoToGoogle(onDone: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            repository.resetProfilePhotoToGoogle()
+                .onSuccess {
+                    _statusMessage.value = "تمت استعادة صورة حساب جوجل"
+                    onDone(true)
+                }
+                .onFailure {
+                    _statusMessage.value = it.localizedMessage ?: "تعذر استعادة الصورة"
                     onDone(false)
                 }
         }

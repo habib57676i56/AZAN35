@@ -8,7 +8,7 @@
         "userId": { "type": "string", "description": "Firebase Auth UID" },
         "displayName": { "type": "string", "description": "Display name" },
         "email": { "type": "string", "description": "Google account email" },
-        "photoUrl": { "type": "string", "description": "Google account profile photo URL" },
+        "photoUrl": { "type": "string", "description": "Google account profile photo URL or compressed JPEG data URI" },
         "accountVerified": { "type": "boolean", "description": "Admin-granted verification badge" },
         "accountSuspended": { "type": "boolean", "description": "Admin suspension lock" },
         "adminRole": { "type": "string", "enum": ["USER", "ADMIN"], "description": "User privilege role" },
@@ -258,6 +258,31 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerUid", "title", "joinCode", "memberUids", "completedJuz", "createdAt", "updatedAt"]
+    },
+    "IslamicVideo": {
+      "title": "IslamicVideo",
+      "description": "Admin-managed Islamic explainer videos, Quran lessons, Prophet stories, and Islamic cartoons",
+      "type": "object",
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": ["EXPLAIN_ISLAM", "ISLAMIC_CARTOON", "QURAN_LESSONS", "PROPHET_STORIES"]
+        },
+        "titleAr": { "type": "string" },
+        "titleEn": { "type": "string" },
+        "titleUz": { "type": "string" },
+        "descriptionAr": { "type": "string" },
+        "descriptionEn": { "type": "string" },
+        "descriptionUz": { "type": "string" },
+        "videoUrl": { "type": "string" },
+        "thumbnailUrl": { "type": "string" },
+        "durationLabel": { "type": "string" },
+        "sortOrder": { "type": "integer" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["category", "titleAr", "titleEn", "descriptionAr", "descriptionEn", "videoUrl", "sortOrder", "active", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -316,6 +341,10 @@
     "/khatmahGroups/{groupId}": {
       "schema": "KhatmahGroup",
       "description": "Shared Family Khatmah groups"
+    },
+    "/islamicVideos/{videoId}": {
+      "schema": "IslamicVideo",
+      "description": "Admin-published Islamic explainer videos and cartoons"
     }
   }
 }

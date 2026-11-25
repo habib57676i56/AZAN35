@@ -65,6 +65,7 @@ import androidx.compose.material.icons.rounded.Mosque
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.OndemandVideo
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PushPin
@@ -166,6 +167,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
+private val DAILY_AYAH_PAIRS by lazy {
+    QuranContentData.surahs.flatMap { s -> s.ayahs.map { s to it } }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun PrayerScreen(
@@ -182,7 +187,8 @@ fun PrayerScreen(
     onOpenTasbih: () -> Unit = {},
     onOpenAi: (String?) -> Unit = {},
     onOpenHijri: () -> Unit = {},
-    onOpenZakat: () -> Unit = {}
+    onOpenZakat: () -> Unit = {},
+    onOpenVideos: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -297,46 +303,39 @@ fun PrayerScreen(
         }
     }
 
-    var nowSeconds by remember { mutableIntStateOf(0) }
+    var nowMinutes by remember {
+        mutableIntStateOf(
+            Calendar.getInstance().let {
+                it.get(Calendar.HOUR_OF_DAY) * 60 + it.get(Calendar.MINUTE)
+            }
+        )
+    }
     LaunchedEffect(Unit) {
         while (true) {
             val cal = Calendar.getInstance()
-            nowSeconds = cal.get(Calendar.HOUR_OF_DAY) * 3600 +
-                cal.get(Calendar.MINUTE) * 60 +
-                cal.get(Calendar.SECOND)
-            delay(1000L)
+            val minuteOfDay = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+            if (nowMinutes != minuteOfDay) {
+                nowMinutes = minuteOfDay
+            }
+            delay(15_000L)
         }
     }
 
-    val corePrayers = listOf(schedule.fajr, schedule.dhuhr, schedule.asr, schedule.maghrib, schedule.isha)
-    val nextIndex = corePrayers.indexOfFirst { it.timeMinutes * 60 > nowSeconds }.let { if (it >= 0) it else 0 }
+    val corePrayers = remember(schedule) {
+        listOf(schedule.fajr, schedule.dhuhr, schedule.asr, schedule.maghrib, schedule.isha)
+    }
+    val nextIndex = remember(corePrayers, nowMinutes) {
+        corePrayers.indexOfFirst { it.timeMinutes > nowMinutes }.let { if (it >= 0) it else 0 }
+    }
     val nextPrayerEntry = corePrayers[nextIndex]
     val prevPrayerEntry = corePrayers[(nextIndex - 1 + corePrayers.size) % corePrayers.size]
-    val secondsRemaining = if (nextPrayerEntry.timeMinutes * 60 > nowSeconds) {
-        nextPrayerEntry.timeMinutes * 60 - nowSeconds
-    } else {
-        (24 * 3600 - nowSeconds) + nextPrayerEntry.timeMinutes * 60
-    }
-    val totalWindowSeconds = run {
-        val diff = nextPrayerEntry.timeMinutes * 60 - prevPrayerEntry.timeMinutes * 60
-        if (diff > 0) diff else (24 * 3600 + diff)
-    }.coerceAtLeast(60)
-    val countdownProgress = (1f - (secondsRemaining.toFloat() / totalWindowSeconds.toFloat())).coerceIn(0.05f, 1f)
 
-    val countdownStr = String.format(
-        "%02d:%02d:%02d",
-        secondsRemaining / 3600,
-        (secondsRemaining % 3600) / 60,
-        secondsRemaining % 60
-    )
-
-    val skyMood = remember(nowSeconds, schedule) {
-        val nowMin = nowSeconds / 60
+    val skyMood = remember(nowMinutes, schedule) {
         when {
-            nowMin in schedule.fajr.timeMinutes until schedule.sunrise.timeMinutes -> SkyMoodPeriod.FAJR_DAWN
-            nowMin in schedule.sunrise.timeMinutes until schedule.asr.timeMinutes -> SkyMoodPeriod.DHUHR_DAYLIGHT
-            nowMin in schedule.asr.timeMinutes until schedule.maghrib.timeMinutes -> SkyMoodPeriod.ASR_GOLDEN
-            nowMin in schedule.maghrib.timeMinutes until schedule.isha.timeMinutes -> SkyMoodPeriod.MAGHRIB_TWILIGHT
+            nowMinutes in schedule.fajr.timeMinutes until schedule.sunrise.timeMinutes -> SkyMoodPeriod.FAJR_DAWN
+            nowMinutes in schedule.sunrise.timeMinutes until schedule.asr.timeMinutes -> SkyMoodPeriod.DHUHR_DAYLIGHT
+            nowMinutes in schedule.asr.timeMinutes until schedule.maghrib.timeMinutes -> SkyMoodPeriod.ASR_GOLDEN
+            nowMinutes in schedule.maghrib.timeMinutes until schedule.isha.timeMinutes -> SkyMoodPeriod.MAGHRIB_TWILIGHT
             else -> SkyMoodPeriod.ISHA_NIGHT
         }
     }
@@ -350,9 +349,8 @@ fun PrayerScreen(
 
     val isFriday = remember { Calendar.getInstance().get(Calendar.DAY_OF_WEEK) == Calendar.FRIDAY }
     val dailyAyahPair = remember {
-        val all = QuranContentData.surahs.flatMap { s -> s.ayahs.map { s to it } }
         val day = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
-        all[day % all.size]
+        DAILY_AYAH_PAIRS[day % DAILY_AYAH_PAIRS.size]
     }
 
     val audioPickerLauncher = rememberLauncherForActivityResult(
@@ -627,44 +625,12 @@ fun PrayerScreen(
                                     )
                                 }
 
-                                // Live Circular Countdown Ring
-                                Box(
-                                    modifier = Modifier.size(110.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Canvas(modifier = Modifier.fillMaxSize().padding(4.dp)) {
-                                        val strokeW = 7.dp.toPx()
-                                        drawArc(
-                                            color = Color.White.copy(alpha = 0.16f),
-                                            startAngle = 0f,
-                                            sweepAngle = 360f,
-                                            useCenter = false,
-                                            style = Stroke(width = strokeW)
-                                        )
-                                        drawArc(
-                                            brush = Brush.sweepGradient(
-                                                colors = listOf(Color(0xFFF6D98E), LuminousMintEmerald, Color(0xFFF6D98E))
-                                            ),
-                                            startAngle = -90f,
-                                            sweepAngle = 360f * countdownProgress,
-                                            useCenter = false,
-                                            style = Stroke(width = strokeW, cap = StrokeCap.Round)
-                                        )
-                                    }
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text(
-                                            text = formatNumerals(countdownStr, useArabicDigits),
-                                            style = MaterialTheme.typography.titleMedium.withTabularNums(),
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White
-                                        )
-                                        Text(
-                                            text = appLanguage.pick("المتبقي", "Remaining", "Qoldi"),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = Color(0xFFF6D98E)
-                                        )
-                                    }
-                                }
+                                LiveHeroCountdownRing(
+                                    nextPrayerTimeMinutes = nextPrayerEntry.timeMinutes,
+                                    prevPrayerTimeMinutes = prevPrayerEntry.timeMinutes,
+                                    appLanguage = appLanguage,
+                                    useArabicDigits = useArabicDigits
+                                )
                             }
 
                             Row(
@@ -976,6 +942,17 @@ fun PrayerScreen(
                             icon = MihrabIcons.TasbihBeads,
                             label = strings.digitalTasbih
                         )
+                    }
+                    if (appOperations.videosEnabled) {
+                        item {
+                            LiquidGlassPill(
+                                selected = false,
+                                onClick = onOpenVideos,
+                                icon = Icons.Rounded.OndemandVideo,
+                                label = appLanguage.pick("فيديوهات إسلامية وكرتون", "Islamic Videos", "Islomiy videolar"),
+                                modifier = Modifier.testTag("open_videos_pill")
+                            )
+                        }
                     }
                     if (appOperations.aiAssistantEnabled) {
                         item {
@@ -1500,7 +1477,6 @@ fun PrayerScreen(
                         color = MaterialTheme.colorScheme.primary
                     )
 
-                    val nowMinutes = nowSeconds / 60
                     val prayerRows = listOf(
                         Triple(schedule.fajr, todayLog?.fajr == true, "fajr"),
                         Triple(schedule.dhuhr, todayLog?.dhuhr == true, "dhuhr"),
@@ -3098,3 +3074,86 @@ private fun PrayerRowItem(
         }
     }
 }
+
+@Composable
+private fun LiveHeroCountdownRing(
+    nextPrayerTimeMinutes: Int,
+    prevPrayerTimeMinutes: Int,
+    appLanguage: AppLanguage,
+    useArabicDigits: Boolean
+) {
+    var nowSeconds by remember {
+        mutableIntStateOf(
+            Calendar.getInstance().let {
+                it.get(Calendar.HOUR_OF_DAY) * 3600 +
+                    it.get(Calendar.MINUTE) * 60 +
+                    it.get(Calendar.SECOND)
+            }
+        )
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1000L)
+            val cal = Calendar.getInstance()
+            nowSeconds = cal.get(Calendar.HOUR_OF_DAY) * 3600 +
+                cal.get(Calendar.MINUTE) * 60 +
+                cal.get(Calendar.SECOND)
+        }
+    }
+
+    val secondsRemaining = if (nextPrayerTimeMinutes * 60 > nowSeconds) {
+        nextPrayerTimeMinutes * 60 - nowSeconds
+    } else {
+        (24 * 3600 - nowSeconds) + nextPrayerTimeMinutes * 60
+    }
+    val totalWindowSeconds = remember(nextPrayerTimeMinutes, prevPrayerTimeMinutes) {
+        val diff = nextPrayerTimeMinutes * 60 - prevPrayerTimeMinutes * 60
+        if (diff > 0) diff else (24 * 3600 + diff)
+    }.coerceAtLeast(60)
+    val countdownProgress = (1f - (secondsRemaining.toFloat() / totalWindowSeconds.toFloat())).coerceIn(0.05f, 1f)
+    val countdownStr = String.format(
+        "%02d:%02d:%02d",
+        secondsRemaining / 3600,
+        (secondsRemaining % 3600) / 60,
+        secondsRemaining % 60
+    )
+
+    Box(
+        modifier = Modifier.size(110.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize().padding(4.dp)) {
+            val strokeW = 7.dp.toPx()
+            drawArc(
+                color = Color.White.copy(alpha = 0.16f),
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                style = Stroke(width = strokeW)
+            )
+            drawArc(
+                brush = Brush.sweepGradient(
+                    colors = listOf(Color(0xFFF6D98E), LuminousMintEmerald, Color(0xFFF6D98E))
+                ),
+                startAngle = -90f,
+                sweepAngle = 360f * countdownProgress,
+                useCenter = false,
+                style = Stroke(width = strokeW, cap = StrokeCap.Round)
+            )
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = formatNumerals(countdownStr, useArabicDigits),
+                style = MaterialTheme.typography.titleMedium.withTabularNums(),
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+            Text(
+                text = appLanguage.pick("المتبقي", "Remaining", "Qoldi"),
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFFF6D98E)
+            )
+        }
+    }
+}
+

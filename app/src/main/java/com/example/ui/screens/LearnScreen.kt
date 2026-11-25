@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.NightsStay
+import androidx.compose.material.icons.rounded.OndemandVideo
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Quiz
@@ -121,13 +122,16 @@ fun LearnScreen(
     subTabTriggerNonce: Int = 0,
     prefilledAiQuestion: String? = null,
     onConsumePrefilledQuestion: () -> Unit = {},
-    appOperations: AppOperationsConfig = AppOperationsConfig()
+    appOperations: AppOperationsConfig = AppOperationsConfig(),
+    isAdmin: Boolean = false,
+    onOpenAdminVideos: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val glass = LocalLiquidGlassPalette.current
     val settingsState by viewModel.settingsState.collectAsStateWithLifecycle()
     val logsState by viewModel.prayerLogsState.collectAsStateWithLifecycle()
     val manualOffsets by viewModel.manualOffsets.collectAsStateWithLifecycle()
+    val videos by viewModel.videosState.collectAsStateWithLifecycle()
 
     val isArabicUi = appLanguage.isArabicUi
     val useArabicDigits = useIndic && isArabicUi
@@ -165,12 +169,17 @@ fun LearnScreen(
         }
     }
 
-    val learnTabs = listOf(
-        Triple("${strings.hijriCalendar} & ${strings.ramadanMode}", Icons.Rounded.CalendarMonth, 0),
-        Triple(strings.knowledgeHub, MihrabIcons.ScholarBook, 1),
-        Triple(appLanguage.pick("القاعدة النورانية", "Al-Noorania", "Al-Nuroniyya"), Icons.Rounded.RecordVoiceOver, 2),
-        Triple(strings.askAiCompanion, Icons.Rounded.Psychology, 3)
-    )
+    val learnTabs = remember(strings, appLanguage, appOperations.videosEnabled) {
+        buildList {
+            add(Triple("${strings.hijriCalendar} & ${strings.ramadanMode}", Icons.Rounded.CalendarMonth, 0))
+            add(Triple(strings.knowledgeHub, MihrabIcons.ScholarBook, 1))
+            add(Triple(appLanguage.pick("القاعدة النورانية", "Al-Noorania", "Al-Nuroniyya"), Icons.Rounded.RecordVoiceOver, 2))
+            add(Triple(strings.askAiCompanion, Icons.Rounded.Psychology, 3))
+            if (appOperations.videosEnabled) {
+                add(Triple(appLanguage.pick("الفيديوهات", "Videos", "Videolar"), Icons.Rounded.OndemandVideo, 4))
+            }
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
@@ -577,6 +586,15 @@ fun LearnScreen(
                         prefilledAiQuestion = prefilledAiQuestion,
                         onConsumePrefilledQuestion = onConsumePrefilledQuestion,
                         globalAiFlagEnabled = appOperations.aiAssistantEnabled
+                    )
+                }
+                4 -> item {
+                    VideosHubContent(
+                        videos = videos,
+                        videosEnabled = appOperations.videosEnabled,
+                        appLanguage = appLanguage,
+                        isAdmin = isAdmin,
+                        onOpenAdminVideos = if (isAdmin) onOpenAdminVideos else null
                     )
                 }
             }

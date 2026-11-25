@@ -44,7 +44,7 @@ import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
 
 private object BannerBitmapCache {
-    val lru = LruCache<String, ImageBitmap>(16)
+    val lru = LruCache<String, ImageBitmap>(48)
     val httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
@@ -77,6 +77,61 @@ fun encodeCompressedBannerBitmapFromUri(
     val sampled = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, decodeOpts) }
         ?: return@runCatching null
     compressBitmapToDataUri(sampled, maxChars)
+}.getOrNull()
+
+fun encodeCompressedAvatarBitmapFromUri(
+    context: Context,
+    uri: Uri,
+    maxChars: Int = 60_000
+): String? = runCatching {
+    val resolver = context.applicationContext.contentResolver
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+    val rawW = bounds.outWidth
+    val rawH = bounds.outHeight
+    val sampled = if (rawW <= 0 || rawH <= 0) {
+        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: return@runCatching null
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    } else {
+        var sampleSize = 1
+        while ((rawW / sampleSize) > 512 || (rawH / sampleSize) > 512) {
+            sampleSize *= 2
+        }
+        val opts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+    } ?: return@runCatching null
+
+    var working = sampled
+    val maxSide = maxOf(working.width, working.height).coerceAtLeast(1)
+    if (maxSide > 256) {
+        val scale = 256f / maxSide.toFloat()
+        working = Bitmap.createScaledBitmap(
+            working,
+            (working.width * scale).toInt().coerceAtLeast(1),
+            (working.height * scale).toInt().coerceAtLeast(1),
+            true
+        )
+    }
+    for (dimAttempt in 0..1) {
+        var quality = 82
+        while (quality >= 34) {
+            val out = ByteArrayOutputStream()
+            working.compress(Bitmap.CompressFormat.JPEG, quality, out)
+            val b64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+            val candidate = "data:image/jpeg;base64,$b64"
+            if (candidate.length <= maxChars) return@runCatching candidate
+            quality -= 12
+        }
+        if (dimAttempt == 0) {
+            working = Bitmap.createScaledBitmap(
+                working,
+                (working.width * 0.7f).toInt().coerceAtLeast(96),
+                (working.height * 0.7f).toInt().coerceAtLeast(96),
+                true
+            )
+        }
+    }
+    null
 }.getOrNull()
 
 fun encodeCompressedBannerBitmapToDataUri(rawBytes: ByteArray, maxChars: Int = 140_000): String? {
@@ -254,6 +309,7 @@ fun RemoteAvatarImage(
     size: Dp = 56.dp,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val cleanUrl = remember(photoUrl) { photoUrl?.trim().orEmpty() }
     var bitmap by remember(cleanUrl) {
         mutableStateOf(
@@ -265,22 +321,34 @@ fun RemoteAvatarImage(
         if (cleanUrl.isBlank() || bitmap != null) return@LaunchedEffect
         val loaded = withContext(Dispatchers.IO) {
             runCatching {
-                val req = Request.Builder()
-                    .url(cleanUrl)
-                    .header("User-Agent", "Mozilla/5.0 (Android 14; Mobile) Mihrab/1.0")
-                    .build()
-                BannerBitmapCache.httpClient.newCall(req).execute().use { resp ->
-                    val raw = if (resp.isSuccessful) resp.body?.bytes() else null
-                    raw?.let {
-                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        BitmapFactory.decodeByteArray(it, 0, it.size, bounds)
-                        var sample = 1
-                        while ((bounds.outWidth / sample) > 320 || (bounds.outHeight / sample) > 320) {
-                            sample *= 2
-                        }
-                        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-                        BitmapFactory.decodeByteArray(it, 0, it.size, opts)?.asImageBitmap()
+                val raw = when {
+                    cleanUrl.startsWith("data:image", ignoreCase = true) -> {
+                        val commaIdx = cleanUrl.indexOf(',')
+                        if (commaIdx > 0) Base64.decode(cleanUrl.substring(commaIdx + 1), Base64.DEFAULT) else null
                     }
+                    cleanUrl.startsWith("content://") -> {
+                        context.contentResolver.openInputStream(Uri.parse(cleanUrl))?.use { it.readBytes() }
+                    }
+                    cleanUrl.startsWith("https://") || cleanUrl.startsWith("http://") -> {
+                        val req = Request.Builder()
+                            .url(cleanUrl)
+                            .header("User-Agent", "Mozilla/5.0 (Android 14; Mobile) Mihrab/1.0")
+                            .build()
+                        BannerBitmapCache.httpClient.newCall(req).execute().use { resp ->
+                            if (resp.isSuccessful) resp.body?.bytes() else null
+                        }
+                    }
+                    else -> null
+                }
+                raw?.let {
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(it, 0, it.size, bounds)
+                    var sample = 1
+                    while ((bounds.outWidth / sample) > 320 || (bounds.outHeight / sample) > 320) {
+                        sample *= 2
+                    }
+                    val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+                    BitmapFactory.decodeByteArray(it, 0, it.size, opts)?.asImageBitmap()
                 }
             }.getOrNull()
         }

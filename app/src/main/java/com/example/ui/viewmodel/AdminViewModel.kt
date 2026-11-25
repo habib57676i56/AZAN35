@@ -12,6 +12,7 @@ import com.example.data.firebase.MihrabRepository
 import com.example.data.firebase.QuranDefaultsConfig
 import com.example.data.firebase.ReciterDoc
 import com.example.data.firebase.UserSettingsDoc
+import com.example.data.firebase.VideoItemDoc
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -76,6 +77,15 @@ class AdminViewModel(
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
         } else {
             flowOf(emptyList<UserSettingsDoc>()).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        }
+
+    val videosAdminState: StateFlow<List<VideoItemDoc>> =
+        if (isAuthorized) {
+            adminRepository.observeAllVideosAdmin()
+                .catch { emit(emptyList()) }
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+        } else {
+            flowOf(emptyList<VideoItemDoc>()).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
         }
 
     val quranDefaultsState: StateFlow<QuranDefaultsConfig> =
@@ -192,6 +202,16 @@ class AdminViewModel(
             _isBusy.value = false
         }
     }
+
+    fun upsertVideo(video: VideoItemDoc) =
+        runAdminTask("تم حفظ ونشر الفيديو في قسم الفيديوهات ✓") {
+            adminRepository.upsertVideo(video)
+        }
+
+    fun deleteVideo(videoId: String) =
+        runAdminTask("تم حذف الفيديو") {
+            adminRepository.deleteVideo(videoId)
+        }
 
     fun updateUserAsAdmin(targetUid: String, fields: Map<String, Any>) =
         runAdminTask("تم تحديث بيانات المستخدم") {
