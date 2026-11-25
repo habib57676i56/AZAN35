@@ -58,7 +58,9 @@ data class DailyPrayerSchedule(
     val nightMidnight: String,
     val lastThirdQiyam: String,
     val qiblaBearingDegrees: Double,
-    val distanceToKaabaKm: Int
+    val distanceToKaabaKm: Int,
+    val nightMidnightMinutes: Int = 0,
+    val lastThirdQiyamMinutes: Int = 0
 )
 
 data class MosquePlace(
@@ -257,7 +259,9 @@ object PrayerTimesEngine {
             nightMidnight = formatMinutes(midnightMin),
             lastThirdQiyam = formatMinutes(lastThirdMin),
             qiblaBearingDegrees = computeQiblaBearing(latitude, longitude),
-            distanceToKaabaKm = computeDistanceToKaabaKm(latitude, longitude)
+            distanceToKaabaKm = computeDistanceToKaabaKm(latitude, longitude),
+            nightMidnightMinutes = midnightMin,
+            lastThirdQiyamMinutes = lastThirdMin
         )
     }
 

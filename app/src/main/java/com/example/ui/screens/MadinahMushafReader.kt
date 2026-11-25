@@ -126,6 +126,7 @@ import com.example.core.hardware.RecitationPlaybackState
 import com.example.core.hardware.shareDesignedVerseTextOrCard
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
+import com.example.core.i18n.formatNumerals
 import com.example.data.firebase.UserSettingsDoc
 import com.example.domain.ArabicTextNormalizer
 import com.example.domain.MushafAyahItem
@@ -165,6 +166,8 @@ fun MadinahMushafReader(
     val scope = rememberCoroutineScope()
     val glass = LocalLiquidGlassPalette.current
     val isArabicUi = appLanguage.isArabicUi
+    val useIndic by viewModel.useIndicNumerals.collectAsStateWithLifecycle()
+    val useArabicDigits = useIndic && isArabicUi
 
     val pagesMap by viewModel.mushafPages.collectAsStateWithLifecycle()
     val reciters by viewModel.recitersState.collectAsStateWithLifecycle()
@@ -257,7 +260,7 @@ fun MadinahMushafReader(
                             selected = false,
                             onClick = { showNavigatorSheet = true },
                             icon = Icons.AutoMirrored.Rounded.List,
-                            label = "${strings.pageLabel} ${formatPageNum(activePageNum, isArabicUi)}",
+                            label = "${strings.pageLabel} ${formatPageNum(activePageNum, useArabicDigits)}",
                             modifier = Modifier.testTag("mushaf_navigator_button")
                         )
 
@@ -301,7 +304,7 @@ fun MadinahMushafReader(
                                     )
                                     Spacer(Modifier.width(4.dp))
                                     Text(
-                                        text = "${formatPageNum(cachedCount, isArabicUi)}/${formatPageNum(604, isArabicUi)}",
+                                        text = "${formatPageNum(cachedCount, useArabicDigits)}/${formatPageNum(604, useArabicDigits)}",
                                         style = MaterialTheme.typography.labelSmall.withTabularNums()
                                     )
                                 }
@@ -385,6 +388,7 @@ fun MadinahMushafReader(
                         paperTheme = paperTheme,
                         fontScale = fontScale,
                         isArabicUi = isArabicUi,
+                        useArabicDigits = useArabicDigits,
                         strings = strings,
                         activePlayingGlobalAyah = if (audioState.isPlaying || audioState.isPaused) audioState.currentGlobalAyah else -1,
                         selectedGlobalAyah = selectedAyahForAction?.globalNumber ?: -1,
@@ -420,6 +424,7 @@ fun MadinahMushafReader(
             DockedRecitationAudioBar(
                 audioState = audioState,
                 isArabicUi = isArabicUi,
+                useArabicDigits = useArabicDigits,
                 strings = strings,
                 onTogglePlay = {
                     if (audioState.isPlaying || audioState.isPaused) {
@@ -470,7 +475,7 @@ fun MadinahMushafReader(
                 ) {
                         Text(
                             text = appLanguage.pick(
-                                "سورة ${ayah.surahNameAr} • الآية ${ArabicTextNormalizer.toArabicIndicDigits(ayah.numberInSurah)}",
+                                "سورة ${ayah.surahNameAr} • الآية ${formatPageNum(ayah.numberInSurah, useArabicDigits)}",
                                 "Surah ${ayah.surahNameEn} • ${ayah.surahNumber}:${ayah.numberInSurah}",
                                 "${ayah.surahNameEn} surasi • ${ayah.surahNumber}:${ayah.numberInSurah}"
                             ),
@@ -478,7 +483,7 @@ fun MadinahMushafReader(
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = "${strings.pageLabel} ${formatPageNum(ayah.pageNumber, isArabicUi)}",
+                            text = "${strings.pageLabel} ${formatPageNum(ayah.pageNumber, useArabicDigits)}",
                             style = MaterialTheme.typography.labelLarge.withTabularNums(),
                             color = glass.accentGold
                         )
@@ -769,12 +774,12 @@ fun MadinahMushafReader(
                         ) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(
-                                    text = "${hit.surahNameAr} (${hit.surahNumber}:${hit.ayahNumber})",
+                                    text = formatNumerals("${hit.surahNameAr} (${hit.surahNumber}:${hit.ayahNumber})", useArabicDigits),
                                     style = MaterialTheme.typography.labelLarge,
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 Text(
-                                    text = "${strings.pageLabel} ${formatPageNum(hit.pageNumber, isArabicUi)}",
+                                    text = "${strings.pageLabel} ${formatPageNum(hit.pageNumber, useArabicDigits)}",
                                     style = MaterialTheme.typography.labelMedium.withTabularNums(),
                                     color = glass.accentGold
                                 )
@@ -831,13 +836,13 @@ fun MadinahMushafReader(
                                 ) {
                                     Column {
                                         Text(
-                                            text = if (isArabicUi) "${ArabicTextNormalizer.toArabicIndicDigits(s.number)}. سورة ${s.nameAr}"
+                                            text = if (isArabicUi) "${formatPageNum(s.number, useArabicDigits)}. سورة ${s.nameAr}"
                                             else "${s.number}. ${s.nameEn} (${s.nameAr})",
                                             style = MaterialTheme.typography.titleMedium
                                         )
                                         Text(
                                             text = if (isArabicUi) {
-                                                "${if (s.isMeccan) "مكية" else "مدنية"} • ${ArabicTextNormalizer.toArabicIndicDigits(s.ayahCount)} آيات"
+                                                "${if (s.isMeccan) "مكية" else "مدنية"} • ${formatPageNum(s.ayahCount, useArabicDigits)} آيات"
                                             } else {
                                                 "${if (s.isMeccan) "Meccan" else "Medinan"} • ${s.ayahCount} Ayahs"
                                             },
@@ -846,7 +851,7 @@ fun MadinahMushafReader(
                                         )
                                     }
                                     Text(
-                                        text = "${strings.pageLabel} ${formatPageNum(s.startPage, isArabicUi)}",
+                                        text = "${strings.pageLabel} ${formatPageNum(s.startPage, useArabicDigits)}",
                                         style = MaterialTheme.typography.labelLarge.withTabularNums(),
                                         color = glass.accentGold
                                     )
@@ -870,8 +875,8 @@ fun MadinahMushafReader(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text("${strings.juzLabel} ${formatPageNum(juzNum, isArabicUi)}", style = MaterialTheme.typography.titleMedium)
-                                    Text("${strings.pageLabel} ${formatPageNum(startPage, isArabicUi)}", color = glass.accentGold, style = MaterialTheme.typography.labelLarge.withTabularNums())
+                                    Text("${strings.juzLabel} ${formatPageNum(juzNum, useArabicDigits)}", style = MaterialTheme.typography.titleMedium)
+                                    Text("${strings.pageLabel} ${formatPageNum(startPage, useArabicDigits)}", color = glass.accentGold, style = MaterialTheme.typography.labelLarge.withTabularNums())
                                 }
                             }
                         }
@@ -933,7 +938,7 @@ fun MadinahMushafReader(
                     }
                 }
 
-                Text("${strings.fontScaleLabel}: ${(sliderScale * 100).roundToInt()}%", style = MaterialTheme.typography.labelLarge.withTabularNums())
+                Text(formatNumerals("${strings.fontScaleLabel}: ${(sliderScale * 100).roundToInt()}%", useArabicDigits), style = MaterialTheme.typography.labelLarge.withTabularNums())
                 Slider(
                     value = sliderScale,
                     onValueChange = { sliderScale = it },
@@ -945,7 +950,7 @@ fun MadinahMushafReader(
 
                 HorizontalDivider(color = glass.glassBorder)
                 Text(
-                    text = "${strings.offlineCachedBadge}: ${formatPageNum(cachedCount, isArabicUi)} / ${formatPageNum(604, isArabicUi)}",
+                    text = "${strings.offlineCachedBadge}: ${formatPageNum(cachedCount, useArabicDigits)} / ${formatPageNum(604, useArabicDigits)}",
                     style = MaterialTheme.typography.titleMedium.withTabularNums()
                 )
                 Button(
@@ -977,6 +982,7 @@ fun MadinahMushafReader(
             activePageNumber = activePageNum,
             appLanguage = appLanguage,
             strings = strings,
+            useIndic = useIndic,
             onSelectReciter = { reciter ->
                 recitationPlayer.setReciter(reciter)
                 viewModel.updateSettings(mapOf("preferredReciterId" to reciter.id))
@@ -1061,6 +1067,7 @@ private fun MushafPageFrame(
     paperTheme: MushafPaperTheme,
     fontScale: Float,
     isArabicUi: Boolean,
+    useArabicDigits: Boolean,
     strings: LocalizedStrings,
     activePlayingGlobalAyah: Int,
     selectedGlobalAyah: Int,
@@ -1114,7 +1121,7 @@ private fun MushafPageFrame(
                 ) {
                     CircularProgressIndicator(color = paperTheme.accent)
                     Text(
-                        text = if (isArabicUi) "جارٍ تهيئة الصفحة ${ArabicTextNormalizer.toArabicIndicDigits(pageNumber)}..."
+                        text = if (isArabicUi) "جارٍ تهيئة الصفحة ${formatPageNum(pageNumber, useArabicDigits)}..."
                         else "${strings.pageLabel} $pageNumber...",
                         color = paperTheme.fg.copy(alpha = 0.75f)
                     )
@@ -1144,13 +1151,13 @@ private fun MushafPageFrame(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "${strings.juzLabel} ${formatPageNum(model.juzNumber, isArabicUi)}",
+                            text = "${strings.juzLabel} ${formatPageNum(model.juzNumber, useArabicDigits)}",
                             style = MaterialTheme.typography.labelLarge,
                             color = paperTheme.accent,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "${strings.hizbLabel} ${formatPageNum(model.hizbNumber, isArabicUi)} • ${strings.rubLabel} ${formatPageNum(model.rubInHizb, isArabicUi)}",
+                            text = "${strings.hizbLabel} ${formatPageNum(model.hizbNumber, useArabicDigits)} • ${strings.rubLabel} ${formatPageNum(model.rubInHizb, useArabicDigits)}",
                             style = MaterialTheme.typography.labelMedium,
                             color = paperTheme.border
                         )
@@ -1197,7 +1204,7 @@ private fun MushafPageFrame(
                             border = BorderStroke(1.dp, paperTheme.border.copy(alpha = 0.7f))
                         ) {
                             Text(
-                                text = "${strings.pageLabel} ${formatPageNum(pageNumber, isArabicUi)}",
+                                text = "${strings.pageLabel} ${formatPageNum(pageNumber, useArabicDigits)}",
                                 style = MaterialTheme.typography.labelLarge.withTabularNums(),
                                 color = paperTheme.fg,
                                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
@@ -1395,6 +1402,7 @@ private fun MushafInteractivePageBody(
 private fun DockedRecitationAudioBar(
     audioState: RecitationPlaybackState,
     isArabicUi: Boolean,
+    useArabicDigits: Boolean,
     strings: LocalizedStrings,
     onTogglePlay: () -> Unit,
     onStop: () -> Unit,
@@ -1463,11 +1471,11 @@ private fun DockedRecitationAudioBar(
                             overflow = TextOverflow.Ellipsis
                         )
                         val loopNote = if (audioState.playMode == RecitationPlayMode.A_TO_B_LOOP) {
-                            " • 🔁 ${audioState.loopStartAyah}-${audioState.loopEndAyah} (${audioState.loopRemaining})"
+                            formatNumerals(" • 🔁 ${audioState.loopStartAyah}-${audioState.loopEndAyah} (${audioState.loopRemaining})", useArabicDigits)
                         } else ""
                         Text(
                             text = if (isArabicUi) {
-                                "${surahMeta.nameAr} • الآية ${ArabicTextNormalizer.toArabicIndicDigits(audioState.currentAyah)}$loopNote"
+                                "${surahMeta.nameAr} • الآية ${formatPageNum(audioState.currentAyah, useArabicDigits)}$loopNote"
                             } else {
                                 "${surahMeta.nameEn} ${audioState.currentSurah}:${audioState.currentAyah}$loopNote"
                             },
@@ -1525,7 +1533,7 @@ private fun DockedRecitationAudioBar(
                     LiquidGlassPill(
                         selected = false,
                         onClick = onCycleSpeed,
-                        label = "${audioState.speed}x"
+                        label = formatNumerals("${audioState.speed}x", useArabicDigits)
                     )
                 }
                 item {

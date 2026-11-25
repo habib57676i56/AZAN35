@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.MenuBook
+import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Quiz
@@ -140,6 +141,12 @@ fun LearnScreen(
     val occasions = remember(hijriToday, appLanguage) {
         HijriCalendarEngine.upcomingOccasions(hijriToday, appLanguage)
     }
+    val whiteDaysCountdown = remember(hijriToday, settings.hijriOffset, appLanguage) {
+        HijriCalendarEngine.computeWhiteDaysCountdown(Calendar.getInstance(), settings.hijriOffset.toInt(), appLanguage)
+    }
+    val allMonthsWhiteDays = remember(hijriToday, settings.hijriOffset, appLanguage) {
+        HijriCalendarEngine.allMonthsWhiteDaysSchedule(Calendar.getInstance(), settings.hijriOffset.toInt(), appLanguage)
+    }
     val schedule = remember(settings, manualOffsets) { viewModel.computeSchedule(settings, manualOffsets) }
 
     var activeSection by remember { mutableIntStateOf(initialSubTab) } // 0=Calendar&Ramadan, 1=Knowledge, 2=Noorania, 3=AskAI
@@ -221,11 +228,11 @@ fun LearnScreen(
                                             Text(appLanguage.pick("تعديل:", "Adj:", "Tuzatish:"), style = MaterialTheme.typography.labelLarge)
                                             TextButton(onClick = {
                                                 viewModel.updateSettings(mapOf("hijriOffset" to (settings.hijriOffset - 1L).coerceIn(-2L, 2L)))
-                                            }) { Text("-1") }
-                                            Text("${settings.hijriOffset}", style = MaterialTheme.typography.titleMedium.withTabularNums(), fontWeight = FontWeight.Bold)
+                                            }) { Text(formatNumerals("-1", useArabicDigits)) }
+                                            Text(formatNumerals("${settings.hijriOffset}", useArabicDigits), style = MaterialTheme.typography.titleMedium.withTabularNums(), fontWeight = FontWeight.Bold)
                                             TextButton(onClick = {
                                                 viewModel.updateSettings(mapOf("hijriOffset" to (settings.hijriOffset + 1L).coerceIn(-2L, 2L)))
-                                            }) { Text("+1") }
+                                            }) { Text(formatNumerals("+1", useArabicDigits)) }
                                         }
                                     }
 
@@ -316,10 +323,13 @@ fun LearnScreen(
                                                 color = Color.White
                                             )
                                             Text(
-                                                appLanguage.pick(
-                                                    "الإمساك ${schedule.imsak.formattedTime} • الإفطار ${schedule.maghrib.formattedTime}",
-                                                    "Suhoor ends ${schedule.imsak.formattedTime} • Iftar ${schedule.maghrib.formattedTime}",
-                                                    "Saharlik ${schedule.imsak.formattedTime} • Iftorlik ${schedule.maghrib.formattedTime}"
+                                                formatNumerals(
+                                                    appLanguage.pick(
+                                                        "الإمساك ${schedule.imsak.formattedTime} • الإفطار ${schedule.maghrib.formattedTime}",
+                                                        "Suhoor ends ${schedule.imsak.formattedTime} • Iftar ${schedule.maghrib.formattedTime}",
+                                                        "Saharlik ${schedule.imsak.formattedTime} • Iftorlik ${schedule.maghrib.formattedTime}"
+                                                    ),
+                                                    useArabicDigits
                                                 ),
                                                 style = MaterialTheme.typography.bodyMedium.withTabularNums(),
                                                 color = Color(0xFFE2B95B)
@@ -366,6 +376,137 @@ fun LearnScreen(
                                                     onCheckedChange = { ramadanChecklist[i] = it }
                                                 )
                                                 Text(task, color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // All 12 Hijri Months White Days (13, 14, 15) Countdown & Schedule
+                    item {
+                        LiquidGlassCard(
+                            shape = RoundedCornerShape(26.dp),
+                            containerColor = glass.glassFillStrong,
+                            borderColor = BurnishedGold.copy(alpha = 0.48f),
+                            contentPadding = 16.dp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("learn_white_days_card")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Rounded.NightsStay, contentDescription = null, tint = BurnishedGold)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = appLanguage.pick(
+                                            "الأيام البيض (١٣، ١٤، ١٥) لجميع الأشهر الهجرية",
+                                            "White Days (13, 14, 15) Across All 12 Months",
+                                            "Barcha 12 hijriy oylar uchun Oq kunlar (13, 14, 15)"
+                                        ),
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = formatNumerals(
+                                            if (whiteDaysCountdown.isTodayWhiteDay) {
+                                                appLanguage.pick(
+                                                    "اليوم ${whiteDaysCountdown.currentWhiteDayNumber ?: 13} من الأيام البيض في شهر ${whiteDaysCountdown.monthNameFor(appLanguage)} • ${whiteDaysCountdown.gregorianRange}",
+                                                    "Today is White Day ${whiteDaysCountdown.currentWhiteDayNumber ?: 13} (${whiteDaysCountdown.monthNameFor(appLanguage)}) • ${whiteDaysCountdown.gregorianRange}",
+                                                    "Bugun ${whiteDaysCountdown.monthNameFor(appLanguage)} oyi Oq kuni (${whiteDaysCountdown.currentWhiteDayNumber ?: 13}) • ${whiteDaysCountdown.gregorianRange}"
+                                                )
+                                            } else {
+                                                appLanguage.pick(
+                                                    "الأيام البيض القادمة (${whiteDaysCountdown.monthNameFor(appLanguage)}): متبقي ${whiteDaysCountdown.daysRemaining} أيام • ${whiteDaysCountdown.gregorianRange}",
+                                                    "Next White Days (${whiteDaysCountdown.monthNameFor(appLanguage)}): ${whiteDaysCountdown.daysRemaining} days left • ${whiteDaysCountdown.gregorianRange}",
+                                                    "Keyingi Oq kunlar (${whiteDaysCountdown.monthNameFor(appLanguage)}): ${whiteDaysCountdown.daysRemaining} kun qoldi • ${whiteDaysCountdown.gregorianRange}"
+                                                )
+                                            },
+                                            useArabicDigits
+                                        ),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+
+                            Spacer(Modifier.height(8.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                allMonthsWhiteDays.forEach { monthItem ->
+                                    val badgeText = when {
+                                        monthItem.isActiveNow -> appLanguage.pick("جارية الآن", "Active Now", "Hozir davom etmoqda")
+                                        monthItem.alreadyPassedThisMonth -> appLanguage.pick("مضت", "Passed", "O'tdi")
+                                        monthItem.daysUntilStart == 0 -> appLanguage.pick("تبدأ اليوم", "Starts Today", "Bugun boshlanadi")
+                                        else -> formatNumerals(
+                                            appLanguage.pick(
+                                                "متبقي ${monthItem.daysUntilStart} يوم",
+                                                "In ${monthItem.daysUntilStart}d",
+                                                "${monthItem.daysUntilStart} kun"
+                                            ),
+                                            useArabicDigits
+                                        )
+                                    }
+                                    Surface(
+                                        color = if (monthItem.isActiveNow) {
+                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
+                                        } else {
+                                            glass.glassSubtleFill
+                                        },
+                                        border = BorderStroke(
+                                            1.dp,
+                                            if (monthItem.isActiveNow) BurnishedGold else glass.glassBorder
+                                        ),
+                                        shape = RoundedCornerShape(16.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = formatNumerals(
+                                                        appLanguage.pick(
+                                                            "١٣–١٥ ${monthItem.monthNameFor(appLanguage)} ${monthItem.hijriYear} هـ",
+                                                            "13–15 ${monthItem.monthNameFor(appLanguage)} ${monthItem.hijriYear} AH",
+                                                            "${monthItem.monthNameFor(appLanguage)} 13–15, ${monthItem.hijriYear}"
+                                                        ),
+                                                        useArabicDigits
+                                                    ),
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Text(
+                                                    text = formatNumerals(monthItem.gregorianRange, useArabicDigits),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            Surface(
+                                                color = when {
+                                                    monthItem.isActiveNow -> MaterialTheme.colorScheme.primary
+                                                    monthItem.alreadyPassedThisMonth -> MaterialTheme.colorScheme.surfaceVariant
+                                                    else -> BurnishedGold.copy(alpha = 0.16f)
+                                                },
+                                                shape = CircleShape
+                                            ) {
+                                                Text(
+                                                    text = badgeText,
+                                                    style = MaterialTheme.typography.labelMedium.withTabularNums(),
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = when {
+                                                        monthItem.isActiveNow -> MaterialTheme.colorScheme.onPrimary
+                                                        monthItem.alreadyPassedThisMonth -> MaterialTheme.colorScheme.onSurfaceVariant
+                                                        else -> MaterialTheme.colorScheme.primary
+                                                    },
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                                )
                                             }
                                         }
                                     }

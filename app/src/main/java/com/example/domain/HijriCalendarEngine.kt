@@ -204,4 +204,156 @@ object HijriCalendarEngine {
             )
         }.sortedBy { it.daysRemaining }
     }
+
+    data class WhiteDaysCountdown(
+        val isTodayWhiteDay: Boolean,
+        val currentWhiteDayNumber: Int?,
+        val hijriMonth: Int,
+        val monthNameAr: String,
+        val monthNameEn: String,
+        val monthNameUz: String,
+        val daysRemaining: Int,
+        val gregorianRange: String
+    ) {
+        fun monthNameFor(language: AppLanguage): String = language.pick(monthNameAr, monthNameEn, monthNameUz)
+    }
+
+    data class MonthlyWhiteDaysEntry(
+        val hijriMonth: Int,
+        val hijriYear: Int,
+        val monthNameAr: String,
+        val monthNameEn: String,
+        val monthNameUz: String,
+        val gregorianRange: String,
+        val daysUntilStart: Int,
+        val isActiveNow: Boolean,
+        val alreadyPassedThisMonth: Boolean
+    ) {
+        fun monthNameFor(language: AppLanguage): String = language.pick(monthNameAr, monthNameEn, monthNameUz)
+    }
+
+    fun computeWhiteDaysCountdown(
+        todayGregorian: Calendar,
+        offsetDays: Int = 0,
+        language: AppLanguage = AppLanguage.ARABIC
+    ): WhiteDaysCountdown {
+        val todayHijri = gregorianToHijri(todayGregorian, offsetDays)
+        val isWhite = todayHijri.day in 13..15
+        var probe = (todayGregorian.clone() as Calendar).apply {
+            set(Calendar.HOUR_OF_DAY, 12)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        // Find the upcoming (or current) White Days window (days 13..15)
+        var targetStartCal: Calendar? = null
+        var targetEndCal: Calendar? = null
+        var targetHijriMonth = todayHijri.month
+        var daysUntil = 0
+
+        if (isWhite) {
+            // Walk back to 13th and forward to 15th
+            val back = todayHijri.day - 13
+            targetStartCal = (probe.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, -back) }
+            val fwd = 15 - todayHijri.day
+            targetEndCal = (probe.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, fwd) }
+            daysUntil = 0
+        } else {
+            for (step in 1..40) {
+                val c = (probe.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, step) }
+                val h = gregorianToHijri(c, offsetDays)
+                if (h.day == 13) {
+                    targetStartCal = c
+                    targetEndCal = (c.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, 2) }
+                    targetHijriMonth = h.month
+                    daysUntil = step
+                    break
+                }
+            }
+        }
+
+        val mIdx = (targetHijriMonth - 1).coerceIn(0, 11)
+        val rangeLabel = if (targetStartCal != null && targetEndCal != null) {
+            formatGregorianSpan(targetStartCal, targetEndCal, language)
+        } else {
+            "13-15 ${monthsAr[mIdx]}"
+        }
+
+        return WhiteDaysCountdown(
+            isTodayWhiteDay = isWhite,
+            currentWhiteDayNumber = if (isWhite) todayHijri.day else null,
+            hijriMonth = targetHijriMonth,
+            monthNameAr = monthsAr[mIdx],
+            monthNameEn = monthsEn[mIdx],
+            monthNameUz = monthsUz[mIdx],
+            daysRemaining = daysUntil,
+            gregorianRange = rangeLabel
+        )
+    }
+
+    fun allMonthsWhiteDaysSchedule(
+        todayGregorian: Calendar,
+        offsetDays: Int = 0,
+        language: AppLanguage = AppLanguage.ARABIC
+    ): List<MonthlyWhiteDaysEntry> {
+        val base = (todayGregorian.clone() as Calendar).apply {
+            set(Calendar.HOUR_OF_DAY, 12)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val todayHijri = gregorianToHijri(base, offsetDays)
+        val startByMonthYear = LinkedHashMap<Pair<Int, Int>, Pair<Calendar, Int>>()
+
+        // Scan back 20 days to catch current month's White Days if already passed, then forward 360 days for full 12 months
+        for (step in -20..360) {
+            val c = (base.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, step) }
+            val h = gregorianToHijri(c, offsetDays)
+            if (h.day == 13) {
+                val key = h.year to h.month
+                if (!startByMonthYear.containsKey(key)) {
+                    startByMonthYear[key] = c to step
+                }
+            }
+        }
+
+        return startByMonthYear.entries
+            .take(12)
+            .map { (key, startPair) ->
+                val (hYear, hMonth) = key
+                val (startCal, diffDays) = startPair
+                val endCal = (startCal.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, 2) }
+                val mIdx = (hMonth - 1).coerceIn(0, 11)
+                val isCurrentMonth = (hYear == todayHijri.year && hMonth == todayHijri.month)
+                val isActiveNow = isCurrentMonth && todayHijri.day in 13..15
+                val alreadyPassed = diffDays < 0 && !isActiveNow
+
+                MonthlyWhiteDaysEntry(
+                    hijriMonth = hMonth,
+                    hijriYear = hYear,
+                    monthNameAr = monthsAr[mIdx],
+                    monthNameEn = monthsEn[mIdx],
+                    monthNameUz = monthsUz[mIdx],
+                    gregorianRange = formatGregorianSpan(startCal, endCal, language),
+                    daysUntilStart = diffDays.coerceAtLeast(0),
+                    isActiveNow = isActiveNow,
+                    alreadyPassedThisMonth = alreadyPassed
+                )
+            }
+    }
+
+    private fun formatGregorianSpan(start: Calendar, end: Calendar, language: AppLanguage): String {
+        val locale = when (language) {
+            AppLanguage.ARABIC, AppLanguage.URDU -> java.util.Locale("ar")
+            AppLanguage.UZBEK -> java.util.Locale("uz")
+            else -> java.util.Locale.ENGLISH
+        }
+        val monthFmt = java.text.SimpleDateFormat("MMM", locale)
+        val d1 = start.get(Calendar.DAY_OF_MONTH)
+        val m1 = monthFmt.format(start.time)
+        val d2 = end.get(Calendar.DAY_OF_MONTH)
+        val m2 = monthFmt.format(end.time)
+        return if (m1 == m2) "$d1-$d2 $m1" else "$d1 $m1 - $d2 $m2"
+    }
 }

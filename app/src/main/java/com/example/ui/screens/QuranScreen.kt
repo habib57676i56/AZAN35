@@ -78,6 +78,8 @@ fun QuranScreen(
 
     val settings = (settingsState as? UiState.Success)?.data ?: UserSettingsDoc()
     val isArabicUi = appLanguage.isArabicUi
+    val useIndic by viewModel.useIndicNumerals.collectAsStateWithLifecycle()
+    val useArabicDigits = useIndic && isArabicUi
 
     var activeSection by remember { mutableIntStateOf(initialSubTab.coerceIn(0, 3)) } // 0=Mushaf, 1=Al-Musammi', 2=Khatmah, 3=Bookmarks
     LaunchedEffect(subTabTriggerNonce, initialSubTab) {
@@ -252,10 +254,13 @@ fun QuranScreen(
                                             ) {
                                                 Column(modifier = Modifier.weight(1f)) {
                                                     Text(
-                                                        text = appLanguage.pick(
-                                                            "سورة ${surahMeta.nameAr} • آية ${ArabicTextNormalizer.toArabicIndicDigits(item.ayahNumber.toInt())} (${strings.pageLabel} ${ArabicTextNormalizer.toArabicIndicDigits(targetPage)})",
-                                                            "Surah ${surahMeta.nameEn} (${item.surahNumber}:${item.ayahNumber}) • ${strings.pageLabel} $targetPage",
-                                                            "${surahMeta.nameEn} surasi (${item.surahNumber}:${item.ayahNumber}) • ${strings.pageLabel} $targetPage"
+                                                        text = com.example.core.i18n.formatNumerals(
+                                                            appLanguage.pick(
+                                                                "سورة ${surahMeta.nameAr} • آية ${item.ayahNumber} (${strings.pageLabel} $targetPage)",
+                                                                "Surah ${surahMeta.nameEn} (${item.surahNumber}:${item.ayahNumber}) • ${strings.pageLabel} $targetPage",
+                                                                "${surahMeta.nameEn} surasi (${item.surahNumber}:${item.ayahNumber}) • ${strings.pageLabel} $targetPage"
+                                                            ),
+                                                            useArabicDigits
                                                         ),
                                                         style = MaterialTheme.typography.titleMedium.withTabularNums(),
                                                         fontWeight = FontWeight.Bold

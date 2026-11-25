@@ -76,6 +76,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
+import com.example.core.i18n.formatNumerals
 import com.example.data.local.ReciterEntity
 import com.example.domain.ArabicTextNormalizer
 import com.example.domain.QuranCatalog
@@ -95,6 +96,7 @@ fun DynamicIslandReciterOverlay(
     reciters: List<ReciterEntity>,
     appLanguage: AppLanguage,
     strings: LocalizedStrings,
+    useIndic: Boolean = true,
     onOpenMushaf: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -128,11 +130,8 @@ fun DynamicIslandReciterOverlay(
             audioState.reciter.nameEn
         }
         val surahTitle = if (appLanguage.isArabicUi) surahMeta.nameAr else surahMeta.nameEn
-        val ayahBadge = if (appLanguage.isArabicUi) {
-            ArabicTextNormalizer.toArabicIndicDigits(audioState.currentAyah)
-        } else {
-            audioState.currentAyah.toString()
-        }
+        val useArabicDigits = useIndic && appLanguage.isArabicUi
+        val ayahBadge = formatNumerals(audioState.currentAyah.toString(), useArabicDigits)
 
         Box(
             modifier = Modifier.fillMaxWidth(),
@@ -154,6 +153,7 @@ fun DynamicIslandReciterOverlay(
                         ayahBadge = ayahBadge,
                         reciterName = reciterName,
                         appLanguage = appLanguage,
+                        useArabicDigits = useArabicDigits,
                         onTapToggleExpand = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             isExpanded = true
@@ -184,6 +184,7 @@ fun DynamicIslandReciterOverlay(
                         reciters = reciters,
                         appLanguage = appLanguage,
                         strings = strings,
+                        useArabicDigits = useArabicDigits,
                         onCollapse = { isExpanded = false },
                         onSwipeNext = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -225,6 +226,7 @@ private fun CompactDynamicIslandPill(
     ayahBadge: String,
     reciterName: String,
     appLanguage: AppLanguage,
+    useArabicDigits: Boolean,
     onTapToggleExpand: () -> Unit,
     onTapPlayPause: () -> Unit,
     onSwipeNext: () -> Unit,
@@ -285,7 +287,7 @@ private fun CompactDynamicIslandPill(
                     modifier = Modifier.size(16.dp)
                 )
                 Text(
-                    text = "${(bulk.fraction * 100).toInt()}% • ${bulk.labelFor(appLanguage)}",
+                    text = formatNumerals("${(bulk.fraction * 100).toInt()}% • ${bulk.labelFor(appLanguage)}", useArabicDigits),
                     style = MaterialTheme.typography.labelMedium,
                     color = Color.White,
                     maxLines = 1,
@@ -363,6 +365,7 @@ private fun ExpandedDynamicIslandCard(
     reciters: List<ReciterEntity>,
     appLanguage: AppLanguage,
     strings: LocalizedStrings,
+    useArabicDigits: Boolean,
     onCollapse: () -> Unit,
     onSwipeNext: () -> Unit,
     onSwipePrev: () -> Unit,
@@ -463,7 +466,7 @@ private fun ExpandedDynamicIslandCard(
                         border = BorderStroke(0.8.dp, GlowingGold.copy(alpha = 0.5f))
                     ) {
                         Text(
-                            text = "${audioState.speed}x",
+                            text = formatNumerals("${audioState.speed}x", useArabicDigits),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
@@ -493,7 +496,7 @@ private fun ExpandedDynamicIslandCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "☁ ${bulk.labelFor(appLanguage)} (${bulk.downloadedAyahs}/${bulk.totalAyahs})",
+                            text = formatNumerals("☁ ${bulk.labelFor(appLanguage)} (${bulk.downloadedAyahs}/${bulk.totalAyahs})", useArabicDigits),
                             style = MaterialTheme.typography.labelSmall,
                             color = LuminousMintEmerald
                         )
@@ -536,12 +539,12 @@ private fun ExpandedDynamicIslandCard(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = formatAudioTime(audioState.positionMs),
+                            text = formatNumerals(formatAudioTime(audioState.positionMs), useArabicDigits),
                             style = MaterialTheme.typography.labelSmall,
                             color = Color.White.copy(alpha = 0.65f)
                         )
                         Text(
-                            text = formatAudioTime(audioState.durationMs),
+                            text = formatNumerals(formatAudioTime(audioState.durationMs), useArabicDigits),
                             style = MaterialTheme.typography.labelSmall,
                             color = Color.White.copy(alpha = 0.65f)
                         )

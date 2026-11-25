@@ -1137,15 +1137,38 @@ private fun SettingsAndPrivacySection(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    appLanguage.pick(
-                        "الأرقام العربية الشرقية (٠١٢٣)",
-                        "Eastern Arabic Numerals (٠١٢٣)",
-                        "Sharqiy arab raqamlari (٠١٢٣)"
-                    ),
-                    modifier = Modifier.weight(1f)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        appLanguage.pick(
+                            "الأرقام العربية الشرقية (٠١٢٣)",
+                            "Eastern Arabic Numerals (٠١٢٣)",
+                            "Sharqiy arab raqamlari (٠١٢٣)"
+                        ),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        appLanguage.pick(
+                            if (useIndic) "مفعّلة الآن: ٠١٢٣٤٥٦٧٨٩ (تُحفظ تلقائياً)" else "مفعّل حالياً الأرقام الإنجليزية: 0123456789 (يُحفظ اختيارك)",
+                            if (useIndic) "Active for Arabic UI: ٠١٢٣٤٥٦٧٨٩ (saved permanently)" else "Using Latin digits 0123456789 (saved permanently)",
+                            if (useIndic) "Arabcha interfeysda saqlanadi: ٠١٢٣٤٥٦٧٨٩" else "Lotin raqamlari saqlanadi: 0123456789"
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = useIndic,
+                    onCheckedChange = { enabled ->
+                        onToggleIndic(enabled)
+                        viewModel.showMessage(
+                            appLanguage.pick(
+                                if (enabled) "تم تفعيل وحفظ الأرقام العربية (٠١٢٣)" else "تم تفعيل وحفظ الأرقام الإنجليزية (0123)",
+                                if (enabled) "Eastern Arabic numerals saved" else "Latin numerals saved",
+                                if (enabled) "Sharqiy arab raqamlari saqlandi" else "Lotin raqamlari saqlandi"
+                            )
+                        )
+                    }
                 )
-                Switch(checked = useIndic, onCheckedChange = onToggleIndic)
             }
         }
 

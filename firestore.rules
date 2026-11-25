@@ -175,7 +175,7 @@ service cloud.firestore {
 
     function isValidAdminConfig(data) {
       return data.configKey is string && data.configKey.size() >= 1 && data.configKey.size() <= 80 &&
-             data.valueJson is string && data.valueJson.size() <= 16000 &&
+             data.valueJson is string && data.valueJson.size() <= 350000 &&
              isValidTimestamp(data.createdAt) &&
              isValidTimestamp(data.updatedAt);
     }

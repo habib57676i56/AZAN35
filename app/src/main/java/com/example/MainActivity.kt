@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -33,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -75,7 +77,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.core.hardware.AdhanAudioPlayer
+import com.example.core.hardware.AdhanRuntimeController
 import com.example.core.hardware.DynamicIslandReciterOverlay
+import com.example.core.hardware.MihrabReminderManager
 import com.example.core.hardware.PrayerStatusNotificationManager
 import com.example.core.hardware.QuranTtsAudioPlayer
 import com.example.core.hardware.RecitationPlayerHolder
@@ -156,6 +160,19 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra("launch_tab")?.let { tab ->
             launchTabTrigger.value = tab to (++launchNonce)
         }
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN &&
+            (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
+                event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN ||
+                event.keyCode == KeyEvent.KEYCODE_VOLUME_MUTE) &&
+            AdhanRuntimeController.isRingingNow()
+        ) {
+            AdhanRuntimeController.stopAdhan(this)
+            return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 }
 
@@ -278,6 +295,7 @@ private fun AuthenticatedMihrabShell(
         factory = viewModelFactory {
             initializer {
                 MihrabViewModel(
+                    appContext = context.applicationContext,
                     repository = sharedRepository,
                     mushafRepository = mushafRepository,
                     currentUserId = currentUserId,
@@ -414,6 +432,19 @@ private fun AuthenticatedMihrabShell(
             appOperations = appOperations
         )
     }
+
+    LaunchedEffect(effectiveSettings, manualOffsets, appLanguage, useIndic, localPrefs?.customAdhanLocalPath) {
+        MihrabReminderManager.syncAndScheduleAll(
+            context = context,
+            settings = effectiveSettings,
+            offsets = manualOffsets,
+            language = appLanguage,
+            useIndic = useIndic,
+            customAdhanPath = localPrefs?.customAdhanLocalPath.orEmpty()
+        )
+    }
+
+    val ringingAdhan by AdhanRuntimeController.ringing.collectAsStateWithLifecycle()
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var quranSubTab by rememberSaveable { mutableIntStateOf(0) }
@@ -650,6 +681,76 @@ private fun AuthenticatedMihrabShell(
                                             .weight(1f)
                                             .fillMaxSize()
                                     ) {
+                                        ringingAdhan?.let { activeAdhan ->
+                                            LiquidGlassCard(
+                                                shape = RoundedCornerShape(20.dp),
+                                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f),
+                                                borderColor = BurnishedGold,
+                                                contentPadding = 12.dp,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                                                    .testTag("active_adhan_ringing_banner")
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = MihrabIcons.AdhanVoice,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.primary
+                                                    )
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            text = appLanguage.pick(
+                                                                "حان الآن وقت ${activeAdhan.prayerLabel} • ${com.example.core.i18n.formatNumerals(activeAdhan.prayerTime, useIndic && appLanguage.isArabicUi)}",
+                                                                "Prayer Time: ${activeAdhan.prayerLabel} • ${activeAdhan.prayerTime}",
+                                                                "Namoz vaqti: ${activeAdhan.prayerLabel} • ${activeAdhan.prayerTime}"
+                                                            ),
+                                                            style = MaterialTheme.typography.titleSmall,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                        )
+                                                        Text(
+                                                            text = appLanguage.pick(
+                                                                "${activeAdhan.muezzinLabel} • اضغط زر الصوت أو الزر لإيقاف الأذان",
+                                                                "${activeAdhan.muezzinLabel} • Press Volume key or button to stop",
+                                                                "${activeAdhan.muezzinLabel} • To'xtatish uchun ovoz tugmasini bosing"
+                                                            ),
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                                                        )
+                                                    }
+                                                    Surface(
+                                                        onClick = { AdhanRuntimeController.stopAdhan(context) },
+                                                        color = MaterialTheme.colorScheme.error,
+                                                        shape = CircleShape,
+                                                        modifier = Modifier.testTag("stop_ringing_adhan_button")
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Rounded.NotificationsOff,
+                                                                contentDescription = null,
+                                                                tint = MaterialTheme.colorScheme.onError,
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                            Text(
+                                                                text = appLanguage.pick("إيقاف", "Stop", "To'xtatish"),
+                                                                style = MaterialTheme.typography.labelMedium,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = MaterialTheme.colorScheme.onError
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
                                         val bannerTitle = appLanguage.pick(
                                             appOperations.bannerTitleAr.ifBlank { appOperations.bannerTitleEn },
                                             appOperations.bannerTitleEn.ifBlank { appOperations.bannerTitleAr },
@@ -955,6 +1056,7 @@ private fun AuthenticatedMihrabShell(
                                 reciters = reciters,
                                 appLanguage = appLanguage,
                                 strings = strings,
+                                useIndic = useIndic,
                                 onOpenMushaf = {
                                     quranSubTab = 0
                                     quranSubTabNonce += 1

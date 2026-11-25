@@ -53,6 +53,10 @@ class AdhanAudioPlayer(context: Context) {
     private val _state = MutableStateFlow(AdhanPlaybackState())
     val state: StateFlow<AdhanPlaybackState> = _state.asStateFlow()
 
+    init {
+        AdhanRuntimeController.activePlayerForSilence = this
+    }
+
     /**
      * Copies a user-selected audio file from Android's zero-permission Storage Access Framework URI
      * into app-private filesDir so it stays playable offline across restarts without storage permissions.

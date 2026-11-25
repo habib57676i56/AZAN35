@@ -55,6 +55,7 @@ import com.example.core.hardware.QuranRecitationPlayer
 import com.example.core.hardware.RecitationPlaybackState
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
+import com.example.core.i18n.formatNumerals
 import com.example.data.local.ReciterEntity
 import com.example.domain.QuranCatalog
 import com.example.ui.theme.BurnishedGold
@@ -72,11 +73,13 @@ fun ReciterCloudLibrarySheet(
     activePageNumber: Int,
     appLanguage: AppLanguage,
     strings: LocalizedStrings,
+    useIndic: Boolean = true,
     onSelectReciter: (ReciterEntity) -> Unit,
     onDismiss: () -> Unit
 ) {
     val glass = LocalLiquidGlassPalette.current
     val isArabicUi = appLanguage.isArabicUi
+    val useArabicDigits = useIndic && isArabicUi
     var targetSurahNumber by remember(activeSurahNumber) {
         mutableIntStateOf(activeSurahNumber.coerceIn(1, 114))
     }
@@ -140,7 +143,7 @@ fun ReciterCloudLibrarySheet(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "☁ ${bulk.labelFor(appLanguage)} (${bulk.downloadedAyahs}/${bulk.totalAyahs})",
+                                text = formatNumerals("☁ ${bulk.labelFor(appLanguage)} (${bulk.downloadedAyahs}/${bulk.totalAyahs})", useArabicDigits),
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -174,10 +177,13 @@ fun ReciterCloudLibrarySheet(
                     Icon(Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = appLanguage.pick(
-                            "سورة التنزيل المختارة: ${targetSurah.nameAr} (${targetSurah.ayahCount} آية)",
-                            "Download target: ${targetSurah.number}. ${targetSurah.nameEn} (${targetSurah.ayahCount} ayahs)",
-                            "Yuklash surasi: ${targetSurah.number}. ${targetSurah.nameEn} (${targetSurah.ayahCount} oyat)"
+                        text = formatNumerals(
+                            appLanguage.pick(
+                                "سورة التنزيل المختارة: ${targetSurah.nameAr} (${targetSurah.ayahCount} آية)",
+                                "Download target: ${targetSurah.number}. ${targetSurah.nameEn} (${targetSurah.ayahCount} ayahs)",
+                                "Yuklash surasi: ${targetSurah.number}. ${targetSurah.nameEn} (${targetSurah.ayahCount} oyat)"
+                            ),
+                            useArabicDigits
                         ),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -195,8 +201,11 @@ fun ReciterCloudLibrarySheet(
                         DropdownMenuItem(
                             text = {
                                 Text(
-                                    if (isArabicUi) "${surah.number}. ${surah.nameAr} (${surah.ayahCount})"
-                                    else "${surah.number}. ${surah.nameEn} (${surah.ayahCount})"
+                                    formatNumerals(
+                                        if (isArabicUi) "${surah.number}. ${surah.nameAr} (${surah.ayahCount})"
+                                        else "${surah.number}. ${surah.nameEn} (${surah.ayahCount})",
+                                        useArabicDigits
+                                    )
                                 )
                             },
                             onClick = {
@@ -305,10 +314,13 @@ fun ReciterCloudLibrarySheet(
                                     )
                                     Text(
                                         text = if (cachedCount > 0) {
-                                            appLanguage.pick(
-                                                "محفوظ: $cachedCount آية ($mbLabel)",
-                                                "Cached: $cachedCount ayahs ($mbLabel)",
-                                                "Saqlangan: $cachedCount oyat ($mbLabel)"
+                                            formatNumerals(
+                                                appLanguage.pick(
+                                                    "محفوظ: $cachedCount آية ($mbLabel)",
+                                                    "Cached: $cachedCount ayahs ($mbLabel)",
+                                                    "Saqlangan: $cachedCount oyat ($mbLabel)"
+                                                ),
+                                                useArabicDigits
                                             )
                                         } else {
                                             appLanguage.pick(

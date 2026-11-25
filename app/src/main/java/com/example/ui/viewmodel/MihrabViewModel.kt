@@ -59,11 +59,15 @@ sealed interface UiState<out T> {
 }
 
 class MihrabViewModel(
+    appContext: Context,
     private val repository: MihrabRepository,
     private val mushafRepository: MushafRepository,
     private val currentUserId: String,
     private val initialDisplayName: String
 ) : ViewModel() {
+
+    private val uiPrefs = appContext.applicationContext
+        .getSharedPreferences("mihrab_ui_prefs", Context.MODE_PRIVATE)
 
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
@@ -71,7 +75,9 @@ class MihrabViewModel(
     private val _manualOffsets = MutableStateFlow<Map<String, Int>>(emptyMap())
     val manualOffsets: StateFlow<Map<String, Int>> = _manualOffsets.asStateFlow()
 
-    private val _useIndicNumerals = MutableStateFlow(true)
+    private val _useIndicNumerals = MutableStateFlow(
+        uiPrefs.getBoolean("use_indic_numerals", true)
+    )
     val useIndicNumerals: StateFlow<Boolean> = _useIndicNumerals.asStateFlow()
 
     private val _exportedJson = MutableStateFlow<String?>(null)
@@ -341,6 +347,7 @@ class MihrabViewModel(
     }
 
     fun toggleIndicNumerals(enabled: Boolean) {
+        uiPrefs.edit().putBoolean("use_indic_numerals", enabled).apply()
         _useIndicNumerals.value = enabled
     }
 

@@ -56,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,7 +68,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.core.hardware.AdhanAudioPlayer
 import com.example.core.hardware.RemoteBannerImage
-import com.example.core.hardware.encodeCompressedBannerBitmapToDataUri
+import com.example.core.hardware.encodeCompressedBannerBitmapFromUri
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
 import com.example.data.firebase.AdminAccess
@@ -84,6 +85,9 @@ import com.example.ui.theme.withTabularNums
 import com.example.ui.viewmodel.AdminViewModel
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 @Composable
@@ -629,6 +633,7 @@ private fun AppOperationsTab(
     onImportBackup: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val glass = LocalLiquidGlassPalette.current
     var ops by remember(initialOps) { mutableStateOf(initialOps) }
     var userQuery by remember { mutableStateOf("") }
@@ -639,23 +644,27 @@ private fun AppOperationsTab(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
-            val rawBytes = runCatching {
-                context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            }.getOrNull()
-            val encoded = rawBytes?.let { encodeCompressedBannerBitmapToDataUri(it) }
-            if (!encoded.isNullOrBlank()) {
-                ops = ops.copy(bannerImageUrl = encoded)
-                bannerPhotoStatus = appLanguage.pick(
-                    "تم تجهيز صورة الإعلان بنجاح — اضغط حفظ التغييرات للنشر.",
-                    "Banner image ready — tap Save Changes to publish live.",
-                    "E'lon rasmi tayyor — nashr qilish uchun Saqlash ni bosing."
-                )
-            } else {
-                bannerPhotoStatus = appLanguage.pick(
-                    "تعذر ضغط الصورة؛ استخدم رابط HTTPS مباشر للصورة.",
-                    "Could not encode image; paste an HTTPS image URL instead.",
-                    "Rasmni siqib bo'lmadi; HTTPS rasm havolasini kiriting."
-                )
+            bannerPhotoStatus = appLanguage.pick("جاري تجهيز الصورة...", "Preparing image...", "Rasm tayyorlanmoqda...")
+            scope.launch {
+                val encoded = withContext(Dispatchers.IO) {
+                    encodeCompressedBannerBitmapFromUri(context, uri)
+                }
+                if (!encoded.isNullOrBlank()) {
+                    val updated = ops.copy(bannerImageUrl = encoded, bannerEnabled = true)
+                    ops = updated
+                    onSaveOperations(updated)
+                    bannerPhotoStatus = appLanguage.pick(
+                        "تم رفع ونشر صورة الإعلان (${encoded.length / 1024} كيلوبايت) بنجاح.",
+                        "Banner image uploaded & published (${encoded.length / 1024} KB).",
+                        "E'lon rasmi yuklandi va nashr qilindi (${encoded.length / 1024} KB)."
+                    )
+                } else {
+                    bannerPhotoStatus = appLanguage.pick(
+                        "تعذر معالجة الصورة المختارة؛ جرّب صورة أخرى أو رابط HTTPS.",
+                        "Could not process selected photo; try another photo or HTTPS URL.",
+                        "Tanlangan rasmni qayta ishlab bo'lmadi; boshqa rasm yoki HTTPS havola kiriting."
+                    )
+                }
             }
         }
     }
@@ -814,6 +823,25 @@ private fun AppOperationsTab(
                         label = { Text("Tugma (UZ)") },
                         singleLine = true,
                         modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Spacer(Modifier.height(6.dp))
+                Button(
+                    onClick = { onSaveOperations(ops) },
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("admin_publish_banner_button")
+                ) {
+                    Icon(Icons.Rounded.Save, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        appLanguage.pick(
+                            "حفظ ونشر الإعلان الآن",
+                            "Save & Publish Ad Banner Now",
+                            "E'lonni hozir saqlash va nashr qilish"
+                        )
                     )
                 }
             }

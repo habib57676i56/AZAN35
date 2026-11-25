@@ -61,6 +61,7 @@ import androidx.compose.material.icons.rounded.Directions
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Mosque
 import androidx.compose.material.icons.rounded.MyLocation
+import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -73,6 +74,7 @@ import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.VolunteerActivism
+import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -118,9 +120,12 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.core.hardware.AdhanAudioPlayer
+import com.example.core.hardware.AdhanRuntimeController
 import com.example.core.hardware.LauncherShortcutHelper
 import com.example.core.hardware.LauncherShortcutTarget
 import com.example.core.hardware.LocationAndMosqueLocator
+import com.example.core.hardware.MihrabReminderManager
+import com.example.core.hardware.MihrabReminderSettings
 import com.example.core.hardware.PrayerStatusNotificationManager
 import com.example.core.hardware.shareDesignedVerseTextOrCard
 import com.example.core.i18n.AppLanguage
@@ -132,6 +137,7 @@ import com.example.data.firebase.AdhanAlertMode
 import com.example.data.firebase.AppOperationsConfig
 import com.example.data.firebase.UserSettingsDoc
 import com.example.domain.CalculationMethod
+import com.example.domain.HijriCalendarEngine
 import com.example.domain.IslamicLibraryData
 import com.example.domain.LiveVersesAndHadithsCatalog
 import com.example.domain.PrayerTimeEntry
@@ -633,6 +639,91 @@ fun PrayerScreen(
                                     modifier = Modifier.weight(1f)
                                 )
                             }
+                        }
+                    }
+                }
+            }
+
+            // 1b. White Days (الأيام البيض) Countdown Strip Card
+            item {
+                val whiteDays = remember(hijriToday, settings.hijriOffset, appLanguage) {
+                    HijriCalendarEngine.computeWhiteDaysCountdown(
+                        todayGregorian = Calendar.getInstance(),
+                        offsetDays = settings.hijriOffset.toInt(),
+                        language = appLanguage
+                    )
+                }
+                val whiteStatusBadge = if (whiteDays.isTodayWhiteDay) {
+                    appLanguage.pick(
+                        "اليوم ${whiteDays.currentWhiteDayNumber ?: 13} من الأيام البيض",
+                        "White Day ${whiteDays.currentWhiteDayNumber ?: 13} Today",
+                        "Bugun Oq kun (${whiteDays.currentWhiteDayNumber ?: 13})"
+                    )
+                } else {
+                    appLanguage.pick(
+                        "متبقي ${whiteDays.daysRemaining} أيام",
+                        "In ${whiteDays.daysRemaining} days",
+                        "${whiteDays.daysRemaining} kun qoldi"
+                    )
+                }
+                LiquidGlassCard(
+                    onClick = { onOpenHijri() },
+                    shape = RoundedCornerShape(22.dp),
+                    containerColor = if (whiteDays.isTodayWhiteDay) {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+                    } else {
+                        glass.glassFillStrong
+                    },
+                    borderColor = glass.accentGold.copy(alpha = 0.45f),
+                    contentPadding = 14.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("hero_white_days_card")
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.NightsStay,
+                                contentDescription = null,
+                                tint = glass.accentGold
+                            )
+                            Column {
+                                Text(
+                                    text = appLanguage.pick(
+                                        "الأيام البيض • ${whiteDays.monthNameFor(appLanguage)} (١٣-١٥)",
+                                        "White Days • ${whiteDays.monthNameFor(appLanguage)} (13–15)",
+                                        "Oq kunlar • ${whiteDays.monthNameFor(appLanguage)} (13–15)"
+                                    ),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = formatNumerals(whiteDays.gregorianRange, useArabicDigits),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Surface(
+                            color = glass.accentGold.copy(alpha = 0.16f),
+                            border = BorderStroke(1.dp, glass.accentGold.copy(alpha = 0.45f)),
+                            shape = CircleShape
+                        ) {
+                            Text(
+                                text = formatNumerals(whiteStatusBadge, useArabicDigits),
+                                style = MaterialTheme.typography.labelMedium.withTabularNums(),
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
                         }
                     }
                 }
@@ -1282,6 +1373,314 @@ fun PrayerScreen(
                 }
             }
 
+            // 4b. Prayer Entry Alerts, Volume-Key Adhan Mute, Morning/Evening Adhkar & Tahajjud Reminders
+            item {
+                val reminderFlowState by MihrabReminderManager.settingsFlow.collectAsStateWithLifecycle()
+                val reminderState = reminderFlowState ?: remember(context) {
+                    MihrabReminderManager.getSettings(context)
+                }
+
+                fun updateReminders(updater: (MihrabReminderSettings) -> MihrabReminderSettings) {
+                    MihrabReminderManager.updateSettings(context, updater)
+                    MihrabReminderManager.syncAndScheduleAll(
+                        context = context,
+                        settings = settings,
+                        offsets = manualOffsets,
+                        language = appLanguage,
+                        useIndic = useIndic,
+                        customAdhanPath = localPrefs?.customAdhanLocalPath.orEmpty()
+                    )
+                }
+
+                LiquidGlassCard(
+                    shape = RoundedCornerShape(26.dp),
+                    containerColor = glass.glassFillStrong,
+                    borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.32f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("spiritual_reminders_card")
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Rounded.NotificationsActive, null, tint = MaterialTheme.colorScheme.primary)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = appLanguage.pick(
+                                    "التنبيهات والأذان والتهجد والأذكار",
+                                    "Prayer, Adhan, Adhkar & Tahajjud Alerts",
+                                    "Namoz, Azon, Zikr va Tahajjud eslatmalari"
+                                ),
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = appLanguage.pick(
+                                    "تنبيه دخول الصلاة على شاشة القفل مع إطفاء الأذان بزر الصوت.",
+                                    "Lock-screen Adhan controls (press Volume key to silence) & daily reminders.",
+                                    "Qulf ekranida azon boshqaruvi (ovoz tugmasi bilan o'chirish) va kundalik eslatmalar."
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = glass.glassBorder)
+
+                    // 1. Prayer Entry & Lock-Screen Adhan Toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                appLanguage.pick(
+                                    "إشعار دخول وقت الصلاة والأذان",
+                                    "Prayer Entry Notification & Adhan",
+                                    "Namoz vaqti kirishi va azon bildirishnomasi"
+                                ),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                appLanguage.pick(
+                                    "يظهر في شاشة القفل وشريط التحكم وتطفئه بزر الصوت",
+                                    "Appears on Lock Screen & Shade; press Volume keys to mute",
+                                    "Qulf ekrani va boshqaruv panelida ko'rinadi"
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = reminderState.prayerEntryAlertsEnabled,
+                            onCheckedChange = { enabled ->
+                                updateReminders { it.copy(prayerEntryAlertsEnabled = enabled) }
+                            }
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                val nextMode = AdhanAlertMode.fromId(settings.perPrayerAdhanModes[nextPrayerEntry.key])
+                                AdhanRuntimeController.triggerAdhan(
+                                    context = context,
+                                    prayerKey = nextPrayerEntry.key,
+                                    prayerLabel = nextPrayerEntry.nameFor(appLanguage),
+                                    prayerTime = formatNumerals(nextPrayerEntry.formattedTime, useArabicDigits),
+                                    voiceId = settings.adhanVoiceId,
+                                    mode = if (nextMode == AdhanAlertMode.SILENT) AdhanAlertMode.TAKBIR_ONLY else nextMode,
+                                    customLocalPath = localPrefs?.customAdhanLocalPath.orEmpty(),
+                                    language = appLanguage
+                                )
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("test_lockscreen_adhan_button")
+                    ) {
+                        Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            appLanguage.pick(
+                                "تجربة إشعار الأذان (شاشة القفل + شريط التحكم + زر الصوت)",
+                                "Test Lock-Screen Adhan Alert (Volume Key Mutes)",
+                                "Qulf ekrani azonini sinash (Ovoz tugmasi o'chiradi)"
+                            )
+                        )
+                    }
+
+                    HorizontalDivider(color = glass.glassBorder)
+
+                    // 2. Morning Adhkar Reminder
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Rounded.WbSunny, null, tint = glass.accentGold, modifier = Modifier.size(20.dp))
+                            Column {
+                                Text(
+                                    appLanguage.pick("تذكير أذكار الصباح", "Morning Adhkar Reminder", "Tonggi zikrlar eslatmasi"),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    formatNumerals(
+                                        String.format("%02d:%02d", reminderState.adhkarMorningHour, reminderState.adhkarMorningMinute),
+                                        useArabicDigits
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall.withTabularNums(),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(
+                                onClick = { MihrabReminderManager.sendAdhkarReminderNow(context, isMorning = true, language = appLanguage) }
+                            ) {
+                                Text(appLanguage.pick("تجربة", "Test", "Sinash"))
+                            }
+                            Switch(
+                                checked = reminderState.adhkarMorningEnabled,
+                                onCheckedChange = { enabled ->
+                                    updateReminders { it.copy(adhkarMorningEnabled = enabled) }
+                                }
+                            )
+                        }
+                    }
+                    if (reminderState.adhkarMorningEnabled) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(5 to 30, 6 to 0, 6 to 30, 7 to 0).forEach { (h, m) ->
+                                val selected = reminderState.adhkarMorningHour == h && reminderState.adhkarMorningMinute == m
+                                val lbl = formatNumerals(String.format("%02d:%02d", h, m), useArabicDigits)
+                                LiquidGlassPill(
+                                    selected = selected,
+                                    onClick = {
+                                        updateReminders { it.copy(adhkarMorningHour = h, adhkarMorningMinute = m) }
+                                    },
+                                    label = lbl
+                                )
+                            }
+                        }
+                    }
+
+                    // 3. Evening Adhkar Reminder
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Rounded.NightsStay, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
+                            Column {
+                                Text(
+                                    appLanguage.pick("تذكير أذكار المساء", "Evening Adhkar Reminder", "Kechki zikrlar eslatmasi"),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    formatNumerals(
+                                        String.format("%02d:%02d", reminderState.adhkarEveningHour, reminderState.adhkarEveningMinute),
+                                        useArabicDigits
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall.withTabularNums(),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(
+                                onClick = { MihrabReminderManager.sendAdhkarReminderNow(context, isMorning = false, language = appLanguage) }
+                            ) {
+                                Text(appLanguage.pick("تجربة", "Test", "Sinash"))
+                            }
+                            Switch(
+                                checked = reminderState.adhkarEveningEnabled,
+                                onCheckedChange = { enabled ->
+                                    updateReminders { it.copy(adhkarEveningEnabled = enabled) }
+                                }
+                            )
+                        }
+                    }
+                    if (reminderState.adhkarEveningEnabled) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(16 to 30, 17 to 0, 17 to 30, 18 to 0).forEach { (h, m) ->
+                                val selected = reminderState.adhkarEveningHour == h && reminderState.adhkarEveningMinute == m
+                                val lbl = formatNumerals(String.format("%02d:%02d", h, m), useArabicDigits)
+                                LiquidGlassPill(
+                                    selected = selected,
+                                    onClick = {
+                                        updateReminders { it.copy(adhkarEveningHour = h, adhkarEveningMinute = m) }
+                                    },
+                                    label = lbl
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = glass.glassBorder)
+
+                    // 4. Tahajjud & Qiyam al-Layl Reminder
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(MihrabIcons.KhushuStar, null, tint = glass.accentGold, modifier = Modifier.size(20.dp))
+                            Column {
+                                Text(
+                                    appLanguage.pick("تذكير صلاة التهجد وقيام الليل", "Tahajjud & Qiyam Reminder", "Tahajjud va tungi namoz eslatmasi"),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    appLanguage.pick(
+                                        "بداية الثلث الأخير اليوم: ${formatNumerals(schedule.lastThirdQiyam, useArabicDigits)}",
+                                        "Tonight's Last Third starts ${schedule.lastThirdQiyam}",
+                                        "Kechaning oxirgi uchdan biri: ${schedule.lastThirdQiyam}"
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall.withTabularNums(),
+                                    color = glass.accentGold
+                                )
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(
+                                onClick = { MihrabReminderManager.sendTahajjudReminderNow(context, appLanguage) }
+                            ) {
+                                Text(appLanguage.pick("تجربة", "Test", "Sinash"))
+                            }
+                            Switch(
+                                checked = reminderState.tahajjudReminderEnabled,
+                                onCheckedChange = { enabled ->
+                                    updateReminders { it.copy(tahajjudReminderEnabled = enabled) }
+                                }
+                            )
+                        }
+                    }
+                    if (reminderState.tahajjudReminderEnabled) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(
+                                0 to appLanguage.pick("بداية الثلث الأخير", "Last Third Start", "Oxirgi uchdan bir"),
+                                45 to appLanguage.pick("قبل الفجر بـ ٤٥ د", "45m Before Fajr", "Bomdoddan 45m oldin"),
+                                60 to appLanguage.pick("قبل الفجر بـ ٦٠ د", "60m Before Fajr", "Bomdoddan 60m oldin")
+                            ).forEach { (offsetMin, label) ->
+                                LiquidGlassPill(
+                                    selected = reminderState.tahajjudOffsetBeforeFajrMin == offsetMin,
+                                    onClick = {
+                                        updateReminders { it.copy(tahajjudOffsetBeforeFajrMin = offsetMin) }
+                                    },
+                                    label = label
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // 5. Qada Missed Prayers Counter
             item {
                 LiquidGlassCard(
@@ -1404,7 +1803,7 @@ fun PrayerScreen(
                                 ) {
                                     Icon(Icons.Rounded.Directions, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
                                     Text(
-                                        mosque.distanceLabel,
+                                        formatNumerals(mosque.distanceLabel, useArabicDigits),
                                         style = MaterialTheme.typography.labelLarge.withTabularNums(),
                                         color = MaterialTheme.colorScheme.primary
                                     )
@@ -1412,18 +1811,24 @@ fun PrayerScreen(
                             }
                         }
                         Text(
-                            appLanguage.pick(
-                                "الإقامة: الفجر ${mosque.iqamahFajr} • الظهر ${mosque.iqamahDhuhr} • العصر ${mosque.iqamahAsr} • المغرب ${mosque.iqamahMaghrib} • العشاء ${mosque.iqamahIsha}",
-                                "Iqamah: Fajr ${mosque.iqamahFajr} • Dhuhr ${mosque.iqamahDhuhr} • Asr ${mosque.iqamahAsr} • Maghrib ${mosque.iqamahMaghrib} • Isha ${mosque.iqamahIsha}",
-                                "Iqoma: Bomdod ${mosque.iqamahFajr} • Peshin ${mosque.iqamahDhuhr} • Asr ${mosque.iqamahAsr} • Shom ${mosque.iqamahMaghrib} • Xufton ${mosque.iqamahIsha}"
+                            formatNumerals(
+                                appLanguage.pick(
+                                    "الإقامة: الفجر ${mosque.iqamahFajr} • الظهر ${mosque.iqamahDhuhr} • العصر ${mosque.iqamahAsr} • المغرب ${mosque.iqamahMaghrib} • العشاء ${mosque.iqamahIsha}",
+                                    "Iqamah: Fajr ${mosque.iqamahFajr} • Dhuhr ${mosque.iqamahDhuhr} • Asr ${mosque.iqamahAsr} • Maghrib ${mosque.iqamahMaghrib} • Isha ${mosque.iqamahIsha}",
+                                    "Iqoma: Bomdod ${mosque.iqamahFajr} • Peshin ${mosque.iqamahDhuhr} • Asr ${mosque.iqamahAsr} • Shom ${mosque.iqamahMaghrib} • Xufton ${mosque.iqamahIsha}"
+                                ),
+                                useArabicDigits
                             ),
                             style = MaterialTheme.typography.bodyMedium.withTabularNums()
                         )
                         Text(
-                            appLanguage.pick(
-                                "خطبة الجمعة: ${mosque.jummahKhutbah}",
-                                "Jumu'ah Khutbah: ${mosque.jummahKhutbah}",
-                                "Juma xutbasi: ${mosque.jummahKhutbah}"
+                            formatNumerals(
+                                appLanguage.pick(
+                                    "خطبة الجمعة: ${mosque.jummahKhutbah}",
+                                    "Jumu'ah Khutbah: ${mosque.jummahKhutbah}",
+                                    "Juma xutbasi: ${mosque.jummahKhutbah}"
+                                ),
+                                useArabicDigits
                             ),
                             style = MaterialTheme.typography.labelLarge,
                             color = glass.accentGold
@@ -2018,7 +2423,7 @@ fun PrayerScreen(
                 }
                 HorizontalDivider(color = glass.glassBorder)
                 Text(
-                    "${appLanguage.pick("مؤقت الخشوع", "Quiet Focus", "Xushu' taymeri")}: ${focusSeconds / 60}:${String.format("%02d", focusSeconds % 60)}",
+                    "${appLanguage.pick("مؤقت الخشوع", "Quiet Focus", "Xushu' taymeri")}: ${formatNumerals("${focusSeconds / 60}:${String.format("%02d", focusSeconds % 60)}", useArabicDigits)}",
                     style = MaterialTheme.typography.titleMedium.withTabularNums()
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

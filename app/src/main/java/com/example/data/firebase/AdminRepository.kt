@@ -155,7 +155,7 @@ class AdminRepository(
             put("bannerBodyAr", cfg.bannerBodyAr.trim().take(500))
             put("bannerBodyEn", cfg.bannerBodyEn.trim().take(500))
             put("bannerBodyUz", cfg.bannerBodyUz.trim().take(500))
-            put("bannerImageUrl", cfg.bannerImageUrl.trim().take(8500))
+            put("bannerImageUrl", cfg.bannerImageUrl.trim().take(180000))
             put("bannerLinkUrl", cfg.bannerLinkUrl.trim().take(500))
             put("bannerCtaAr", cfg.bannerCtaAr.trim().take(60))
             put("bannerCtaEn", cfg.bannerCtaEn.trim().take(60))
