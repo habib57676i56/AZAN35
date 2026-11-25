@@ -459,6 +459,20 @@ class MihrabViewModel(
         }
     }
 
+    fun updateDisplayName(newName: String, onDone: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            repository.updateDisplayName(newName)
+                .onSuccess {
+                    _statusMessage.value = "تم تحديث الاسم بنجاح"
+                    onDone(true)
+                }
+                .onFailure {
+                    _statusMessage.value = it.localizedMessage ?: "تعذر تحديث الاسم"
+                    onDone(false)
+                }
+        }
+    }
+
     fun togglePrayerToday(prayerKey: String, currentLog: PrayerLogDoc?) {
         val dateKey = todayDateKey()
         val base = currentLog ?: PrayerLogDoc(dateKey = dateKey)

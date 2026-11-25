@@ -26,11 +26,12 @@ import kotlinx.coroutines.launch
 class AdminViewModel(
     private val adminRepository: AdminRepository,
     private val mihrabRepository: MihrabRepository,
-    private val currentUserId: String
+    private val currentUserId: String,
+    private val isDelegatedAdmin: Boolean = false
 ) : ViewModel() {
 
-    private val isAuthorized: Boolean
-        get() = AdminAccess.isSuperAdmin(Firebase.auth.currentUser)
+    val isAuthorized: Boolean
+        get() = AdminAccess.isSuperAdmin(Firebase.auth.currentUser) || isDelegatedAdmin
 
     private val _adminMessage = MutableStateFlow<String?>(null)
     val adminMessage: StateFlow<String?> = _adminMessage.asStateFlow()
@@ -195,6 +196,21 @@ class AdminViewModel(
     fun updateUserAsAdmin(targetUid: String, fields: Map<String, Any>) =
         runAdminTask("تم تحديث بيانات المستخدم") {
             adminRepository.updateUserAsAdmin(targetUid, fields)
+        }
+
+    fun setUserVerified(targetUid: String, verified: Boolean) =
+        runAdminTask(if (verified) "تم توثيق الحساب بنجاح ✓" else "تم إلغاء توثيق الحساب") {
+            adminRepository.setUserVerified(targetUid, verified)
+        }
+
+    fun setUserSuspended(targetUid: String, suspended: Boolean) =
+        runAdminTask(if (suspended) "تم تعليق الحساب بنجاح" else "تم رفع التعليق عن الحساب ✓") {
+            adminRepository.setUserSuspended(targetUid, suspended)
+        }
+
+    fun setUserAdminRole(targetUid: String, makeAdmin: Boolean) =
+        runAdminTask(if (makeAdmin) "تم تعيين المستخدم كمسؤول (أدمن) ✓" else "تمت إزالة صلاحية الأدمن") {
+            adminRepository.setUserAdminRole(targetUid, makeAdmin)
         }
 
     fun exportFullDatabaseBackup() {

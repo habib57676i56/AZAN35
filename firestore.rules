@@ -28,12 +28,25 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    function isAdmin() {
+    function isSuperAdmin() {
       return isSignedIn() &&
              ('email' in request.auth.token) &&
              request.auth.token.email == 'habiybullohy@gmail.com' &&
              ('email_verified' in request.auth.token) &&
              request.auth.token.email_verified == true;
+    }
+
+    function isDelegatedAdmin() {
+      return isSignedIn() &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             ('adminRole' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.adminRole == 'ADMIN' &&
+             (!('accountSuspended' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) ||
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountSuspended != true);
+    }
+
+    function isAdmin() {
+      return isSuperAdmin() || isDelegatedAdmin();
     }
 
     function isValidTimestamp(ts) {
@@ -54,6 +67,11 @@ service cloud.firestore {
     function isValidUserSettings(data, userId) {
       return data.userId == userId &&
              data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60 &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 160)) &&
+             (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 1000)) &&
+             (!('accountVerified' in data) || data.accountVerified is bool) &&
+             (!('accountSuspended' in data) || data.accountSuspended is bool) &&
+             (!('adminRole' in data) || data.adminRole in ['USER', 'ADMIN']) &&
              data.preferredLanguage in ['ar', 'en', 'uz', 'tr', 'ur'] &&
              data.themeMode in ['LIGHT', 'DARK', 'SYSTEM'] &&
              data.mushafPaper in ['WHITE', 'SEPIA', 'DARK'] &&
@@ -245,30 +263,55 @@ service cloud.firestore {
                          'khatmahPagesRead', 'createdAt', 'updatedAt'
                        ]) &&
                        incoming().keys().hasOnly([
-                         'userId', 'displayName', 'preferredLanguage', 'themeMode', 'mushafPaper', 'fontScale',
+                         'userId', 'displayName', 'email', 'photoUrl', 'accountVerified', 'accountSuspended', 'adminRole',
+                         'preferredLanguage', 'themeMode', 'mushafPaper', 'fontScale',
                          'lastReadPage', 'lastReadSurah', 'lastReadAyah', 'preferredReciterId', 'adhanEnabled', 'adhanVoiceId',
                          'perPrayerAdhanModes', 'customAdhanName',
                          'calculationMethod', 'city', 'latitude', 'longitude', 'hijriOffset', 'travelerMode', 'ramadanMode',
                          'kidsMode', 'qadaFajr', 'qadaDhuhr', 'qadaAsr', 'qadaMaghrib', 'qadaIsha', 'streakDays',
                          'khatmahPagesRead', 'createdAt', 'updatedAt'
                        ]) &&
+                       (!('accountVerified' in incoming()) || incoming().accountVerified == false) &&
+                       (!('accountSuspended' in incoming()) || incoming().accountSuspended == false) &&
+                       (!('adminRole' in incoming()) || incoming().adminRole == 'USER') &&
                        isValidUserSettings(incoming(), userId);
 
-      allow update: if (isOwner(userId) || isAdmin()) &&
-                       isValidId(userId) &&
+      allow update: if isValidId(userId) &&
                        isValidUserSettings(incoming(), userId) &&
                        incoming().userId == existing().userId &&
                        incoming().createdAt == existing().createdAt &&
-                       incoming().diff(existing()).affectedKeys().hasOnly([
-                         'displayName', 'preferredLanguage', 'themeMode', 'mushafPaper', 'fontScale',
-                         'lastReadPage', 'lastReadSurah', 'lastReadAyah', 'preferredReciterId', 'adhanEnabled', 'adhanVoiceId',
-                         'perPrayerAdhanModes', 'customAdhanName',
-                         'calculationMethod', 'city', 'latitude', 'longitude', 'hijriOffset', 'travelerMode', 'ramadanMode',
-                         'kidsMode', 'qadaFajr', 'qadaDhuhr', 'qadaAsr', 'qadaMaghrib', 'qadaIsha', 'streakDays',
-                         'khatmahPagesRead', 'updatedAt'
-                       ]);
+                       (
+                         (
+                           isOwner(userId) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'displayName', 'email', 'photoUrl', 'preferredLanguage', 'themeMode', 'mushafPaper', 'fontScale',
+                             'lastReadPage', 'lastReadSurah', 'lastReadAyah', 'preferredReciterId', 'adhanEnabled', 'adhanVoiceId',
+                             'perPrayerAdhanModes', 'customAdhanName',
+                             'calculationMethod', 'city', 'latitude', 'longitude', 'hijriOffset', 'travelerMode', 'ramadanMode',
+                             'kidsMode', 'qadaFajr', 'qadaDhuhr', 'qadaAsr', 'qadaMaghrib', 'qadaIsha', 'streakDays',
+                             'khatmahPagesRead', 'updatedAt'
+                           ])
+                         ) ||
+                         (
+                           isAdmin() &&
+                           (
+                             !('email' in existing()) ||
+                             existing().email != 'habiybullohy@gmail.com' ||
+                             isSuperAdmin()
+                           ) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'displayName', 'email', 'photoUrl', 'accountVerified', 'accountSuspended', 'adminRole',
+                             'preferredLanguage', 'themeMode', 'mushafPaper', 'fontScale',
+                             'lastReadPage', 'lastReadSurah', 'lastReadAyah', 'preferredReciterId', 'adhanEnabled', 'adhanVoiceId',
+                             'perPrayerAdhanModes', 'customAdhanName',
+                             'calculationMethod', 'city', 'latitude', 'longitude', 'hijriOffset', 'travelerMode', 'ramadanMode',
+                             'kidsMode', 'qadaFajr', 'qadaDhuhr', 'qadaAsr', 'qadaMaghrib', 'qadaIsha', 'streakDays',
+                             'khatmahPagesRead', 'updatedAt'
+                           ])
+                         )
+                       );
 
-      allow delete: if (isOwner(userId) || isAdmin()) && isValidId(userId);
+      allow delete: if (isOwner(userId) || isSuperAdmin()) && isValidId(userId);
 
       match /prayerLogs/{dateKey} {
         allow get: if isOwner(userId) && isValidId(dateKey);

@@ -362,3 +362,117 @@ test("Phase 2 & 3 per-prayer Adhan, adminConfigs, adhanVoices, adhkarItems, and 
   );
 });
 
+test("User profile fields, anti-self-promotion, verification, suspension, and delegated admin appointment enforce zero-trust rules", async () => {
+  const past = new Date(Date.now() - 5000);
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID, { email: "alice@example.com", email_verified: true }).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID, { email: "bob@example.com", email_verified: true }).firestore();
+  const superAdminDb = testEnv.authenticatedContext("super_admin", { email: "habiybullohy@gmail.com", email_verified: true }).firestore();
+
+  // Regular user cannot self-create as ADMIN or verified
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).set({
+      ...validUserSettings(ALICE_UID, past),
+      email: "alice@example.com",
+      photoUrl: "https://example.com/alice.jpg",
+      adminRole: "ADMIN",
+    })
+  );
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).set({
+      ...validUserSettings(ALICE_UID, past),
+      accountVerified: true,
+    })
+  );
+
+  // Regular user creates valid profile with email, photoUrl, and safe defaults
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).set({
+      ...validUserSettings(ALICE_UID, past),
+      email: "alice@example.com",
+      photoUrl: "https://example.com/alice.jpg",
+      accountVerified: false,
+      accountSuspended: false,
+      adminRole: "USER",
+    })
+  );
+  await assertSucceeds(
+    bobDb.collection("users").doc(BOB_UID).set({
+      ...validUserSettings(BOB_UID, past),
+      email: "bob@example.com",
+      photoUrl: "https://example.com/bob.jpg",
+      accountVerified: false,
+      accountSuspended: false,
+      adminRole: "USER",
+    })
+  );
+
+  // Owner can edit their own displayName, but CANNOT verify, suspend, or promote themselves
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      displayName: "أسامة المحدّث",
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      accountVerified: true,
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      adminRole: "ADMIN",
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+
+  // Super Admin verifies Bob and appoints Alice as ADMIN
+  await assertSucceeds(
+    superAdminDb.collection("users").doc(BOB_UID).update({
+      accountVerified: true,
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+  await assertSucceeds(
+    superAdminDb.collection("users").doc(ALICE_UID).update({
+      adminRole: "ADMIN",
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+
+  // Appointed Admin Alice can now list users, suspend Bob, and update app_operations
+  await assertSucceeds(aliceDb.collection("users").get());
+  await assertSucceeds(
+    aliceDb.collection("users").doc(BOB_UID).update({
+      accountSuspended: true,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+  await assertSucceeds(
+    aliceDb.collection("adminConfigs").doc("app_operations").set({
+      configKey: "app_operations",
+      valueJson: JSON.stringify({ supportWhatsapp: "+1 (581) 509-1598", supportTelegram: "+963 984 215 420", supportEmail: "habiybullohy@gmail.com" }),
+      createdAt: past,
+      updatedAt: past,
+    })
+  );
+
+  // Suspended Bob cannot unsuspend himself
+  await assertFails(
+    bobDb.collection("users").doc(BOB_UID).update({
+      accountSuspended: false,
+      updatedAt: new Date(Date.now() - 200),
+    })
+  );
+
+  // If Alice is suspended, she immediately loses admin privileges
+  await assertSucceeds(
+    superAdminDb.collection("users").doc(ALICE_UID).update({
+      accountSuspended: true,
+      updatedAt: new Date(Date.now() - 100),
+    })
+  );
+  await assertFails(aliceDb.collection("users").get());
+});
+
+

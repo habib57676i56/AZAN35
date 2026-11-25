@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -46,6 +48,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -451,6 +454,9 @@ private fun AuthenticatedMihrabShell(
     }
 
     val ringingAdhan by AdhanRuntimeController.ringing.collectAsStateWithLifecycle()
+    val isDelegatedAdmin = remoteSettings?.adminRole == "ADMIN" && remoteSettings.accountSuspended != true
+    val isAdmin = isSuperAdmin || isDelegatedAdmin
+    val isAccountSuspended = remoteSettings?.accountSuspended == true && !isSuperAdmin
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var quranSubTab by rememberSaveable { mutableIntStateOf(0) }
@@ -491,9 +497,9 @@ private fun AuthenticatedMihrabShell(
         }
     }
 
-    if (showAdminDashboard && isSuperAdmin) {
+    if (showAdminDashboard && isAdmin && !isAccountSuspended) {
         BackHandler { showAdminDashboard = false }
-    } else if (selectedTab != 0) {
+    } else if (selectedTab != 0 && !isAccountSuspended) {
         BackHandler { selectedTab = 0 }
     }
 
@@ -526,16 +532,129 @@ private fun AuthenticatedMihrabShell(
         val glass = LocalLiquidGlassPalette.current
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             CompositionLocalProvider(LocalLayoutDirection provides appLanguage.layoutDirection) {
-                if (showAdminDashboard && isSuperAdmin) {
+                if (isAccountSuspended) {
+                    SacredAmbientCanvas {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            LiquidGlassCard(
+                                shape = RoundedCornerShape(26.dp),
+                                containerColor = glass.glassFillStrong,
+                                borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),
+                                contentPadding = 22.dp,
+                                modifier = Modifier
+                                    .widthIn(max = 480.dp)
+                                    .testTag("suspended_account_screen")
+                            ) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.WarningAmber,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(44.dp)
+                                    )
+                                    Text(
+                                        text = appLanguage.pick(
+                                            "تم تعليق حسابك مؤقتاً",
+                                            "Account Suspended",
+                                            "Hisobingiz vaqtincha to'xtatilgan"
+                                        ),
+                                        style = MaterialTheme.typography.headlineSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                    Text(
+                                        text = appLanguage.pick(
+                                            "قامت إدارة تطبيق محراب بتعليق الوصول لهذا الحساب. يمكنك التواصل مع فريق الدعم الفني لمراجعة الحساب.",
+                                            "An administrator has suspended this account. Please contact Support to review your access.",
+                                            "Ma'muriyat ushbu hisobni vaqtincha to'xtatdi. Qo'llab-quvvatlash xizmatiga murojaat qiling."
+                                        ),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    OutlinedButton(
+                                        onClick = {
+                                            val digits = appOperations.supportWhatsapp.filter { it.isDigit() }
+                                            if (digits.isNotBlank()) {
+                                                runCatching {
+                                                    context.startActivity(
+                                                        Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$digits"))
+                                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(16.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("${appLanguage.pick("واتساب الدعم:", "WhatsApp Support:", "WhatsApp:")} ${appOperations.supportWhatsapp}")
+                                    }
+                                    OutlinedButton(
+                                        onClick = {
+                                            val rawTg = appOperations.supportTelegram.trim().replace(" ", "").replace("-", "")
+                                            val tgUrl = if (rawTg.startsWith("@")) {
+                                                "https://t.me/${rawTg.removePrefix("@")}"
+                                            } else {
+                                                "https://t.me/$rawTg"
+                                            }
+                                            runCatching {
+                                                context.startActivity(
+                                                    Intent(Intent.ACTION_VIEW, Uri.parse(tgUrl))
+                                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                )
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(16.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("${appLanguage.pick("تيليجرام الدعم:", "Telegram Support:", "Telegram:")} ${appOperations.supportTelegram}")
+                                    }
+                                    OutlinedButton(
+                                        onClick = {
+                                            runCatching {
+                                                context.startActivity(
+                                                    Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:${appOperations.supportEmail.trim()}"))
+                                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                )
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(16.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("${appLanguage.pick("البريد:", "Email:", "Email:")} ${appOperations.supportEmail}")
+                                    }
+                                    Button(
+                                        onClick = onSignOut,
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                        shape = RoundedCornerShape(16.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("sign_out_suspended_button")
+                                    ) {
+                                        Text(strings.signOut)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if (showAdminDashboard && isAdmin) {
                     val adminRepository = remember(db) { AdminRepository(db = db) }
                     val adminViewModel: AdminViewModel = viewModel(
-                        key = "admin_$currentUserId",
+                        key = "admin_${currentUserId}_$isDelegatedAdmin",
                         factory = viewModelFactory {
                             initializer {
                                 AdminViewModel(
                                     adminRepository = adminRepository,
                                     mihrabRepository = sharedRepository,
-                                    currentUserId = currentUserId
+                                    currentUserId = currentUserId,
+                                    isDelegatedAdmin = isDelegatedAdmin
                                 )
                             }
                         }
@@ -620,7 +739,7 @@ private fun AuthenticatedMihrabShell(
                                                 }
                                             },
                                             actions = {
-                                                if (isSuperAdmin) {
+                                                if (isAdmin) {
                                                     Surface(
                                                         onClick = { showAdminDashboard = true },
                                                         shape = CircleShape,
@@ -1166,8 +1285,8 @@ private fun AuthenticatedMihrabShell(
                                                     currentThemeMode = themeMode,
                                                     useIndic = useIndic,
                                                     onToggleIndic = { mihrabViewModel.toggleIndicNumerals(it) },
-                                                    isSuperAdmin = isSuperAdmin,
-                                                    onOpenAdminDashboard = { if (isSuperAdmin) showAdminDashboard = true },
+                                                    isSuperAdmin = isAdmin,
+                                                    onOpenAdminDashboard = { if (isAdmin) showAdminDashboard = true },
                                                     initialSection = toolsSubTab,
                                                     sectionNonce = toolsSubTabNonce,
                                                     appOperations = appOperations,

@@ -7,7 +7,12 @@
       "properties": {
         "userId": { "type": "string", "description": "Firebase Auth UID" },
         "displayName": { "type": "string", "description": "Display name" },
-        "preferredLanguage": { "type": "string", "enum": ["ar", "en", "tr", "ur"] },
+        "email": { "type": "string", "description": "Google account email" },
+        "photoUrl": { "type": "string", "description": "Google account profile photo URL" },
+        "accountVerified": { "type": "boolean", "description": "Admin-granted verification badge" },
+        "accountSuspended": { "type": "boolean", "description": "Admin suspension lock" },
+        "adminRole": { "type": "string", "enum": ["USER", "ADMIN"], "description": "User privilege role" },
+        "preferredLanguage": { "type": "string", "enum": ["ar", "en", "uz", "tr", "ur"] },
         "themeMode": { "type": "string", "enum": ["LIGHT", "DARK", "SYSTEM"] },
         "mushafPaper": { "type": "string", "enum": ["WHITE", "SEPIA", "DARK"] },
         "fontScale": { "type": "number" },

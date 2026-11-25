@@ -3,6 +3,7 @@ package com.example.ui.screens
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -30,7 +31,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AppShortcut
 import androidx.compose.material.icons.rounded.BrightnessAuto
@@ -40,11 +43,16 @@ import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Email
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.SupportAgent
 import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material3.AlertDialog
@@ -92,11 +100,13 @@ import com.example.core.hardware.LauncherShortcutHelper
 import com.example.core.hardware.LauncherShortcutTarget
 import com.example.core.hardware.LocationAndMosqueLocator
 import com.example.core.hardware.PrayerStatusNotificationManager
+import com.example.core.hardware.RemoteAvatarImage
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
 import com.example.core.i18n.formatNumerals
 import com.example.core.preferences.FeatureUsageTracker
 import com.example.core.preferences.SmartFeatureId
+import com.example.data.firebase.AdminAccess
 import com.example.data.firebase.AppOperationsConfig
 import com.example.data.firebase.UserSettingsDoc
 import com.example.data.firebase.clearCustomAppCheckDebugToken
@@ -118,6 +128,8 @@ import com.example.ui.theme.MushafPaperTheme
 import com.example.ui.theme.withTabularNums
 import com.example.ui.viewmodel.MihrabViewModel
 import com.example.ui.viewmodel.UiState
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -175,8 +187,16 @@ fun ToolsScreen(
     val toolsTabs = listOf(
         appLanguage.pick("الحاسبات الشرعية", "Calculators", "Hisoblagichlar") to MihrabIcons.Calculators,
         appLanguage.pick(strings.pilgrimGuide, "${strings.pilgrimGuide} & Charity", "Haj va Sadaqa") to MihrabIcons.KaabaCube,
-        strings.settingsPrivacy to MihrabIcons.Settings
+        strings.settingsPrivacy to MihrabIcons.Settings,
+        appLanguage.pick("الدعم وعن أسامة", "Support & About", "Yordam va Haqida") to Icons.Rounded.SupportAgent
     )
+
+    val authUser = remember { runCatching { Firebase.auth.currentUser }.getOrNull() }
+    val profilePhotoUrl = settings.photoUrl.ifBlank { authUser?.photoUrl?.toString().orEmpty() }
+    val profileEmail = settings.email.ifBlank { authUser?.email.orEmpty() }
+    val isVerifiedAccount = settings.accountVerified || AdminAccess.isSuperAdmin(authUser)
+    var showEditNameDialog by remember { mutableStateOf(false) }
+    var editedNameInput by remember(settings.displayName) { mutableStateOf(settings.displayName) }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
@@ -186,6 +206,23 @@ fun ToolsScreen(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            item {
+                GoogleProfileCard(
+                    displayName = settings.displayName.ifBlank { authUser?.displayName ?: "مؤمن" },
+                    email = profileEmail,
+                    photoUrl = profilePhotoUrl,
+                    isVerified = isVerifiedAccount,
+                    isAdmin = isSuperAdmin,
+                    isSuperAdminAccount = AdminAccess.isSuperAdmin(authUser),
+                    appLanguage = appLanguage,
+                    onEditNameClick = {
+                        editedNameInput = settings.displayName
+                        showEditNameDialog = true
+                    },
+                    onOpenSupport = { activeSection = 3 }
+                )
+            }
+
             item {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -232,6 +269,409 @@ fun ToolsScreen(
                         onSignOut = onSignOut
                     )
                 }
+                3 -> item {
+                    SupportAndAboutSection(
+                        appOperations = appOperations,
+                        appLanguage = appLanguage,
+                        onCopiedNotice = { msg -> viewModel.showMessage(msg) }
+                    )
+                }
+            }
+        }
+    }
+
+    if (showEditNameDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditNameDialog = false },
+            title = {
+                Text(
+                    appLanguage.pick(
+                        "تعديل الاسم في محراب",
+                        "Edit Display Name",
+                        "Ko'rsatiladigan ismni tahrirlash"
+                    )
+                )
+            },
+            text = {
+                OutlinedTextField(
+                    value = editedNameInput,
+                    onValueChange = { if (it.length <= 60) editedNameInput = it },
+                    singleLine = true,
+                    label = { Text(appLanguage.pick("الاسم الجديد", "New Name", "Yangi ism")) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("edit_display_name_input")
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.updateDisplayName(editedNameInput) { ok ->
+                            if (ok) showEditNameDialog = false
+                        }
+                    },
+                    enabled = editedNameInput.trim().isNotEmpty(),
+                    modifier = Modifier.testTag("save_display_name_button")
+                ) {
+                    Text(strings.save)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditNameDialog = false }) {
+                    Text(strings.cancel)
+                }
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GoogleProfileCard(
+    displayName: String,
+    email: String,
+    photoUrl: String,
+    isVerified: Boolean,
+    isAdmin: Boolean,
+    isSuperAdminAccount: Boolean,
+    appLanguage: AppLanguage,
+    onEditNameClick: () -> Unit,
+    onOpenSupport: () -> Unit
+) {
+    val glass = LocalLiquidGlassPalette.current
+    LiquidGlassCard(
+        shape = RoundedCornerShape(24.dp),
+        containerColor = glass.glassFillStrong,
+        borderColor = if (isVerified) BurnishedGold.copy(alpha = 0.55f) else glass.glassBorder,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("google_account_profile_card")
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            RemoteAvatarImage(
+                photoUrl = photoUrl,
+                displayName = displayName,
+                size = 58.dp
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = displayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (isVerified) {
+                        Icon(
+                            imageVector = Icons.Rounded.Verified,
+                            contentDescription = appLanguage.pick("حساب موثّق", "Verified Account", "Tasdiqlangan hisob"),
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+                if (email.isNotBlank()) {
+                    Text(
+                        text = email,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (isVerified) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                        ) {
+                            Text(
+                                text = appLanguage.pick("حساب موثّق ✓", "Verified ✓", "Tasdiqlangan ✓"),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+                    if (isAdmin) {
+                        Surface(
+                            shape = CircleShape,
+                            color = BurnishedGold.copy(alpha = 0.18f)
+                        ) {
+                            Text(
+                                text = if (isSuperAdminAccount) {
+                                    appLanguage.pick("المشرف الأعلى", "Super Admin", "Super Admin")
+                                } else {
+                                    appLanguage.pick("مسؤول (أدمن)", "Admin", "Admin")
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = BurnishedGold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+                }
+            }
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onEditNameClick,
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    modifier = Modifier.testTag("edit_profile_name_button")
+                ) {
+                    Icon(Icons.Rounded.Edit, null, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = appLanguage.pick("تعديل الاسم", "Edit Name", "Tahrirlash"),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+                TextButton(
+                    onClick = onOpenSupport,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    modifier = Modifier.testTag("quick_open_support_button")
+                ) {
+                    Icon(Icons.Rounded.SupportAgent, null, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = appLanguage.pick("الدعم وعن أسامة", "Support & About", "Yordam"),
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SupportAndAboutSection(
+    appOperations: AppOperationsConfig,
+    appLanguage: AppLanguage,
+    onCopiedNotice: (String) -> Unit
+) {
+    val context = LocalContext.current
+    @Suppress("DEPRECATION")
+    val clipboard = LocalClipboardManager.current
+    val glass = LocalLiquidGlassPalette.current
+
+    val aboutTitle = appLanguage.pick(
+        appOperations.aboutTitleAr,
+        appOperations.aboutTitleEn,
+        appOperations.aboutTitleUz
+    )
+    val aboutBody = appLanguage.pick(
+        appOperations.aboutBodyAr,
+        appOperations.aboutBodyEn,
+        appOperations.aboutBodyUz
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        // Contact Support Card
+        LiquidGlassCard(
+            shape = RoundedCornerShape(24.dp),
+            containerColor = glass.glassFillStrong,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("contact_support_card")
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Rounded.SupportAgent, null, tint = MaterialTheme.colorScheme.primary)
+                Text(
+                    text = appLanguage.pick(
+                        "التواصل مع الدعم الفني",
+                        "Contact Support",
+                        "Qo'llab-quvvatlash bilan aloqa"
+                    ),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                text = appLanguage.pick(
+                    "للاستفسارات أو الملاحظات أو تفعيل وتوثيق الحسابات تواصل معنا مباشرة عبر القنوات التالية:",
+                    "Reach out directly for help, suggestions, or account support:",
+                    "Savollar, takliflar yoki hisobni tasdiqlash uchun bevosita bog'laning:"
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // WhatsApp
+            SupportChannelRow(
+                icon = Icons.AutoMirrored.Rounded.Chat,
+                label = appLanguage.pick("واتساب", "WhatsApp", "WhatsApp"),
+                value = appOperations.supportWhatsapp,
+                accentColor = Color(0xFF1F9D55),
+                actionLabel = appLanguage.pick("محادثة", "Chat", "Yozish"),
+                onAction = {
+                    val digits = appOperations.supportWhatsapp.filter { it.isDigit() }
+                    if (digits.isNotBlank()) {
+                        runCatching {
+                            context.startActivity(
+                                Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$digits"))
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    }
+                },
+                onCopy = {
+                    clipboard.setText(AnnotatedString(appOperations.supportWhatsapp))
+                    onCopiedNotice(appLanguage.pick("تم نسخ رقم الواتساب ✓", "WhatsApp copied ✓", "WhatsApp nusxalandi ✓"))
+                },
+                modifier = Modifier.testTag("support_whatsapp_row")
+            )
+
+            // Telegram
+            SupportChannelRow(
+                icon = Icons.AutoMirrored.Rounded.Send,
+                label = appLanguage.pick("تيليجرام", "Telegram", "Telegram"),
+                value = appOperations.supportTelegram,
+                accentColor = Color(0xFF1D88C7),
+                actionLabel = appLanguage.pick("فتح", "Open", "Ochish"),
+                onAction = {
+                    val raw = appOperations.supportTelegram.trim().replace(" ", "").replace("-", "")
+                    val url = if (raw.startsWith("@")) "https://t.me/${raw.removePrefix("@")}" else "https://t.me/$raw"
+                    runCatching {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                },
+                onCopy = {
+                    clipboard.setText(AnnotatedString(appOperations.supportTelegram))
+                    onCopiedNotice(appLanguage.pick("تم نسخ تيليجرام ✓", "Telegram copied ✓", "Telegram nusxalandi ✓"))
+                },
+                modifier = Modifier.testTag("support_telegram_row")
+            )
+
+            // Email
+            SupportChannelRow(
+                icon = Icons.Rounded.Email,
+                label = appLanguage.pick("البريد الإلكتروني", "Email", "Elektron pochta"),
+                value = appOperations.supportEmail,
+                accentColor = BurnishedGold,
+                actionLabel = appLanguage.pick("مراسلة", "Email", "Yozish"),
+                onAction = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:${appOperations.supportEmail.trim()}"))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                },
+                onCopy = {
+                    clipboard.setText(AnnotatedString(appOperations.supportEmail))
+                    onCopiedNotice(appLanguage.pick("تم نسخ البريد الإلكتروني ✓", "Email copied ✓", "Email nusxalandi ✓"))
+                },
+                modifier = Modifier.testTag("support_email_row")
+            )
+        }
+
+        // About Osama & Mihrab Card
+        LiquidGlassCard(
+            shape = RoundedCornerShape(24.dp),
+            containerColor = glass.glassFillStrong,
+            borderColor = BurnishedGold.copy(alpha = 0.45f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("about_osama_card")
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Rounded.Info, null, tint = BurnishedGold)
+                Text(
+                    text = aboutTitle,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                text = aboutBody,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+@Composable
+private fun SupportChannelRow(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    accentColor: Color,
+    actionLabel: String,
+    onAction: () -> Unit,
+    onCopy: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val glass = LocalLiquidGlassPalette.current
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = glass.glassSubtleFill,
+        border = BorderStroke(1.dp, glass.glassBorder),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = accentColor.copy(alpha = 0.16f),
+                modifier = Modifier.size(36.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(icon, null, tint = accentColor, modifier = Modifier.size(18.dp))
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodyMedium.withTabularNums(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            IconButton(onClick = onCopy, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(17.dp))
+            }
+            Button(
+                onClick = onAction,
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(actionLabel, style = MaterialTheme.typography.labelMedium)
             }
         }
     }
@@ -1418,7 +1858,14 @@ private fun SettingsAndPrivacySection(
             }
         }
 
-        // 6. Privacy, Export & Account Controls
+        // 6. Support Contact & About Osama (also mirrored in Settings tab for easy scrolling)
+        SupportAndAboutSection(
+            appOperations = appOperations,
+            appLanguage = appLanguage,
+            onCopiedNotice = { msg -> viewModel.showMessage(msg) }
+        )
+
+        // 7. Privacy, Export & Account Controls
         LiquidGlassCard(shape = RoundedCornerShape(24.dp)) {
             Text(strings.settingsPrivacy, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(

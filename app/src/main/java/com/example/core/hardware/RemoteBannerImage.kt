@@ -6,12 +6,15 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
 import android.util.LruCache
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BrokenImage
@@ -239,6 +242,81 @@ fun RemoteBannerImage(
                 imageVector = Icons.Rounded.BrokenImage,
                 contentDescription = contentDescription,
                 tint = MaterialTheme.colorScheme.error
+            )
+        }
+    }
+}
+
+@Composable
+fun RemoteAvatarImage(
+    photoUrl: String?,
+    displayName: String,
+    size: Dp = 56.dp,
+    modifier: Modifier = Modifier
+) {
+    val cleanUrl = remember(photoUrl) { photoUrl?.trim().orEmpty() }
+    var bitmap by remember(cleanUrl) {
+        mutableStateOf(
+            if (cleanUrl.isNotBlank()) BannerBitmapCache.lru.get("avatar:$cleanUrl") else null
+        )
+    }
+
+    LaunchedEffect(cleanUrl) {
+        if (cleanUrl.isBlank() || bitmap != null) return@LaunchedEffect
+        val loaded = withContext(Dispatchers.IO) {
+            runCatching {
+                val req = Request.Builder()
+                    .url(cleanUrl)
+                    .header("User-Agent", "Mozilla/5.0 (Android 14; Mobile) Mihrab/1.0")
+                    .build()
+                BannerBitmapCache.httpClient.newCall(req).execute().use { resp ->
+                    val raw = if (resp.isSuccessful) resp.body?.bytes() else null
+                    raw?.let {
+                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        BitmapFactory.decodeByteArray(it, 0, it.size, bounds)
+                        var sample = 1
+                        while ((bounds.outWidth / sample) > 320 || (bounds.outHeight / sample) > 320) {
+                            sample *= 2
+                        }
+                        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+                        BitmapFactory.decodeByteArray(it, 0, it.size, opts)?.asImageBitmap()
+                    }
+                }
+            }.getOrNull()
+        }
+        if (loaded != null) {
+            BannerBitmapCache.lru.put("avatar:$cleanUrl", loaded)
+            bitmap = loaded
+        }
+    }
+
+    val currentBitmap = bitmap
+    val initial = remember(displayName) {
+        displayName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "م"
+    }
+    if (currentBitmap != null) {
+        Image(
+            bitmap = currentBitmap,
+            contentDescription = displayName,
+            contentScale = ContentScale.Crop,
+            modifier = modifier
+                .size(size)
+                .clip(CircleShape)
+                .border(BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)), CircleShape)
+        )
+    } else {
+        Box(
+            modifier = modifier
+                .size(size)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
+                .border(BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            androidx.compose.material3.Text(
+                text = initial,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
             )
         }
     }

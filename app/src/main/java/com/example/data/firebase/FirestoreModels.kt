@@ -17,6 +17,14 @@ object AdminAccess {
     fun isSuperAdmin(email: String?, emailVerified: Boolean): Boolean {
         return email?.trim()?.lowercase() == SUPER_ADMIN_EMAIL && emailVerified
     }
+
+    fun isAdmin(user: FirebaseUser?, userDoc: UserSettingsDoc?): Boolean {
+        if (isSuperAdmin(user)) return true
+        return user != null &&
+            userDoc != null &&
+            userDoc.adminRole == "ADMIN" &&
+            !userDoc.accountSuspended
+    }
 }
 
 enum class AdhanAlertMode(
@@ -44,6 +52,11 @@ enum class AdhanAlertMode(
 data class UserSettingsDoc(
     val userId: String = "",
     val displayName: String = "مؤمن",
+    val email: String = "",
+    val photoUrl: String = "",
+    val accountVerified: Boolean = false,
+    val accountSuspended: Boolean = false,
+    val adminRole: String = "USER",
     val preferredLanguage: String = "ar",
     val themeMode: String = "SYSTEM",
     val mushafPaper: String = "WHITE",
@@ -283,8 +296,32 @@ data class AppOperationsConfig(
     val liveVersesCardEnabled: Boolean = true,
     val nearbyMosquesEnabled: Boolean = true,
     val persistentPrayerNotificationAllowed: Boolean = true,
-    val maintenanceMode: Boolean = false
-)
+    val maintenanceMode: Boolean = false,
+    val supportWhatsapp: String = DEFAULT_SUPPORT_WHATSAPP,
+    val supportTelegram: String = DEFAULT_SUPPORT_TELEGRAM,
+    val supportEmail: String = DEFAULT_SUPPORT_EMAIL,
+    val aboutTitleAr: String = DEFAULT_ABOUT_TITLE_AR,
+    val aboutTitleEn: String = DEFAULT_ABOUT_TITLE_EN,
+    val aboutTitleUz: String = DEFAULT_ABOUT_TITLE_UZ,
+    val aboutBodyAr: String = DEFAULT_ABOUT_BODY_AR,
+    val aboutBodyEn: String = DEFAULT_ABOUT_BODY_EN,
+    val aboutBodyUz: String = DEFAULT_ABOUT_BODY_UZ
+) {
+    companion object {
+        const val DEFAULT_SUPPORT_WHATSAPP = "+1 (581) 509-1598"
+        const val DEFAULT_SUPPORT_TELEGRAM = "+963 984 215 420"
+        const val DEFAULT_SUPPORT_EMAIL = "habiybullohy@gmail.com"
+        const val DEFAULT_ABOUT_TITLE_AR = "عن أسامة وتطبيق محراب"
+        const val DEFAULT_ABOUT_TITLE_EN = "About Osama & Mihrab"
+        const val DEFAULT_ABOUT_TITLE_UZ = "Usoma va Mihrob haqida"
+        const val DEFAULT_ABOUT_BODY_AR =
+            "تطبيق «محراب» من تطوير وإشراف أسامة، صُمّم ليكون رفيق المسلم اليومي في تلاوة القرآن الكريم بمصحف المدينة الموثوق، ومواقيت الصلاة الدقيقة، والأذكار اليومية، وأدوات الزكاة والعبادات بتجربة هادئة وخالية من الإعلانات المزعجة. نسعد بتواصلكم وملاحظاتكم واقتراحاتكم في أي وقت."
+        const val DEFAULT_ABOUT_BODY_EN =
+            "Mihrab is crafted and maintained by Osama as a peaceful, ad-free Islamic sanctuary bringing together the complete 604-page Madinah Mushaf, accurate prayer times, authentic Adhkar, and worship utilities. We warmly welcome your feedback, questions, and suggestions."
+        const val DEFAULT_ABOUT_BODY_UZ =
+            "«Mihrob» ilovasi Usoma tomonidan musulmonlarning kundalik ibodatlari uchun tinch, reklamasiz hamroh sifatida yaratilgan: 604 sahifalik Madina Mushafi, aniq namoz vaqtlari, sahih zikrlar va qulay hisoblagichlar. Fikr va takliflaringiz uchun har doim aloqadamiz."
+    }
+}
 
 @Keep
 @IgnoreExtraProperties

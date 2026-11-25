@@ -14,6 +14,7 @@ import com.example.domain.AdhkarAndAdhanCatalog
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
+import com.google.firebase.auth.userProfileChangeRequest
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -111,7 +112,10 @@ class MihrabRepository(
     }
 
     suspend fun ensureUserSettings(displayName: String): Result<Unit> {
-        val uid = auth.currentUser?.uid ?: return Result.failure(IllegalStateException("Not authenticated"))
+        val currentUser = auth.currentUser ?: return Result.failure(IllegalStateException("Not authenticated"))
+        val uid = currentUser.uid
+        val currentEmail = currentUser.email?.trim().orEmpty().take(160)
+        val currentPhoto = currentUser.photoUrl?.toString()?.trim().orEmpty().take(1000)
         val path = "users/$uid"
         return try {
             val docRef = db.collection("users").document(uid)
@@ -131,6 +135,11 @@ class MihrabRepository(
                 val payload = mapOf(
                     "userId" to uid,
                     "displayName" to safeName,
+                    "email" to currentEmail,
+                    "photoUrl" to currentPhoto,
+                    "accountVerified" to false,
+                    "accountSuspended" to false,
+                    "adminRole" to "USER",
                     "preferredLanguage" to "ar",
                     "themeMode" to defTheme,
                     "mushafPaper" to defPaper,
@@ -169,9 +178,15 @@ class MihrabRepository(
                 )
                 docRef.set(payload).await()
             } else {
-                // Backfill any newly added Phase 1 & Phase 2 fields on existing user documents safely
+                // Backfill & keep Google profile email/photoUrl synced without overwriting custom displayName or admin roles
                 val data = snap.data ?: emptyMap()
                 val backfill = mutableMapOf<String, Any>()
+                if (!data.containsKey("email") || (currentEmail.isNotEmpty() && data["email"] != currentEmail)) {
+                    backfill["email"] = currentEmail
+                }
+                if (!data.containsKey("photoUrl") || (currentPhoto.isNotEmpty() && data["photoUrl"] != currentPhoto)) {
+                    backfill["photoUrl"] = currentPhoto
+                }
                 if (!data.containsKey("themeMode")) backfill["themeMode"] = "SYSTEM"
                 if (!data.containsKey("mushafPaper")) backfill["mushafPaper"] = "WHITE"
                 if (!data.containsKey("fontScale")) backfill["fontScale"] = 1.0
@@ -201,6 +216,38 @@ class MihrabRepository(
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.CREATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateDisplayName(newName: String): Result<Unit> {
+        val currentUser = auth.currentUser ?: return Result.failure(IllegalStateException("Not authenticated"))
+        val cleanName = newName.trim().take(60)
+        if (cleanName.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Display name cannot be empty"))
+        }
+        val uid = currentUser.uid
+        val path = "users/$uid"
+        return try {
+            requireUserId()
+            db.collection("users").document(uid)
+                .update(
+                    mapOf(
+                        "displayName" to cleanName,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+                .await()
+            runCatching {
+                currentUser.updateProfile(
+                    userProfileChangeRequest { displayName = cleanName }
+                ).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
             Result.failure(e)
         }
     }
@@ -241,6 +288,9 @@ class MihrabRepository(
             val clean = fields.toMutableMap()
             clean.remove("userId")
             clean.remove("createdAt")
+            clean.remove("accountVerified")
+            clean.remove("accountSuspended")
+            clean.remove("adminRole")
             clean["updatedAt"] = FieldValue.serverTimestamp()
             db.collection("users").document(uid).update(clean).await()
             Result.success(Unit)
@@ -504,7 +554,16 @@ class MihrabRepository(
                                 liveVersesCardEnabled = obj.optBoolean("liveVersesCardEnabled", true),
                                 nearbyMosquesEnabled = obj.optBoolean("nearbyMosquesEnabled", true),
                                 persistentPrayerNotificationAllowed = obj.optBoolean("persistentPrayerNotificationAllowed", true),
-                                maintenanceMode = obj.optBoolean("maintenanceMode", false)
+                                maintenanceMode = obj.optBoolean("maintenanceMode", false),
+                                supportWhatsapp = obj.optString("supportWhatsapp", "").ifBlank { AppOperationsConfig.DEFAULT_SUPPORT_WHATSAPP },
+                                supportTelegram = obj.optString("supportTelegram", "").ifBlank { AppOperationsConfig.DEFAULT_SUPPORT_TELEGRAM },
+                                supportEmail = obj.optString("supportEmail", "").ifBlank { AppOperationsConfig.DEFAULT_SUPPORT_EMAIL },
+                                aboutTitleAr = obj.optString("aboutTitleAr", "").ifBlank { AppOperationsConfig.DEFAULT_ABOUT_TITLE_AR },
+                                aboutTitleEn = obj.optString("aboutTitleEn", "").ifBlank { AppOperationsConfig.DEFAULT_ABOUT_TITLE_EN },
+                                aboutTitleUz = obj.optString("aboutTitleUz", "").ifBlank { AppOperationsConfig.DEFAULT_ABOUT_TITLE_UZ },
+                                aboutBodyAr = obj.optString("aboutBodyAr", "").ifBlank { AppOperationsConfig.DEFAULT_ABOUT_BODY_AR },
+                                aboutBodyEn = obj.optString("aboutBodyEn", "").ifBlank { AppOperationsConfig.DEFAULT_ABOUT_BODY_EN },
+                                aboutBodyUz = obj.optString("aboutBodyUz", "").ifBlank { AppOperationsConfig.DEFAULT_ABOUT_BODY_UZ }
                             )
                         } catch (_: Exception) {
                             AppOperationsConfig()

@@ -31,17 +31,26 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Chat
+import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.AdminPanelSettings
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SupportAgent
 import androidx.compose.material.icons.rounded.UploadFile
+import androidx.compose.material.icons.rounded.Verified
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,6 +62,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -67,9 +77,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.core.hardware.AdhanAudioPlayer
+import com.example.core.hardware.RemoteAvatarImage
 import com.example.core.hardware.RemoteBannerImage
 import com.example.core.hardware.encodeCompressedBannerBitmapFromUri
 import com.example.core.i18n.AppLanguage
@@ -78,6 +90,7 @@ import com.example.data.firebase.AdminAccess
 import com.example.data.firebase.AiRuntimeConfig
 import com.example.data.firebase.AppOperationsConfig
 import com.example.data.firebase.QuranDefaultsConfig
+import com.example.data.firebase.UserSettingsDoc
 import com.example.ui.icons.MihrabIcons
 import com.example.ui.theme.BurnishedGold
 import com.example.ui.theme.LiquidGlassCard
@@ -104,8 +117,8 @@ fun AdminDashboardScreen(
     val glass = LocalLiquidGlassPalette.current
     val currentUser = Firebase.auth.currentUser
 
-    // Layer 1 Route Guard: Strictly block UI if not verified habiybullohy@gmail.com
-    if (!AdminAccess.isSuperAdmin(currentUser)) {
+    // Layer 1 Route Guard: Allow Super Admin or non-suspended delegated Admins
+    if (!adminViewModel.isAuthorized) {
         SacredAmbientCanvas {
             Box(
                 modifier = Modifier
@@ -255,7 +268,11 @@ fun AdminDashboardScreen(
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
-                                        text = "${strings.adminBadgeLabel} • ${AdminAccess.SUPER_ADMIN_EMAIL}",
+                                        text = if (AdminAccess.isSuperAdmin(currentUser)) {
+                                            "${strings.adminBadgeLabel} • ${AdminAccess.SUPER_ADMIN_EMAIL}"
+                                        } else {
+                                            "${appLanguage.pick("مسؤول معيّن", "Appointed Admin", "Tayinlangan admin")} • ${currentUser?.email.orEmpty()}"
+                                        },
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.primary
                                     )
@@ -383,6 +400,9 @@ fun AdminDashboardScreen(
                         strings = strings,
                         onSaveOperations = { adminViewModel.saveAppOperations(it) },
                         onUpdateUser = { uid, fields -> adminViewModel.updateUserAsAdmin(uid, fields) },
+                        onSetUserVerified = { uid, v -> adminViewModel.setUserVerified(uid, v) },
+                        onSetUserSuspended = { uid, s -> adminViewModel.setUserSuspended(uid, s) },
+                        onSetUserAdminRole = { uid, makeAdmin -> adminViewModel.setUserAdminRole(uid, makeAdmin) },
                         onExportBackup = { adminViewModel.exportFullDatabaseBackup() },
                         onImportBackup = { importBackupLauncher.launch(arrayOf("application/json", "text/*")) }
                     )
@@ -627,11 +647,14 @@ private fun AiControlTab(
 @Composable
 private fun AppOperationsTab(
     initialOps: AppOperationsConfig,
-    users: List<com.example.data.firebase.UserSettingsDoc>,
+    users: List<UserSettingsDoc>,
     appLanguage: AppLanguage,
     strings: LocalizedStrings,
     onSaveOperations: (AppOperationsConfig) -> Unit,
     onUpdateUser: (String, Map<String, Any>) -> Unit,
+    onSetUserVerified: (String, Boolean) -> Unit,
+    onSetUserSuspended: (String, Boolean) -> Unit,
+    onSetUserAdminRole: (String, Boolean) -> Unit,
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit
 ) {
@@ -641,6 +664,8 @@ private fun AppOperationsTab(
     var ops by remember(initialOps) { mutableStateOf(initialOps) }
     var userQuery by remember { mutableStateOf("") }
     var bannerPhotoStatus by remember { mutableStateOf<String?>(null) }
+    var pendingAdminRoleTarget by remember { mutableStateOf<Pair<UserSettingsDoc, Boolean>?>(null) }
+    val currentActorUid = remember { runCatching { Firebase.auth.currentUser?.uid }.getOrNull() }
 
     // Android Zero-Permission Photo Picker for Banner Image Upload
     val bannerPhotoPicker = rememberLauncherForActivityResult(
@@ -677,6 +702,7 @@ private fun AppOperationsTab(
             val q = userQuery.trim().lowercase()
             users.filter {
                 it.displayName.lowercase().contains(q) ||
+                    it.email.lowercase().contains(q) ||
                     it.city.lowercase().contains(q) ||
                     it.userId.lowercase().contains(q)
             }
@@ -912,6 +938,119 @@ private fun AppOperationsTab(
             }
         }
 
+        // 1b. Support Contact Channels & "About Osama / Mihrab" Editor
+        item {
+            LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Rounded.SupportAgent, null, tint = MaterialTheme.colorScheme.primary)
+                    Text(
+                        appLanguage.pick(
+                            "بيانات التواصل مع الدعم وقسم «عن أسامة»",
+                            "Support Contact & About Osama Settings",
+                            "Qo'llab-quvvatlash va «Usoma haqida» sozlamalari"
+                        ),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                OutlinedTextField(
+                    value = ops.supportWhatsapp,
+                    onValueChange = { ops = ops.copy(supportWhatsapp = it) },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Rounded.Chat, null) },
+                    label = { Text(appLanguage.pick("رقم واتساب الدعم", "Support WhatsApp", "WhatsApp raqami")) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("admin_support_whatsapp_input")
+                )
+                OutlinedTextField(
+                    value = ops.supportTelegram,
+                    onValueChange = { ops = ops.copy(supportTelegram = it) },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Rounded.Send, null) },
+                    label = { Text(appLanguage.pick("رقم أو معرف تيليجرام", "Support Telegram", "Telegram raqami")) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("admin_support_telegram_input")
+                )
+                OutlinedTextField(
+                    value = ops.supportEmail,
+                    onValueChange = { ops = ops.copy(supportEmail = it) },
+                    leadingIcon = { Icon(Icons.Rounded.Email, null) },
+                    label = { Text(appLanguage.pick("البريد الإلكتروني للدعم", "Support Email", "Qo'llab-quvvatlash emaili")) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("admin_support_email_input")
+                )
+                HorizontalDivider(color = glass.glassBorder)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Rounded.Info, null, tint = BurnishedGold)
+                    Text(
+                        appLanguage.pick("نصوص صفحة «عن أسامة وتطبيق محراب»", "About Osama / Mihrab Copy", "«Usoma haqida» matnlari"),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                OutlinedTextField(
+                    value = ops.aboutTitleAr,
+                    onValueChange = { ops = ops.copy(aboutTitleAr = it) },
+                    label = { Text("عنوان قسم عن أسامة (AR)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = ops.aboutBodyAr,
+                    onValueChange = { ops = ops.copy(aboutBodyAr = it) },
+                    label = { Text("نبذة عن أسامة والتطبيق (AR)") },
+                    minLines = 3,
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = ops.aboutTitleEn,
+                    onValueChange = { ops = ops.copy(aboutTitleEn = it) },
+                    label = { Text("About Title (EN)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = ops.aboutBodyEn,
+                    onValueChange = { ops = ops.copy(aboutBodyEn = it) },
+                    label = { Text("About Body (EN)") },
+                    minLines = 2,
+                    maxLines = 5,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = ops.aboutTitleUz,
+                    onValueChange = { ops = ops.copy(aboutTitleUz = it) },
+                    label = { Text("Haqida sarlavhasi (UZ)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = ops.aboutBodyUz,
+                    onValueChange = { ops = ops.copy(aboutBodyUz = it) },
+                    label = { Text("Haqida matni (UZ)") },
+                    minLines = 2,
+                    maxLines = 5,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Button(
+                    onClick = { onSaveOperations(ops) },
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("admin_save_support_about_button")
+                ) {
+                    Icon(Icons.Rounded.Save, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        appLanguage.pick(
+                            "حفظ بيانات الدعم وقسم عن أسامة",
+                            "Save Support & About Settings",
+                            "Aloqa va haqida ma'lumotlarini saqlash"
+                        )
+                    )
+                }
+            }
+        }
+
         // 2. Global Feature Flags
         item {
             LiquidGlassCard(shape = RoundedCornerShape(24.dp), containerColor = glass.glassFillStrong) {
@@ -977,14 +1116,14 @@ private fun AppOperationsTab(
             }
         }
 
-        // 4. Users Directory & Quick Operations
+        // 4. Users Directory, Verification, Suspension & Admin Appointment
         item {
             LiquidGlassCard(shape = RoundedCornerShape(24.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(MihrabIcons.UsersManager, null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        appLanguage.pick("إدارة المستخدمين (${users.size})", "Users Directory (${users.size})", "Foydalanuvchilar (${users.size})"),
+                        appLanguage.pick("إدارة المستخدمين وتوثيقهم (${users.size})", "Users Governance (${users.size})", "Foydalanuvchilarni boshqarish (${users.size})"),
                         style = MaterialTheme.typography.titleLarge.withTabularNums(),
                         fontWeight = FontWeight.Bold
                     )
@@ -993,7 +1132,7 @@ private fun AppOperationsTab(
                     value = userQuery,
                     onValueChange = { userQuery = it },
                     leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                    label = { Text(appLanguage.pick("بحث بالاسم أو المدينة أو UID", "Search user name, city or UID", "Ism, shahar yoki UID bo'yicha qidirish")) },
+                    label = { Text(appLanguage.pick("بحث بالاسم أو البريد أو المدينة أو UID", "Search name, email, city or UID", "Ism, email, shahar yoki UID bo'yicha qidirish")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1001,14 +1140,63 @@ private fun AppOperationsTab(
         }
 
         items(filteredUsers, key = { it.userId }) { u ->
-            LiquidGlassCard(shape = RoundedCornerShape(22.dp), contentPadding = 14.dp) {
+            val isTargetSuperAdmin = u.email.trim().lowercase() == AdminAccess.SUPER_ADMIN_EMAIL
+            val isTargetAdmin = isTargetSuperAdmin || u.adminRole == "ADMIN"
+            val isSelf = u.userId == currentActorUid
+
+            LiquidGlassCard(
+                shape = RoundedCornerShape(22.dp),
+                borderColor = when {
+                    u.accountSuspended -> MaterialTheme.colorScheme.error.copy(alpha = 0.55f)
+                    isTargetAdmin -> BurnishedGold.copy(alpha = 0.55f)
+                    u.accountVerified -> MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                    else -> glass.glassBorder
+                },
+                contentPadding = 14.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("admin_user_card_${u.userId}")
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    RemoteAvatarImage(
+                        photoUrl = u.photoUrl,
+                        displayName = u.displayName,
+                        size = 46.dp
+                    )
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(u.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Text(
+                                text = u.displayName,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (u.accountVerified || isTargetSuperAdmin) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Verified,
+                                    contentDescription = "Verified",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                        if (u.email.isNotBlank()) {
+                            Text(
+                                text = u.email,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                         Text(
                             "${u.city} • ${u.preferredLanguage.uppercase()} • ${appLanguage.pick("صفحة", "Page", "Sahifa")} ${u.lastReadPage} • ${u.khatmahPagesRead}/604",
                             style = MaterialTheme.typography.bodySmall.withTabularNums(),
@@ -1026,8 +1214,163 @@ private fun AppOperationsTab(
                         )
                     }
                 }
+
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (isTargetSuperAdmin) {
+                        Surface(shape = CircleShape, color = BurnishedGold.copy(alpha = 0.18f)) {
+                            Text(
+                                appLanguage.pick("المشرف الأعلى", "Super Admin", "Super Admin"),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = BurnishedGold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    } else if (u.adminRole == "ADMIN") {
+                        Surface(shape = CircleShape, color = BurnishedGold.copy(alpha = 0.16f)) {
+                            Text(
+                                appLanguage.pick("مسؤول / أدمن", "Admin", "Admin"),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = BurnishedGold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    if (u.accountVerified) {
+                        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)) {
+                            Text(
+                                appLanguage.pick("موثّق ✓", "Verified ✓", "Tasdiqlangan ✓"),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    if (u.accountSuspended) {
+                        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.error.copy(alpha = 0.16f)) {
+                            Text(
+                                appLanguage.pick("حساب معلّق", "Suspended", "To'xtatilgan"),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+
+                if (!isTargetSuperAdmin) {
+                    HorizontalDivider(color = glass.glassBorder)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        LiquidGlassPill(
+                            selected = u.accountVerified,
+                            onClick = { onSetUserVerified(u.userId, !u.accountVerified) },
+                            icon = Icons.Rounded.Verified,
+                            label = if (u.accountVerified) {
+                                appLanguage.pick("إلغاء التوثيق", "Unverify", "Tasdiqni olish")
+                            } else {
+                                appLanguage.pick("توثيق الحساب", "Verify Account", "Hisobni tasdiqlash")
+                            },
+                            modifier = Modifier.testTag("verify_user_btn_${u.userId}")
+                        )
+
+                        if (!isSelf) {
+                            LiquidGlassPill(
+                                selected = u.accountSuspended,
+                                onClick = { onSetUserSuspended(u.userId, !u.accountSuspended) },
+                                icon = Icons.Rounded.Block,
+                                activeColor = MaterialTheme.colorScheme.error,
+                                label = if (u.accountSuspended) {
+                                    appLanguage.pick("رفع التعليق", "Unsuspend", "Faollashtirish")
+                                } else {
+                                    appLanguage.pick("تعليق الحساب", "Suspend Account", "To'xtatish")
+                                },
+                                modifier = Modifier.testTag("suspend_user_btn_${u.userId}")
+                            )
+                        }
+
+                        if (!isSelf || u.adminRole != "ADMIN") {
+                            val willMakeAdmin = u.adminRole != "ADMIN"
+                            LiquidGlassPill(
+                                selected = u.adminRole == "ADMIN",
+                                onClick = { pendingAdminRoleTarget = u to willMakeAdmin },
+                                icon = Icons.Rounded.AdminPanelSettings,
+                                activeColor = BurnishedGold,
+                                label = if (willMakeAdmin) {
+                                    appLanguage.pick("تعيين كأدمن", "Make Admin", "Admin qilish")
+                                } else {
+                                    appLanguage.pick("إزالة الأدمن", "Remove Admin", "Adminlikni olish")
+                                },
+                                modifier = Modifier.testTag("admin_role_btn_${u.userId}")
+                            )
+                        }
+                    }
+                }
             }
         }
+    }
+
+    pendingAdminRoleTarget?.let { (targetUser, makeAdmin) ->
+        AlertDialog(
+            onDismissRequest = { pendingAdminRoleTarget = null },
+            title = {
+                Text(
+                    if (makeAdmin) {
+                        appLanguage.pick("تأكيد تعيين مسؤول جديد", "Confirm Appointing Admin", "Yangi admin tayinlashni tasdiqlang")
+                    } else {
+                        appLanguage.pick("تأكيد إزالة صلاحية المسؤول", "Confirm Removing Admin", "Admin vakolatini olish")
+                    }
+                )
+            },
+            text = {
+                Text(
+                    if (makeAdmin) {
+                        appLanguage.pick(
+                            "هل أنت متأكد من تعيين «${targetUser.displayName}» (${targetUser.email.ifBlank { targetUser.userId }}) مسؤولاً (أدمن) في تطبيق محراب؟ سيحصل على صلاحيات لوحة الإدارة وإدارة الإعلانات والمحتوى والمستخدمين.",
+                            "Are you sure you want to appoint ${targetUser.displayName} (${targetUser.email.ifBlank { targetUser.userId }}) as an Admin? They will gain access to the Admin Dashboard.",
+                            "${targetUser.displayName} (${targetUser.email.ifBlank { targetUser.userId }}) foydalanuvchisini Admin etib tayinlamoqchimisiz?"
+                        )
+                    } else {
+                        appLanguage.pick(
+                            "هل أنت متأكد من إزالة صلاحية الأدمن عن «${targetUser.displayName}» (${targetUser.email.ifBlank { targetUser.userId }})؟",
+                            "Remove Admin privileges from ${targetUser.displayName} (${targetUser.email.ifBlank { targetUser.userId }})?",
+                            "${targetUser.displayName} dan admin vakolatini olib tashlaysizmi?"
+                        )
+                    }
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        pendingAdminRoleTarget = null
+                        onSetUserAdminRole(targetUser.userId, makeAdmin)
+                    },
+                    colors = if (!makeAdmin) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors(),
+                    modifier = Modifier.testTag("confirm_admin_role_button")
+                ) {
+                    Text(
+                        if (makeAdmin) {
+                            appLanguage.pick("تأكيد التعيين كأدمن", "Confirm Admin", "Tasdiqlash")
+                        } else {
+                            appLanguage.pick("تأكيد الإزالة", "Remove", "Olib tashlash")
+                        }
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingAdminRoleTarget = null }) {
+                    Text(strings.cancel)
+                }
+            }
+        )
     }
 }
 

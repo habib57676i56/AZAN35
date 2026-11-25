@@ -23,12 +23,24 @@ class AdminRepository(
     private val db: FirebaseFirestore,
     private val auth: FirebaseAuth = Firebase.auth
 ) {
-    private fun requireSuperAdmin(): String {
-        val user = auth.currentUser
-        if (!AdminAccess.isSuperAdmin(user)) {
-            throw SecurityException("Super Admin access restricted exclusively to ${AdminAccess.SUPER_ADMIN_EMAIL}.")
+    private suspend fun isCurrentUserAuthorizedAdmin(): Boolean {
+        val user = auth.currentUser ?: return false
+        if (AdminAccess.isSuperAdmin(user)) return true
+        return runCatching {
+            val snap = db.collection("users").document(user.uid).get().await()
+            snap.getString("adminRole") == "ADMIN" && snap.getBoolean("accountSuspended") != true
+        }.getOrDefault(false)
+    }
+
+    private suspend fun requireAdminAccess(): String {
+        val user = auth.currentUser ?: throw SecurityException("Authentication required.")
+        if (AdminAccess.isSuperAdmin(user)) return user.uid
+        val snap = db.collection("users").document(user.uid).get().await()
+        val isDelegated = snap.getString("adminRole") == "ADMIN" && snap.getBoolean("accountSuspended") != true
+        if (!isDelegated) {
+            throw SecurityException("Admin access restricted to authorized administrators.")
         }
-        return user!!.uid
+        return user.uid
     }
 
     private fun <T> safeAdminFlow(
@@ -36,7 +48,7 @@ class AdminRepository(
         operationType: OperationType,
         flowProvider: () -> Flow<T>
     ): Flow<T> = flow {
-        requireSuperAdmin()
+        requireAdminAccess()
         emitAll(
             flowProvider().catch { error ->
                 val firestoreError = generateSequence(error) { it.cause }
@@ -44,7 +56,7 @@ class AdminRepository(
                     .firstOrNull()
                 if (firestoreError == null && error is CancellationException) throw error
                 val ex = firestoreError ?: (error as? Exception)
-                if (ex != null && AdminAccess.isSuperAdmin(auth.currentUser)) {
+                if (ex != null && isCurrentUserAuthorizedAdmin()) {
                     handleFirestoreError(ex, operationType, path)
                 }
                 throw error
@@ -87,7 +99,7 @@ class AdminRepository(
     suspend fun saveAdminConfig(configKey: String, jsonObject: JSONObject): Result<Unit> {
         val path = "adminConfigs/$configKey"
         return try {
-            requireSuperAdmin()
+            requireAdminAccess()
             val cleanKey = configKey.replace(Regex("[^a-zA-Z0-9_\\-]"), "_").take(80)
             require(cleanKey.isNotEmpty()) { "Invalid config key" }
             val ref = db.collection("adminConfigs").document(cleanKey)
@@ -176,6 +188,15 @@ class AdminRepository(
             put("nearbyMosquesEnabled", cfg.nearbyMosquesEnabled)
             put("persistentPrayerNotificationAllowed", cfg.persistentPrayerNotificationAllowed)
             put("maintenanceMode", cfg.maintenanceMode)
+            put("supportWhatsapp", cfg.supportWhatsapp.trim().ifBlank { AppOperationsConfig.DEFAULT_SUPPORT_WHATSAPP }.take(60))
+            put("supportTelegram", cfg.supportTelegram.trim().ifBlank { AppOperationsConfig.DEFAULT_SUPPORT_TELEGRAM }.take(80))
+            put("supportEmail", cfg.supportEmail.trim().ifBlank { AppOperationsConfig.DEFAULT_SUPPORT_EMAIL }.take(140))
+            put("aboutTitleAr", cfg.aboutTitleAr.trim().ifBlank { AppOperationsConfig.DEFAULT_ABOUT_TITLE_AR }.take(120))
+            put("aboutTitleEn", cfg.aboutTitleEn.trim().ifBlank { AppOperationsConfig.DEFAULT_ABOUT_TITLE_EN }.take(120))
+            put("aboutTitleUz", cfg.aboutTitleUz.trim().ifBlank { AppOperationsConfig.DEFAULT_ABOUT_TITLE_UZ }.take(120))
+            put("aboutBodyAr", cfg.aboutBodyAr.trim().ifBlank { AppOperationsConfig.DEFAULT_ABOUT_BODY_AR }.take(2000))
+            put("aboutBodyEn", cfg.aboutBodyEn.trim().ifBlank { AppOperationsConfig.DEFAULT_ABOUT_BODY_EN }.take(2000))
+            put("aboutBodyUz", cfg.aboutBodyUz.trim().ifBlank { AppOperationsConfig.DEFAULT_ABOUT_BODY_UZ }.take(2000))
         }
         return saveAdminConfig("app_operations", json)
     }
@@ -188,7 +209,7 @@ class AdminRepository(
             .ifBlank { "reciter_${System.currentTimeMillis()}" }
         val path = "reciters/$safeId"
         return try {
-            requireSuperAdmin()
+            requireAdminAccess()
             val ref = db.collection("reciters").document(safeId)
             val snap = ref.get().await()
             val payload = mutableMapOf<String, Any>(
@@ -222,7 +243,7 @@ class AdminRepository(
     suspend fun deleteReciter(reciterId: String): Result<Unit> {
         val path = "reciters/$reciterId"
         return try {
-            requireSuperAdmin()
+            requireAdminAccess()
             require(reciterId.isNotBlank()) { "Invalid reciter ID" }
             db.collection("reciters").document(reciterId).delete().await()
             Result.success(Unit)
@@ -236,7 +257,7 @@ class AdminRepository(
 
     suspend fun seedDefaultReciters(): Result<Int> {
         return try {
-            requireSuperAdmin()
+            requireAdminAccess()
             var count = 0
             for (r in MihrabRepository.DEFAULT_RECITERS) {
                 upsertReciter(
@@ -271,7 +292,7 @@ class AdminRepository(
             .ifBlank { "dhikr_${System.currentTimeMillis()}" }
         val path = "adhkarItems/$safeId"
         return try {
-            requireSuperAdmin()
+            requireAdminAccess()
             val ref = db.collection("adhkarItems").document(safeId)
             val snap = ref.get().await()
             val payload = mutableMapOf<String, Any>(
@@ -303,7 +324,7 @@ class AdminRepository(
     suspend fun deleteAdhkar(itemId: String): Result<Unit> {
         val path = "adhkarItems/$itemId"
         return try {
-            requireSuperAdmin()
+            requireAdminAccess()
             require(itemId.isNotBlank()) { "Invalid Adhkar ID" }
             db.collection("adhkarItems").document(itemId).delete().await()
             Result.success(Unit)
@@ -317,7 +338,7 @@ class AdminRepository(
 
     suspend fun seedDefaultAdhkar(): Result<Int> {
         return try {
-            requireSuperAdmin()
+            requireAdminAccess()
             var count = 0
             for (d in AdhkarAndAdhanCatalog.defaultAdhkarEntities) {
                 upsertAdhkar(
@@ -355,7 +376,7 @@ class AdminRepository(
             .ifBlank { "adhan_${System.currentTimeMillis()}" }
         val path = "adhanVoices/$safeId"
         return try {
-            requireSuperAdmin()
+            requireAdminAccess()
             val ref = db.collection("adhanVoices").document(safeId)
             val snap = ref.get().await()
             val payload = mutableMapOf<String, Any>(
@@ -380,7 +401,7 @@ class AdminRepository(
     suspend fun deleteAdhanVoice(voiceId: String): Result<Unit> {
         val path = "adhanVoices/$voiceId"
         return try {
-            requireSuperAdmin()
+            requireAdminAccess()
             require(voiceId.isNotBlank()) { "Invalid Adhan Voice ID" }
             db.collection("adhanVoices").document(voiceId).delete().await()
             Result.success(Unit)
@@ -394,7 +415,7 @@ class AdminRepository(
 
     suspend fun seedDefaultAdhanVoices(): Result<Int> {
         return try {
-            requireSuperAdmin()
+            requireAdminAccess()
             var count = 0
             for (v in AdhkarAndAdhanCatalog.defaultAdhanVoices) {
                 upsertAdhanVoice(
@@ -417,11 +438,11 @@ class AdminRepository(
         }
     }
 
-    // --- USER MANAGEMENT ---
+    // --- USER MANAGEMENT & GOVERNANCE ---
     suspend fun updateUserAsAdmin(targetUid: String, fields: Map<String, Any>): Result<Unit> {
         val path = "users/$targetUid"
         return try {
-            requireSuperAdmin()
+            requireAdminAccess()
             require(targetUid.isNotBlank()) { "Invalid target UID" }
             val clean = fields.toMutableMap()
             clean.remove("userId")
@@ -437,10 +458,79 @@ class AdminRepository(
         }
     }
 
+    private suspend fun guardNotSuperAdminTarget(targetUid: String) {
+        val snap = db.collection("users").document(targetUid).get().await()
+        val email = snap.getString("email")?.trim()?.lowercase().orEmpty()
+        if (email == AdminAccess.SUPER_ADMIN_EMAIL) {
+            throw IllegalArgumentException("لا يمكن تعليق أو تغيير صلاحية المشرف الأعلى الأساسي.")
+        }
+    }
+
+    suspend fun setUserVerified(targetUid: String, verified: Boolean): Result<Unit> {
+        return updateUserAsAdmin(targetUid, mapOf("accountVerified" to verified))
+    }
+
+    suspend fun setUserSuspended(targetUid: String, suspended: Boolean): Result<Unit> {
+        val path = "users/$targetUid"
+        return try {
+            val actorUid = requireAdminAccess()
+            require(targetUid.isNotBlank()) { "Invalid target UID" }
+            if (suspended && targetUid == actorUid) {
+                throw IllegalArgumentException("لا يمكنك تعليق حسابك الحالي.")
+            }
+            if (suspended) {
+                guardNotSuperAdminTarget(targetUid)
+            }
+            db.collection("users").document(targetUid)
+                .update(
+                    mapOf(
+                        "accountSuspended" to suspended,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+                .await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun setUserAdminRole(targetUid: String, makeAdmin: Boolean): Result<Unit> {
+        val path = "users/$targetUid"
+        return try {
+            val actorUid = requireAdminAccess()
+            require(targetUid.isNotBlank()) { "Invalid target UID" }
+            if (!makeAdmin) {
+                if (targetUid == actorUid && !AdminAccess.isSuperAdmin(auth.currentUser)) {
+                    throw IllegalArgumentException("لا يمكنك إزالة صلاحية الإدارة عن نفسك.")
+                }
+                guardNotSuperAdminTarget(targetUid)
+            }
+            val nextRole = if (makeAdmin) "ADMIN" else "USER"
+            db.collection("users").document(targetUid)
+                .update(
+                    mapOf(
+                        "adminRole" to nextRole,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+                .await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
     // --- FULL DATABASE JSON BACKUP EXPORT & IMPORT ---
     suspend fun exportFullDatabaseBackupJson(): Result<String> {
         return try {
-            requireSuperAdmin()
+            requireAdminAccess()
             val configsSnap = db.collection("adminConfigs").get().await()
             val recitersSnap = db.collection("reciters").get().await()
             val adhkarSnap = db.collection("adhkarItems").get().await()
@@ -480,7 +570,7 @@ class AdminRepository(
 
     suspend fun importFullDatabaseBackupJson(rawJson: String): Result<Int> {
         return try {
-            requireSuperAdmin()
+            requireAdminAccess()
             val root = JSONObject(rawJson)
             var importedCount = 0
 
