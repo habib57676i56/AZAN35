@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -48,6 +49,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AirplanemodeActive
 import androidx.compose.material.icons.rounded.AudioFile
@@ -73,6 +75,7 @@ import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.VolunteerActivism
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.Button
@@ -86,6 +89,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -127,6 +131,7 @@ import com.example.core.hardware.LocationAndMosqueLocator
 import com.example.core.hardware.MihrabReminderManager
 import com.example.core.hardware.MihrabReminderSettings
 import com.example.core.hardware.PrayerStatusNotificationManager
+import com.example.core.hardware.RemoteBannerImage
 import com.example.core.hardware.shareDesignedVerseTextOrCard
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.LocalizedStrings
@@ -146,6 +151,7 @@ import com.example.domain.QuranContentData
 import com.example.ui.icons.MihrabIcons
 import com.example.ui.theme.AmiriFontFamily
 import com.example.ui.theme.AmiriQuranFontFamily
+import com.example.ui.theme.BurnishedGold
 import com.example.ui.theme.IslamicGeometricPatternCanvas
 import com.example.ui.theme.LiquidGlassCard
 import com.example.ui.theme.LiquidGlassPill
@@ -364,6 +370,49 @@ fun PrayerScreen(
                                 "تعذر استيراد ملف الأذان",
                                 "Unable to import Adhan audio",
                                 "Azon faylini yuklab bo'lmadi"
+                            )
+                        )
+                    }
+            }
+        }
+    }
+
+    val tahajjudAudioPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                MihrabReminderManager.importCustomTahajjudAudioFromUri(context, uri)
+                    .onSuccess { (localPath, displayName) ->
+                        MihrabReminderManager.updateSettings(context) {
+                            it.copy(
+                                tahajjudSoundId = "custom",
+                                tahajjudCustomAudioPath = localPath,
+                                tahajjudCustomAudioName = displayName
+                            )
+                        }
+                        MihrabReminderManager.syncAndScheduleAll(
+                            context = context,
+                            settings = settings,
+                            offsets = manualOffsets,
+                            language = appLanguage,
+                            useIndic = useIndic,
+                            customAdhanPath = localPrefs?.customAdhanLocalPath.orEmpty()
+                        )
+                        viewModel.showMessage(
+                            appLanguage.pick(
+                                "تم تعيين صوت التهجد المخصص: $displayName",
+                                "Custom Tahajjud sound set: $displayName",
+                                "Tahajjud maxsus ovozi saqlandi: $displayName"
+                            )
+                        )
+                    }
+                    .onFailure { err ->
+                        viewModel.showMessage(
+                            err.localizedMessage ?: appLanguage.pick(
+                                "تعذر استيراد ملف صوت التهجد",
+                                "Unable to import Tahajjud audio",
+                                "Tahajjud audio faylini yuklab bo'lmadi"
                             )
                         )
                     }
@@ -724,6 +773,139 @@ fun PrayerScreen(
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                             )
+                        }
+                    }
+                }
+            }
+
+            // 1c. Featured Admin Ad Banner Card in Home Interface (Image + Title + Body + Link)
+            item {
+                val bannerTitle = appLanguage.pick(
+                    appOperations.bannerTitleAr.ifBlank { appOperations.bannerTitleEn },
+                    appOperations.bannerTitleEn.ifBlank { appOperations.bannerTitleAr },
+                    appOperations.bannerTitleUz.ifBlank {
+                        appOperations.bannerTitleEn.ifBlank { appOperations.bannerTitleAr }
+                    }
+                )
+                val bannerBody = appLanguage.pick(
+                    appOperations.bannerBodyAr.ifBlank { appOperations.bannerBodyEn },
+                    appOperations.bannerBodyEn.ifBlank { appOperations.bannerBodyAr },
+                    appOperations.bannerBodyUz.ifBlank {
+                        appOperations.bannerBodyEn.ifBlank { appOperations.bannerBodyAr }
+                    }
+                )
+                val bannerCta = appLanguage.pick(
+                    appOperations.bannerCtaAr.ifBlank { "افتح الرابط" },
+                    appOperations.bannerCtaEn.ifBlank { "Open Link" },
+                    appOperations.bannerCtaUz.ifBlank { "Havolani ochish" }
+                )
+                val bannerLink = appOperations.bannerLinkUrl.trim()
+                val hasImage = appOperations.bannerImageUrl.isNotBlank()
+                val hasContent = bannerTitle.isNotBlank() || bannerBody.isNotBlank() || hasImage || bannerLink.isNotBlank()
+
+                if (appOperations.bannerEnabled && hasContent) {
+                    val toneBorder = when (appOperations.bannerTone) {
+                        "URGENT", "ALERT" -> MaterialTheme.colorScheme.error.copy(alpha = 0.58f)
+                        "SUCCESS" -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.58f)
+                        else -> BurnishedGold.copy(alpha = 0.58f)
+                    }
+                    val toneAccent = when (appOperations.bannerTone) {
+                        "URGENT", "ALERT" -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.primary
+                    }
+                    val openBannerLink = {
+                        if (bannerLink.isNotBlank()) {
+                            val normalized = if (bannerLink.startsWith("http://") || bannerLink.startsWith("https://")) {
+                                bannerLink
+                            } else {
+                                "https://$bannerLink"
+                            }
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(normalized)).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    LiquidGlassCard(
+                        shape = RoundedCornerShape(24.dp),
+                        containerColor = glass.glassFillStrong,
+                        borderColor = toneBorder,
+                        contentPadding = 14.dp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(if (bannerLink.isNotBlank()) Modifier.clickable { openBannerLink() } else Modifier)
+                            .testTag("home_ad_banner_card")
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                color = toneAccent.copy(alpha = 0.14f),
+                                shape = CircleShape
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = MihrabIcons.BroadcastBanner,
+                                        contentDescription = null,
+                                        tint = toneAccent,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Text(
+                                        text = appLanguage.pick("إعلان / تنبيه مميز", "Featured Notice", "E'lon"),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = toneAccent
+                                    )
+                                }
+                            }
+                        }
+                        if (hasImage) {
+                            RemoteBannerImage(
+                                imageUrl = appOperations.bannerImageUrl,
+                                contentDescription = bannerTitle.ifBlank { null },
+                                maxHeight = 210.dp,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        if (bannerTitle.isNotBlank()) {
+                            Text(
+                                text = bannerTitle,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = toneAccent
+                            )
+                        }
+                        if (bannerBody.isNotBlank()) {
+                            Text(
+                                text = bannerBody,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        if (bannerLink.isNotBlank()) {
+                            Button(
+                                onClick = openBannerLink,
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(bannerCta)
+                            }
                         }
                     }
                 }
@@ -1318,6 +1500,7 @@ fun PrayerScreen(
                         color = MaterialTheme.colorScheme.primary
                     )
 
+                    val nowMinutes = nowSeconds / 60
                     val prayerRows = listOf(
                         Triple(schedule.fajr, todayLog?.fajr == true, "fajr"),
                         Triple(schedule.dhuhr, todayLog?.dhuhr == true, "dhuhr"),
@@ -1325,17 +1508,46 @@ fun PrayerScreen(
                         Triple(schedule.maghrib, todayLog?.maghrib == true, "maghrib"),
                         Triple(schedule.isha, todayLog?.isha == true, "isha")
                     )
+                    val enteredCount = prayerRows.count { nowMinutes >= it.first.timeMinutes }
+                    val pendingCount = (prayerRows.size - enteredCount).coerceAtLeast(0)
+
+                    Text(
+                        text = appLanguage.pick(
+                            "دخل وقتها: ${formatNumerals(enteredCount.toString(), useArabicDigits)} • لم يدخل بعد: ${formatNumerals(pendingCount.toString(), useArabicDigits)}",
+                            "Entered: $enteredCount • Upcoming: $pendingCount",
+                            "Vaqti kirgan: $enteredCount • Hali kirmagan: $pendingCount"
+                        ),
+                        style = MaterialTheme.typography.labelMedium.withTabularNums(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
 
                     prayerRows.forEach { (entry, checked, key) ->
                         val mode = AdhanAlertMode.fromId(settings.perPrayerAdhanModes[key])
+                        val isEntered = nowMinutes >= entry.timeMinutes
+                        val minutesUntil = (entry.timeMinutes - nowMinutes).coerceAtLeast(0)
                         PrayerRowItem(
                             entry = entry,
                             isCompleted = checked,
                             isNext = nextPrayerEntry.key == entry.key,
+                            isEntered = isEntered,
+                            minutesUntil = minutesUntil,
                             alertMode = mode,
                             appLanguage = appLanguage,
                             useArabicDigits = useArabicDigits,
-                            onToggle = { viewModel.togglePrayerToday(key, todayLog) },
+                            onToggle = {
+                                if (isEntered || checked) {
+                                    viewModel.togglePrayerToday(key, todayLog)
+                                } else {
+                                    val formattedEntryTime = formatNumerals(entry.formattedTime, useArabicDigits)
+                                    viewModel.showMessage(
+                                        appLanguage.pick(
+                                            "لم يدخل وقت صلاة ${entry.nameFor(appLanguage)} بعد — يدخل الساعة $formattedEntryTime",
+                                            "${entry.nameFor(appLanguage)} time has not entered yet (at $formattedEntryTime)",
+                                            "${entry.nameFor(appLanguage)} vaqti hali kirmadi ($formattedEntryTime da kiradi)"
+                                        )
+                                    )
+                                }
+                            },
                             onOpenAdhan = { showAdhanSheet = true }
                         )
                     }
@@ -1618,7 +1830,13 @@ fun PrayerScreen(
 
                     HorizontalDivider(color = glass.glassBorder)
 
-                    // 4. Tahajjud & Qiyam al-Layl Reminder
+                    // 4. Tahajjud & Qiyam al-Layl Reminder (Custom Time + Custom Sound + Volume)
+                    val resolvedTahajjudTime = MihrabReminderManager.formatTahajjudTargetTime(
+                        cfg = reminderState,
+                        lastThirdTimeStr = schedule.lastThirdQiyam,
+                        fajrMinutes = schedule.fajr.timeMinutes,
+                        useArabicDigits = useArabicDigits
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1638,9 +1856,9 @@ fun PrayerScreen(
                                 )
                                 Text(
                                     appLanguage.pick(
-                                        "بداية الثلث الأخير اليوم: ${formatNumerals(schedule.lastThirdQiyam, useArabicDigits)}",
-                                        "Tonight's Last Third starts ${schedule.lastThirdQiyam}",
-                                        "Kechaning oxirgi uchdan biri: ${schedule.lastThirdQiyam}"
+                                        "موعد التنبيه المحدد: $resolvedTahajjudTime • الثلث الأخير ${formatNumerals(schedule.lastThirdQiyam, useArabicDigits)}",
+                                        "Alert set: $resolvedTahajjudTime • Last Third ${schedule.lastThirdQiyam}",
+                                        "Ogohlantirish: $resolvedTahajjudTime • Oxirgi uchdan bir ${schedule.lastThirdQiyam}"
                                     ),
                                     style = MaterialTheme.typography.labelSmall.withTabularNums(),
                                     color = glass.accentGold
@@ -1649,7 +1867,15 @@ fun PrayerScreen(
                         }
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             TextButton(
-                                onClick = { MihrabReminderManager.sendTahajjudReminderNow(context, appLanguage) }
+                                onClick = {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                                    ) {
+                                        notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    } else {
+                                        MihrabReminderManager.testTahajjudAlertNow(context, appLanguage, resolvedTahajjudTime)
+                                    }
+                                }
                             ) {
                                 Text(appLanguage.pick("تجربة", "Test", "Sinash"))
                             }
@@ -1662,6 +1888,11 @@ fun PrayerScreen(
                         }
                     }
                     if (reminderState.tahajjudReminderEnabled) {
+                        Text(
+                            text = appLanguage.pick("توقيت تنبيه التهجد:", "Tahajjud Alarm Time:", "Tahajjud vaqti:"),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf(
                                 0 to appLanguage.pick("بداية الثلث الأخير", "Last Third Start", "Oxirgi uchdan bir"),
@@ -1669,13 +1900,216 @@ fun PrayerScreen(
                                 60 to appLanguage.pick("قبل الفجر بـ ٦٠ د", "60m Before Fajr", "Bomdoddan 60m oldin")
                             ).forEach { (offsetMin, label) ->
                                 LiquidGlassPill(
-                                    selected = reminderState.tahajjudOffsetBeforeFajrMin == offsetMin,
+                                    selected = !reminderState.tahajjudUseCustomClock && reminderState.tahajjudOffsetBeforeFajrMin == offsetMin,
                                     onClick = {
-                                        updateReminders { it.copy(tahajjudOffsetBeforeFajrMin = offsetMin) }
+                                        updateReminders {
+                                            it.copy(
+                                                tahajjudUseCustomClock = false,
+                                                tahajjudOffsetBeforeFajrMin = offsetMin
+                                            )
+                                        }
                                     },
                                     label = label
                                 )
                             }
+                            LiquidGlassPill(
+                                selected = reminderState.tahajjudUseCustomClock,
+                                onClick = {
+                                    updateReminders { it.copy(tahajjudUseCustomClock = true) }
+                                },
+                                label = appLanguage.pick("وقت محدد بالضبط", "Exact Custom Time", "Aniq vaqt tanlash")
+                            )
+                        }
+
+                        if (reminderState.tahajjudUseCustomClock) {
+                            Surface(
+                                color = glass.glassSubtleFill,
+                                border = BorderStroke(1.dp, glass.accentGold.copy(alpha = 0.45f)),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("tahajjud_exact_clock_picker")
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceEvenly,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            appLanguage.pick("الساعة", "Hour", "Soat"),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconButton(
+                                                onClick = {
+                                                    updateReminders {
+                                                        it.copy(tahajjudCustomHour = (it.tahajjudCustomHour + 23) % 24)
+                                                    }
+                                                }
+                                            ) {
+                                                Icon(Icons.Rounded.Remove, contentDescription = "Decrease hour")
+                                            }
+                                            Text(
+                                                text = formatNumerals(String.format("%02d", reminderState.tahajjudCustomHour), useArabicDigits),
+                                                style = MaterialTheme.typography.headlineSmall.withTabularNums(),
+                                                fontWeight = FontWeight.Bold,
+                                                color = glass.accentGold
+                                            )
+                                            IconButton(
+                                                onClick = {
+                                                    updateReminders {
+                                                        it.copy(tahajjudCustomHour = (it.tahajjudCustomHour + 1) % 24)
+                                                    }
+                                                }
+                                            ) {
+                                                Icon(Icons.Rounded.Add, contentDescription = "Increase hour")
+                                            }
+                                        }
+                                    }
+                                    Text(":", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            appLanguage.pick("الدقيقة", "Minute", "Daqiqa"),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconButton(
+                                                onClick = {
+                                                    updateReminders {
+                                                        it.copy(tahajjudCustomMinute = (it.tahajjudCustomMinute + 59) % 60)
+                                                    }
+                                                }
+                                            ) {
+                                                Icon(Icons.Rounded.Remove, contentDescription = "Decrease minute")
+                                            }
+                                            Text(
+                                                text = formatNumerals(String.format("%02d", reminderState.tahajjudCustomMinute), useArabicDigits),
+                                                style = MaterialTheme.typography.headlineSmall.withTabularNums(),
+                                                fontWeight = FontWeight.Bold,
+                                                color = glass.accentGold
+                                            )
+                                            IconButton(
+                                                onClick = {
+                                                    updateReminders {
+                                                        it.copy(tahajjudCustomMinute = (it.tahajjudCustomMinute + 1) % 60)
+                                                    }
+                                                }
+                                            ) {
+                                                Icon(Icons.Rounded.Add, contentDescription = "Increase minute")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = appLanguage.pick("تخصيص صوت تنبيه التهجد:", "Customize Tahajjud Sound:", "Tahajjud ovozini tanlash:"),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            val soundChoices = buildList {
+                                add("takbir_calm" to appLanguage.pick("تكبير هادئ", "Calm Takbir", "Sokin takbir"))
+                                add("fajr_chime" to appLanguage.pick("نغمة فجرية", "Fajr Chime", "Tonggi ohang"))
+                                add("haram_call" to appLanguage.pick("نداء الحرم", "Haram Call", "Haram azoni"))
+                                add("alafasy" to appLanguage.pick("العفاسي", "Alafasy", "Alafasy"))
+                                add("silent_notif" to appLanguage.pick("إشعار صامت", "Silent Alert", "Ovozsiz"))
+                                if (reminderState.tahajjudCustomAudioPath.isNotBlank()) {
+                                    add(
+                                        "custom" to (reminderState.tahajjudCustomAudioName.take(18)
+                                            .ifBlank { appLanguage.pick("صوت مخصص", "Custom Audio", "Maxsus ovoz") })
+                                    )
+                                }
+                            }
+                            soundChoices.forEach { (sId, sLabel) ->
+                                LiquidGlassPill(
+                                    selected = reminderState.tahajjudSoundId == sId,
+                                    onClick = {
+                                        updateReminders { it.copy(tahajjudSoundId = sId) }
+                                    },
+                                    label = sLabel
+                                )
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = { tahajjudAudioPickerLauncher.launch(arrayOf("audio/*")) },
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("pick_custom_tahajjud_audio_button")
+                        ) {
+                            Icon(Icons.Rounded.AudioFile, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                appLanguage.pick(
+                                    "تخصيص صوت من الجهاز (MP3 / M4A)",
+                                    "Pick Custom Tahajjud Audio from Device",
+                                    "Qurilmadan maxsus Tahajjud ovozini tanlash"
+                                )
+                            )
+                        }
+
+                        if (reminderState.tahajjudSoundId != "silent_notif") {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Icon(Icons.Rounded.VolumeUp, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                        Text(
+                                            appLanguage.pick("مستوى صوت التهجد", "Tahajjud Volume", "Tahajjud ovoz balandligi"),
+                                            style = MaterialTheme.typography.labelLarge
+                                        )
+                                    }
+                                    Text(
+                                        text = formatNumerals("${reminderState.tahajjudVolumePercent}%", useArabicDigits),
+                                        style = MaterialTheme.typography.labelLarge.withTabularNums(),
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Slider(
+                                    value = reminderState.tahajjudVolumePercent.toFloat(),
+                                    onValueChange = { vol ->
+                                        updateReminders { it.copy(tahajjudVolumePercent = vol.toInt().coerceIn(20, 100)) }
+                                    },
+                                    valueRange = 20f..100f
+                                )
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                } else {
+                                    MihrabReminderManager.testTahajjudAlertNow(context, appLanguage, resolvedTahajjudTime)
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("test_tahajjud_sound_button")
+                        ) {
+                            Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                appLanguage.pick(
+                                    "تجربة رنين التهجد بالصوت والمستوى المختار",
+                                    "Test Tahajjud Alert with Selected Sound",
+                                    "Tanlangan ovoz bilan Tahajjudni sinash"
+                                )
+                            )
                         }
                     }
                 }
@@ -2539,6 +2973,8 @@ private fun PrayerRowItem(
     entry: PrayerTimeEntry,
     isCompleted: Boolean,
     isNext: Boolean,
+    isEntered: Boolean,
+    minutesUntil: Int,
     alertMode: AdhanAlertMode,
     appLanguage: AppLanguage,
     useArabicDigits: Boolean,
@@ -2547,9 +2983,24 @@ private fun PrayerRowItem(
 ) {
     val glass = LocalLiquidGlassPalette.current
     val isArabicUi = appLanguage.isArabicUi
+    val canCheck = isEntered || isCompleted
+    val remainingFormatted = remember(minutesUntil, appLanguage, useArabicDigits) {
+        val h = minutesUntil / 60
+        val m = minutesUntil % 60
+        val text = if (h > 0) {
+            appLanguage.pick("متبقي $h س $m د", "in ${h}h ${m}m", "${h}s ${m}d qoldi")
+        } else {
+            appLanguage.pick("متبقي $m د", "in ${m}m", "${m}d qoldi")
+        }
+        formatNumerals(text, useArabicDigits)
+    }
     Surface(
         onClick = onToggle,
-        color = if (isNext) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f) else glass.glassSubtleFill,
+        color = when {
+            isNext -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f)
+            !canCheck -> glass.glassSubtleFill.copy(alpha = 0.55f)
+            else -> glass.glassSubtleFill
+        },
         border = BorderStroke(
             width = if (isNext) 1.5.dp else 1.dp,
             color = if (isNext) MaterialTheme.colorScheme.primary.copy(alpha = 0.65f) else glass.glassBorder.copy(alpha = 0.65f)
@@ -2557,6 +3008,7 @@ private fun PrayerRowItem(
         shape = RoundedCornerShape(18.dp),
         modifier = Modifier
             .fillMaxWidth()
+            .alpha(if (canCheck) 1f else 0.72f)
             .testTag("prayer_row_${entry.key}")
     ) {
         Row(
@@ -2568,9 +3020,21 @@ private fun PrayerRowItem(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                 Icon(
-                    imageVector = if (isCompleted) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                    contentDescription = if (isCompleted) "${entry.nameEn} completed" else "Mark ${entry.nameEn}",
-                    tint = if (isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                    imageVector = when {
+                        isCompleted -> Icons.Rounded.CheckCircle
+                        !isEntered -> Icons.Rounded.Schedule
+                        else -> Icons.Rounded.RadioButtonUnchecked
+                    },
+                    contentDescription = when {
+                        isCompleted -> "${entry.nameEn} completed"
+                        !isEntered -> "${entry.nameEn} not yet entered"
+                        else -> "Mark ${entry.nameEn}"
+                    },
+                    tint = when {
+                        isCompleted -> MaterialTheme.colorScheme.primary
+                        !isEntered -> glass.accentGold
+                        else -> MaterialTheme.colorScheme.outline
+                    }
                 )
                 Spacer(Modifier.width(10.dp))
                 Icon(
@@ -2592,13 +3056,27 @@ private fun PrayerRowItem(
                             Text(entry.nameAr, fontFamily = AmiriFontFamily, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
                         }
                     }
-                    Text(
-                        entry.sunnahInfoFor(appLanguage),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    if (!isEntered && !isCompleted) {
+                        Text(
+                            text = appLanguage.pick(
+                                "لم يدخل وقتها بعد • $remainingFormatted",
+                                "Not entered yet • $remainingFormatted",
+                                "Vaqti hali kirmadi • $remainingFormatted"
+                            ),
+                            style = MaterialTheme.typography.labelSmall.withTabularNums(),
+                            color = glass.accentGold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    } else {
+                        Text(
+                            entry.sunnahInfoFor(appLanguage),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

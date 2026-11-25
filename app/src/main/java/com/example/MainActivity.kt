@@ -29,13 +29,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -48,6 +51,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -70,6 +74,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import androidx.credentials.CredentialManager
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -703,18 +708,26 @@ private fun AuthenticatedMihrabShell(
                                                     )
                                                     Column(modifier = Modifier.weight(1f)) {
                                                         Text(
-                                                            text = appLanguage.pick(
-                                                                "حان الآن وقت ${activeAdhan.prayerLabel} • ${com.example.core.i18n.formatNumerals(activeAdhan.prayerTime, useIndic && appLanguage.isArabicUi)}",
-                                                                "Prayer Time: ${activeAdhan.prayerLabel} • ${activeAdhan.prayerTime}",
-                                                                "Namoz vaqti: ${activeAdhan.prayerLabel} • ${activeAdhan.prayerTime}"
-                                                            ),
+                                                            text = if (activeAdhan.isTahajjud) {
+                                                                appLanguage.pick(
+                                                                    "منبه التهجد والقيام • ${com.example.core.i18n.formatNumerals(activeAdhan.prayerTime, useIndic && appLanguage.isArabicUi)}",
+                                                                    "Tahajjud Alert • ${activeAdhan.prayerTime}",
+                                                                    "Tahajjud vaqti • ${activeAdhan.prayerTime}"
+                                                                )
+                                                            } else {
+                                                                appLanguage.pick(
+                                                                    "حان الآن وقت ${activeAdhan.prayerLabel} • ${com.example.core.i18n.formatNumerals(activeAdhan.prayerTime, useIndic && appLanguage.isArabicUi)}",
+                                                                    "Prayer Time: ${activeAdhan.prayerLabel} • ${activeAdhan.prayerTime}",
+                                                                    "Namoz vaqti: ${activeAdhan.prayerLabel} • ${activeAdhan.prayerTime}"
+                                                                )
+                                                            },
                                                             style = MaterialTheme.typography.titleSmall,
                                                             fontWeight = FontWeight.Bold,
                                                             color = MaterialTheme.colorScheme.onPrimaryContainer
                                                         )
                                                         Text(
                                                             text = appLanguage.pick(
-                                                                "${activeAdhan.muezzinLabel} • اضغط زر الصوت أو الزر لإيقاف الأذان",
+                                                                "${activeAdhan.muezzinLabel} • اضغط زر الصوت أو الزر لإيقاف الصوت",
                                                                 "${activeAdhan.muezzinLabel} • Press Volume key or button to stop",
                                                                 "${activeAdhan.muezzinLabel} • To'xtatish uchun ovoz tugmasini bosing"
                                                             ),
@@ -772,16 +785,21 @@ private fun AuthenticatedMihrabShell(
                                         )
                                         val bannerLink = appOperations.bannerLinkUrl.trim()
                                         val hasImage = appOperations.bannerImageUrl.isNotBlank()
+                                        val hasAdContent = bannerTitle.isNotBlank() ||
+                                            bannerBody.isNotBlank() ||
+                                            hasImage ||
+                                            bannerLink.isNotBlank()
                                         val bannerSignature = "$bannerTitle|$bannerBody|${appOperations.bannerImageUrl.take(48)}|$bannerLink|${appOperations.bannerTone}"
 
-                                        if (appOperations.bannerEnabled &&
-                                            (bannerTitle.isNotBlank() || bannerBody.isNotBlank() || hasImage) &&
+                                        if (!showAdminDashboard &&
+                                            appOperations.bannerEnabled &&
+                                            hasAdContent &&
                                             bannerDismissedKey != bannerSignature
                                         ) {
                                             val toneBorder = when (appOperations.bannerTone) {
-                                                "URGENT", "ALERT" -> MaterialTheme.colorScheme.error.copy(alpha = 0.55f)
-                                                "SUCCESS" -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.55f)
-                                                else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                                "URGENT", "ALERT" -> MaterialTheme.colorScheme.error.copy(alpha = 0.65f)
+                                                "SUCCESS" -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.65f)
+                                                else -> BurnishedGold.copy(alpha = 0.65f)
                                             }
                                             val toneContent = when (appOperations.bannerTone) {
                                                 "URGENT", "ALERT" -> MaterialTheme.colorScheme.error
@@ -803,86 +821,116 @@ private fun AuthenticatedMihrabShell(
                                                     }
                                                 }
                                             }
-                                            LiquidGlassCard(
-                                                shape = RoundedCornerShape(20.dp),
-                                                containerColor = glass.glassFillStrong,
-                                                borderColor = toneBorder,
-                                                contentPadding = 12.dp,
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                                                    .then(
-                                                        if (bannerLink.isNotBlank()) Modifier.clickable { openBannerLink() } else Modifier
-                                                    )
-                                                    .testTag("global_broadcast_banner")
-                                            ) {
-                                                if (hasImage) {
-                                                    RemoteBannerImage(
-                                                        imageUrl = appOperations.bannerImageUrl,
-                                                        contentDescription = bannerTitle.ifBlank { null },
-                                                        maxHeight = 148.dp
-                                                    )
-                                                }
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                            Dialog(onDismissRequest = { bannerDismissedKey = bannerSignature }) {
+                                                LiquidGlassCard(
+                                                    shape = RoundedCornerShape(26.dp),
+                                                    containerColor = MaterialTheme.colorScheme.surface,
+                                                    borderColor = toneBorder,
+                                                    elevation = 14.dp,
+                                                    contentPadding = 16.dp,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .verticalScroll(rememberScrollState())
+                                                        .testTag("app_entry_ad_dialog")
                                                 ) {
-                                                    Icon(
-                                                        imageVector = MihrabIcons.BroadcastBanner,
-                                                        contentDescription = null,
-                                                        tint = toneContent
-                                                    )
-                                                    Column(modifier = Modifier.weight(1f)) {
-                                                        if (bannerTitle.isNotBlank()) {
-                                                            Text(
-                                                                text = bannerTitle,
-                                                                style = MaterialTheme.typography.titleSmall,
-                                                                fontWeight = FontWeight.Bold,
-                                                                color = toneContent
-                                                            )
-                                                        }
-                                                        if (bannerBody.isNotBlank()) {
-                                                            Text(
-                                                                text = bannerBody,
-                                                                style = MaterialTheme.typography.bodySmall,
-                                                                color = MaterialTheme.colorScheme.onSurface
-                                                            )
-                                                        }
-                                                        if (bannerLink.isNotBlank()) {
-                                                            Spacer(Modifier.height(6.dp))
-                                                            Surface(
-                                                                onClick = openBannerLink,
-                                                                color = toneContent.copy(alpha = 0.14f),
-                                                                border = BorderStroke(1.dp, toneContent.copy(alpha = 0.4f)),
-                                                                shape = CircleShape
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Surface(
+                                                            color = toneContent.copy(alpha = 0.14f),
+                                                            shape = CircleShape
+                                                        ) {
+                                                            Row(
+                                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                horizontalArrangement = Arrangement.spacedBy(5.dp)
                                                             ) {
-                                                                Row(
-                                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                                                    verticalAlignment = Alignment.CenterVertically,
-                                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                                ) {
-                                                                    Icon(
-                                                                        imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
-                                                                        contentDescription = null,
-                                                                        tint = toneContent,
-                                                                        modifier = Modifier.size(13.dp)
-                                                                    )
-                                                                    Text(
-                                                                        text = bannerCta,
-                                                                        style = MaterialTheme.typography.labelSmall,
-                                                                        fontWeight = FontWeight.Bold,
-                                                                        color = toneContent
-                                                                    )
-                                                                }
+                                                                Icon(
+                                                                    imageVector = MihrabIcons.BroadcastBanner,
+                                                                    contentDescription = null,
+                                                                    tint = toneContent,
+                                                                    modifier = Modifier.size(15.dp)
+                                                                )
+                                                                Text(
+                                                                    text = appLanguage.pick("إعلان / إشعار هام", "Announcement", "Muhim e'lon"),
+                                                                    style = MaterialTheme.typography.labelMedium,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = toneContent
+                                                                )
                                                             }
                                                         }
+                                                        IconButton(
+                                                            onClick = { bannerDismissedKey = bannerSignature },
+                                                            modifier = Modifier.size(32.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Rounded.Close,
+                                                                contentDescription = strings.cancel,
+                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                        }
                                                     }
-                                                    IconButton(onClick = { bannerDismissedKey = bannerSignature }) {
-                                                        Icon(
-                                                            imageVector = Icons.Rounded.Close,
-                                                            contentDescription = strings.cancel,
-                                                            tint = toneContent
+
+                                                    if (hasImage) {
+                                                        RemoteBannerImage(
+                                                            imageUrl = appOperations.bannerImageUrl,
+                                                            contentDescription = bannerTitle.ifBlank { null },
+                                                            maxHeight = 220.dp,
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .then(
+                                                                    if (bannerLink.isNotBlank()) Modifier.clickable { openBannerLink() } else Modifier
+                                                                )
                                                         )
+                                                    }
+
+                                                    if (bannerTitle.isNotBlank()) {
+                                                        Text(
+                                                            text = bannerTitle,
+                                                            style = MaterialTheme.typography.titleLarge,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.onSurface
+                                                        )
+                                                    }
+                                                    if (bannerBody.isNotBlank()) {
+                                                        Text(
+                                                            text = bannerBody,
+                                                            style = MaterialTheme.typography.bodyMedium,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
+
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        if (bannerLink.isNotBlank()) {
+                                                            Button(
+                                                                onClick = {
+                                                                    openBannerLink()
+                                                                    bannerDismissedKey = bannerSignature
+                                                                },
+                                                                shape = RoundedCornerShape(14.dp),
+                                                                modifier = Modifier.weight(1f)
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+                                                                    contentDescription = null,
+                                                                    modifier = Modifier.size(16.dp)
+                                                                )
+                                                                Spacer(Modifier.width(6.dp))
+                                                                Text(bannerCta)
+                                                            }
+                                                        }
+                                                        TextButton(
+                                                            onClick = { bannerDismissedKey = bannerSignature },
+                                                            modifier = if (bannerLink.isBlank()) Modifier.fillMaxWidth() else Modifier
+                                                        ) {
+                                                            Text(appLanguage.pick("متابعة إلى محراب", "Continue", "Davom etish"))
+                                                        }
                                                     }
                                                 }
                                             }

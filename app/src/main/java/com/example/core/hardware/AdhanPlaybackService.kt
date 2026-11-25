@@ -1,6 +1,5 @@
 package com.example.core.hardware
 
-import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -10,7 +9,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.database.ContentObserver
 import android.graphics.Bitmap
@@ -27,6 +25,7 @@ import android.media.ToneGenerator
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -59,7 +58,8 @@ data class AdhanRingingInfo(
     val prayerLabel: String,
     val prayerTime: String,
     val muezzinLabel: String,
-    val mode: AdhanAlertMode
+    val mode: AdhanAlertMode,
+    val isTahajjud: Boolean = false
 )
 
 object AdhanRuntimeController {
@@ -84,8 +84,9 @@ object AdhanRuntimeController {
         voiceId: String,
         mode: AdhanAlertMode,
         customLocalPath: String,
-        language: AppLanguage
-    ) {
+        language: AppLanguage,
+        volumePercent: Int = 100
+    ): Boolean {
         val intent = Intent(context.applicationContext, AdhanPlaybackService::class.java).apply {
             action = AdhanPlaybackService.ACTION_PLAY_ADHAN
             putExtra(AdhanPlaybackService.EXTRA_PRAYER_KEY, prayerKey)
@@ -95,21 +96,70 @@ object AdhanRuntimeController {
             putExtra(AdhanPlaybackService.EXTRA_ALERT_MODE, mode.id)
             putExtra(AdhanPlaybackService.EXTRA_CUSTOM_PATH, customLocalPath)
             putExtra(AdhanPlaybackService.EXTRA_LANG_CODE, language.code)
+            putExtra(AdhanPlaybackService.EXTRA_IS_TAHAJJUD, false)
+            putExtra(AdhanPlaybackService.EXTRA_VOLUME_PERCENT, volumePercent.coerceIn(20, 100))
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            runCatching { context.applicationContext.startForegroundService(intent) }
-        } else {
-            runCatching { context.applicationContext.startService(intent) }
+        return startServiceSafely(context.applicationContext, intent)
+    }
+
+    fun triggerTahajjudAlert(
+        context: Context,
+        timeLabel: String,
+        soundId: String,
+        customAudioPath: String,
+        customAudioName: String,
+        volumePercent: Int,
+        language: AppLanguage
+    ): Boolean {
+        val intent = Intent(context.applicationContext, AdhanPlaybackService::class.java).apply {
+            action = AdhanPlaybackService.ACTION_PLAY_ADHAN
+            putExtra(AdhanPlaybackService.EXTRA_PRAYER_KEY, "tahajjud")
+            putExtra(
+                AdhanPlaybackService.EXTRA_PRAYER_LABEL,
+                language.pick("صلاة التهجد والقيام", "Tahajjud & Qiyam", "Tahajjud namozi")
+            )
+            putExtra(AdhanPlaybackService.EXTRA_PRAYER_TIME, timeLabel)
+            putExtra(AdhanPlaybackService.EXTRA_VOICE_ID, soundId)
+            putExtra(
+                AdhanPlaybackService.EXTRA_ALERT_MODE,
+                when (soundId) {
+                    "fajr_chime" -> AdhanAlertMode.GENTLE_CHIME.id
+                    "takbir_calm" -> AdhanAlertMode.TAKBIR_ONLY.id
+                    else -> AdhanAlertMode.FULL_ADHAN.id
+                }
+            )
+            putExtra(AdhanPlaybackService.EXTRA_CUSTOM_PATH, customAudioPath)
+            putExtra(AdhanPlaybackService.EXTRA_CUSTOM_NAME, customAudioName)
+            putExtra(AdhanPlaybackService.EXTRA_LANG_CODE, language.code)
+            putExtra(AdhanPlaybackService.EXTRA_IS_TAHAJJUD, true)
+            putExtra(AdhanPlaybackService.EXTRA_VOLUME_PERCENT, volumePercent.coerceIn(20, 100))
+        }
+        return startServiceSafely(context.applicationContext, intent)
+    }
+
+    private fun startServiceSafely(appCtx: Context, intent: Intent): Boolean {
+        return try {
+            ContextCompat.startForegroundService(appCtx, intent)
+            true
+        } catch (_: Throwable) {
+            false
         }
     }
 
     fun stopAdhan(context: Context) {
         activePlayerForSilence?.stop()
         _ringing.value = null
-        val intent = Intent(context.applicationContext, AdhanPlaybackService::class.java).apply {
+        val appCtx = context.applicationContext
+        runCatching {
+            val nm = appCtx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            nm?.cancel(AdhanPlaybackService.NOTIFICATION_ID)
+            nm?.cancel(7101)
+            nm?.cancel(7301)
+        }
+        val intent = Intent(appCtx, AdhanPlaybackService::class.java).apply {
             action = AdhanPlaybackService.ACTION_STOP_ADHAN
         }
-        runCatching { context.applicationContext.startService(intent) }
+        runCatching { appCtx.startService(intent) }
     }
 }
 
@@ -121,6 +171,7 @@ class AdhanPlaybackService : Service() {
     private var mediaPlayer: MediaPlayer? = null
     private var mediaSession: MediaSession? = null
     private var artworkBitmap: Bitmap? = null
+    private var currentLanguage: AppLanguage = AppLanguage.ARABIC
 
     private var audioManager: AudioManager? = null
     private var baselineVolumes: IntArray = intArrayOf()
@@ -160,8 +211,23 @@ class AdhanPlaybackService : Service() {
                 val voiceId = intent.getStringExtra(EXTRA_VOICE_ID) ?: "makkah"
                 val mode = AdhanAlertMode.fromId(intent.getStringExtra(EXTRA_ALERT_MODE))
                 val customPath = intent.getStringExtra(EXTRA_CUSTOM_PATH).orEmpty()
+                val customName = intent.getStringExtra(EXTRA_CUSTOM_NAME).orEmpty()
                 val lang = AppLanguage.fromCode(intent.getStringExtra(EXTRA_LANG_CODE) ?: "ar")
-                startAdhan(prayerKey, prayerLabel, prayerTime, voiceId, mode, customPath, lang)
+                val isTahajjud = intent.getBooleanExtra(EXTRA_IS_TAHAJJUD, false)
+                val volumePercent = intent.getIntExtra(EXTRA_VOLUME_PERCENT, 100).coerceIn(20, 100)
+                currentLanguage = lang
+                startAdhan(
+                    prayerKey = prayerKey,
+                    prayerLabel = prayerLabel,
+                    prayerTime = prayerTime,
+                    voiceId = voiceId,
+                    mode = mode,
+                    customPath = customPath,
+                    customName = customName,
+                    language = lang,
+                    isTahajjud = isTahajjud,
+                    volumePercent = volumePercent
+                )
             }
         }
         return START_NOT_STICKY
@@ -174,19 +240,40 @@ class AdhanPlaybackService : Service() {
         voiceId: String,
         mode: AdhanAlertMode,
         customPath: String,
-        language: AppLanguage
+        customName: String,
+        language: AppLanguage,
+        isTahajjud: Boolean,
+        volumePercent: Int
     ) {
         stopPlaybackOnly()
 
-        val voice = AdhkarAndAdhanCatalog.defaultAdhanVoices.firstOrNull { it.id == voiceId }
+        val resolvedVoiceId = when {
+            isTahajjud && voiceId == "takbir_calm" -> "makkah"
+            isTahajjud && voiceId == "haram_call" -> "makkah"
+            isTahajjud && voiceId == "alafasy" -> "alafasy"
+            else -> voiceId
+        }
+        val voice = AdhkarAndAdhanCatalog.defaultAdhanVoices.firstOrNull { it.id == resolvedVoiceId }
             ?: AdhkarAndAdhanCatalog.defaultAdhanVoices.first()
-        val muezzinLabel = if (language.isArabicUi) voice.nameAr else voice.nameEn
+
+        val soundLabel = when {
+            isTahajjud && voiceId == "custom" && customName.isNotBlank() -> customName
+            isTahajjud && voiceId == "fajr_chime" -> language.pick("نغمة فجرية هادئة", "Gentle Fajr Chime", "Sokin tonggi ohang")
+            isTahajjud && voiceId == "takbir_calm" -> language.pick("تكبير قيام هادئ", "Calm Qiyam Takbir", "Sokin takbir")
+            isTahajjud && voiceId == "haram_call" -> language.pick("نداء الحرم المكي", "Makkah Haram Call", "Makka Harami azoni")
+            isTahajjud && voiceId == "alafasy" -> language.pick("الشيخ مشاري العفاسي", "Mishary Alafasy", "Mishari Alafasy")
+            voiceId == "custom" && customName.isNotBlank() -> customName
+            language.isArabicUi -> voice.nameAr
+            else -> voice.nameEn
+        }
+
         val info = AdhanRingingInfo(
             prayerKey = prayerKey,
             prayerLabel = prayerLabel,
             prayerTime = prayerTime,
-            muezzinLabel = muezzinLabel,
-            mode = mode
+            muezzinLabel = soundLabel,
+            mode = mode,
+            isTahajjud = isTahajjud
         )
         AdhanRuntimeController.setRinging(info)
         updateMediaSessionState(info, language)
@@ -201,23 +288,24 @@ class AdhanPlaybackService : Service() {
         registerVolumeWatchers()
 
         if (mode == AdhanAlertMode.SILENT) {
-            // Leave entry notification visible without sound if SILENT was passed
             return
         }
 
-        if (mode == AdhanAlertMode.GENTLE_CHIME) {
+        if (mode == AdhanAlertMode.GENTLE_CHIME || (isTahajjud && voiceId == "fajr_chime")) {
             playJob = serviceScope.launch {
-                playGentleChimeTone()
+                playGentleChimeTone(volumePercent = volumePercent, repeatCount = if (isTahajjud) 3 else 1)
                 stopAndShutdown()
             }
             return
         }
 
+        val scalarVolume = (volumePercent / 100f).coerceIn(0.15f, 1.0f)
+
         playJob = serviceScope.launch {
             val customFile = customPath.takeIf { it.isNotBlank() }?.let { File(it) }?.takeIf { it.exists() && it.length() > 512L }
             val adhanFile = customFile ?: downloadOrGetCachedAdhan(voice.id, voice.audioUrl)
             if (adhanFile == null || !adhanFile.exists()) {
-                playGentleChimeTone()
+                playGentleChimeTone(volumePercent = volumePercent, repeatCount = if (isTahajjud) 3 else 1)
                 stopAndShutdown()
                 return@launch
             }
@@ -232,6 +320,7 @@ class AdhanPlaybackService : Service() {
                             .build()
                     )
                     setDataSource(adhanFile.absolutePath)
+                    setVolume(scalarVolume, scalarVolume)
                     setOnCompletionListener {
                         stopAndShutdown()
                     }
@@ -240,31 +329,35 @@ class AdhanPlaybackService : Service() {
                         true
                     }
                     prepare()
+                    setVolume(scalarVolume, scalarVolume)
                     start()
                 }
                 mediaPlayer = player
 
                 if (mode == AdhanAlertMode.TAKBIR_ONLY) {
                     stopTimerJob = serviceScope.launch {
-                        delay(11_500L)
+                        delay(if (isTahajjud) 15_000L else 11_500L)
                         stopAndShutdown()
                     }
                 }
             } catch (_: Exception) {
-                playGentleChimeTone()
+                playGentleChimeTone(volumePercent = volumePercent, repeatCount = if (isTahajjud) 3 else 1)
                 stopAndShutdown()
             }
         }
     }
 
-    private suspend fun playGentleChimeTone() = withContext(Dispatchers.IO) {
+    private suspend fun playGentleChimeTone(volumePercent: Int = 85, repeatCount: Int = 1) = withContext(Dispatchers.IO) {
         var tg: ToneGenerator? = null
         try {
-            tg = ToneGenerator(AudioManager.STREAM_ALARM, 80)
-            tg.startTone(ToneGenerator.TONE_PROP_BEEP2, 340)
-            Thread.sleep(430)
-            tg.startTone(ToneGenerator.TONE_PROP_ACK, 420)
-            Thread.sleep(500)
+            val tgVol = volumePercent.coerceIn(25, 100)
+            tg = ToneGenerator(AudioManager.STREAM_ALARM, tgVol)
+            repeat(repeatCount.coerceIn(1, 4)) {
+                tg.startTone(ToneGenerator.TONE_PROP_BEEP2, 340)
+                Thread.sleep(460)
+                tg.startTone(ToneGenerator.TONE_PROP_ACK, 420)
+                Thread.sleep(620)
+            }
         } catch (_: Exception) {
         } finally {
             runCatching { tg?.release() }
@@ -355,6 +448,11 @@ class AdhanPlaybackService : Service() {
                 override fun onPause() = stopAndShutdown()
                 override fun onStop() = stopAndShutdown()
                 override fun onPlay() = stopAndShutdown()
+                override fun onCustomAction(action: String, extras: Bundle?) {
+                    if (action == CUSTOM_ACTION_STOP) {
+                        stopAndShutdown()
+                    }
+                }
             })
             isActive = true
         }
@@ -363,17 +461,25 @@ class AdhanPlaybackService : Service() {
 
     private fun updateMediaSessionState(info: AdhanRingingInfo, language: AppLanguage) {
         val session = mediaSession ?: return
-        val art = artworkBitmap ?: buildAdhanArtwork().also { artworkBitmap = it }
-        val title = language.pick(
-            "حان وقت صلاة ${info.prayerLabel} • ${info.prayerTime}",
-            "Adhan: ${info.prayerLabel} • ${info.prayerTime}",
-            "Azon: ${info.prayerLabel} • ${info.prayerTime}"
-        )
+        val art = artworkBitmap ?: buildAdhanArtwork(info.isTahajjud).also { artworkBitmap = it }
+        val title = if (info.isTahajjud) {
+            language.pick(
+                "منبه التهجد والقيام • ${info.prayerTime}",
+                "Tahajjud Alert • ${info.prayerTime}",
+                "Tahajjud uyg'otkichi • ${info.prayerTime}"
+            )
+        } else {
+            language.pick(
+                "حان وقت صلاة ${info.prayerLabel} • ${info.prayerTime}",
+                "Adhan: ${info.prayerLabel} • ${info.prayerTime}",
+                "Azon: ${info.prayerLabel} • ${info.prayerTime}"
+            )
+        }
         val subtitle = "${info.muezzinLabel} • ${
             language.pick(
-                "اضغط زر الصوت للإيقاف",
-                "Press volume key to silence",
-                "O'chirish uchun ovoz tugmasini bosing"
+                "اضغط إيقاف أو زر الصوت",
+                "Tap Stop or Volume key",
+                "To'xtatish yoki ovoz tugmasini bosing"
             )
         }"
 
@@ -386,9 +492,27 @@ class AdhanPlaybackService : Service() {
                 .build()
         )
 
+        val stopLabel = if (info.isTahajjud) {
+            language.pick("إيقاف التهجد", "Stop Alert", "To'xtatish")
+        } else {
+            language.pick("إيقاف الأذان", "Stop Adhan", "Azonni to'xtatish")
+        }
+
+        val customStop = PlaybackState.CustomAction.Builder(
+            CUSTOM_ACTION_STOP,
+            stopLabel,
+            R.drawable.ic_media_stop
+        ).build()
+
         session.setPlaybackState(
             PlaybackState.Builder()
-                .setActions(PlaybackState.ACTION_STOP or PlaybackState.ACTION_PAUSE)
+                .setActions(
+                    PlaybackState.ACTION_STOP or
+                        PlaybackState.ACTION_PAUSE or
+                        PlaybackState.ACTION_PLAY_PAUSE or
+                        PlaybackState.ACTION_PLAY
+                )
+                .addCustomAction(customStop)
                 .setState(PlaybackState.STATE_PLAYING, 0L, 1.0f)
                 .build()
         )
@@ -400,40 +524,57 @@ class AdhanPlaybackService : Service() {
             901,
             Intent(this, MainActivity::class.java).apply {
                 putExtra("launch_tab", "prayer")
-                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val stopPending = PendingIntent.getService(
+        // Use broadcast receiver pending intent so Stop works reliably from Lock Screen & Control Shade
+        val stopPending = PendingIntent.getBroadcast(
             this,
             902,
-            Intent(this, AdhanPlaybackService::class.java).apply { action = ACTION_STOP_ADHAN },
+            Intent(this, MihrabAlarmReceiver::class.java).apply {
+                action = MihrabReminderManager.ACTION_STOP_ADHAN_BROADCAST
+            },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val title = language.pick(
-            "الأذان • حان الآن وقت صلاة ${info.prayerLabel}",
-            "Adhan • Time for ${info.prayerLabel}",
-            "Azon • ${info.prayerLabel} namozi vaqti kirdi"
-        )
+        val title = if (info.isTahajjud) {
+            language.pick(
+                "قيام الليل والتهجد • ${info.prayerTime}",
+                "Tahajjud & Qiyam Alert • ${info.prayerTime}",
+                "Tahajjud va tungi namoz • ${info.prayerTime}"
+            )
+        } else {
+            language.pick(
+                "الأذان • حان الآن وقت صلاة ${info.prayerLabel}",
+                "Adhan • Time for ${info.prayerLabel}",
+                "Azon • ${info.prayerLabel} namozi vaqti kirdi"
+            )
+        }
         val body = language.pick(
             "${info.muezzinLabel} (${info.prayerTime}) • اضغط إيقاف أو زر خفض/رفع الصوت",
             "${info.muezzinLabel} (${info.prayerTime}) • Tap Stop or press Volume key to mute",
             "${info.muezzinLabel} (${info.prayerTime}) • To'xtatish yoki ovoz tugmasini bosing"
         )
-        val stopLabel = language.pick("إيقاف الأذان", "Stop Adhan", "Azonni to'xtatish")
+        val stopLabel = if (info.isTahajjud) {
+            language.pick("إيقاف التنبيه", "Stop Alert", "Ogohlantirishni to'xtatish")
+        } else {
+            language.pick("إيقاف الأذان", "Stop Adhan", "Azonni to'xtatish")
+        }
 
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
+                .setPriority(Notification.PRIORITY_MAX)
         }
 
+        val art = artworkBitmap ?: buildAdhanArtwork(info.isTahajjud).also { artworkBitmap = it }
         builder
             .setSmallIcon(R.drawable.ic_notif_mihrab)
-            .setLargeIcon(artworkBitmap ?: buildAdhanArtwork().also { artworkBitmap = it })
+            .setLargeIcon(art)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(
@@ -444,6 +585,7 @@ class AdhanPlaybackService : Service() {
             .setContentIntent(openPending)
             .setDeleteIntent(stopPending)
             .setOngoing(true)
+            .setShowWhen(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setCategory(Notification.CATEGORY_ALARM)
             .addAction(
@@ -465,22 +607,26 @@ class AdhanPlaybackService : Service() {
                 "تنبيهات الأذان والمواقيت",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "إشعارات دخول وقت الصلاة وتشغيل الأذان مع التحكم من شاشة القفل"
+                description = "إشعارات دخول وقت الصلاة وتشغيل الأذان مع التحكم من شاشة القفل ولوحة التحكم"
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-                setSound(null, null) // Service handles Adhan audio directly so volume keys silence cleanly
+                setSound(null, null) // Service handles Adhan/Tahajjud audio directly so volume keys silence cleanly
             }
             mgr.createNotificationChannel(channel)
         }
     }
 
-    private fun buildAdhanArtwork(): Bitmap {
+    private fun buildAdhanArtwork(isTahajjud: Boolean = false): Bitmap {
         val size = 512
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             shader = LinearGradient(
                 0f, 0f, size.toFloat(), size.toFloat(),
-                intArrayOf(0xFF072B23.toInt(), 0xFF0D5C4B.toInt(), 0xFF061A15.toInt()),
+                if (isTahajjud) {
+                    intArrayOf(0xFF0A1430.toInt(), 0xFF172B56.toInt(), 0xFF060B1A.toInt())
+                } else {
+                    intArrayOf(0xFF072B23.toInt(), 0xFF0D5C4B.toInt(), 0xFF061A15.toInt())
+                },
                 null,
                 Shader.TileMode.CLAMP
             )
@@ -495,10 +641,10 @@ class AdhanPlaybackService : Service() {
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = 0xFFFFFFFF.toInt()
             textAlign = Paint.Align.CENTER
-            textSize = 72f
+            textSize = 68f
             isFakeBoldText = true
         }
-        canvas.drawText("الأذان", size / 2f, size * 0.48f, textPaint)
+        canvas.drawText(if (isTahajjud) "التهجد" else "الأذان", size / 2f, size * 0.48f, textPaint)
         val subPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = 0xFFE5BE67.toInt()
             textAlign = Paint.Align.CENTER
@@ -565,6 +711,7 @@ class AdhanPlaybackService : Service() {
         const val NOTIFICATION_ID = 7088
         const val ACTION_PLAY_ADHAN = "com.example.action.PLAY_ADHAN"
         const val ACTION_STOP_ADHAN = "com.example.action.STOP_ADHAN"
+        private const val CUSTOM_ACTION_STOP = "STOP_ADHAN"
 
         const val EXTRA_PRAYER_KEY = "prayer_key"
         const val EXTRA_PRAYER_LABEL = "prayer_label"
@@ -572,6 +719,9 @@ class AdhanPlaybackService : Service() {
         const val EXTRA_VOICE_ID = "voice_id"
         const val EXTRA_ALERT_MODE = "alert_mode"
         const val EXTRA_CUSTOM_PATH = "custom_path"
+        const val EXTRA_CUSTOM_NAME = "custom_name"
         const val EXTRA_LANG_CODE = "lang_code"
+        const val EXTRA_IS_TAHAJJUD = "is_tahajjud"
+        const val EXTRA_VOLUME_PERCENT = "volume_percent"
     }
 }

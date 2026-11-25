@@ -9,7 +9,9 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.OpenableColumns
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.MainActivity
@@ -20,10 +22,13 @@ import com.example.data.firebase.AdhanAlertMode
 import com.example.data.firebase.UserSettingsDoc
 import com.example.domain.CalculationMethod
 import com.example.domain.PrayerTimesEngine
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.File
 import java.util.Calendar
 
 data class MihrabReminderSettings(
@@ -35,7 +40,14 @@ data class MihrabReminderSettings(
     val adhkarEveningHour: Int = 17,
     val adhkarEveningMinute: Int = 0,
     val tahajjudReminderEnabled: Boolean = true,
-    val tahajjudOffsetBeforeFajrMin: Int = 0 // 0 = Exact Last Third of Night, 45/60 = mins before Fajr
+    val tahajjudOffsetBeforeFajrMin: Int = 0, // 0 = Exact Last Third of Night, 45/60 = mins before Fajr
+    val tahajjudUseCustomClock: Boolean = false,
+    val tahajjudCustomHour: Int = 3,
+    val tahajjudCustomMinute: Int = 30,
+    val tahajjudSoundId: String = "takbir_calm", // takbir_calm | fajr_chime | haram_call | alafasy | silent_notif | custom
+    val tahajjudCustomAudioPath: String = "",
+    val tahajjudCustomAudioName: String = "",
+    val tahajjudVolumePercent: Int = 85
 )
 
 object MihrabReminderManager {
@@ -50,6 +62,13 @@ object MihrabReminderManager {
     private const val KEY_ADHKAR_EVENING_M = "adhkar_evening_minute"
     private const val KEY_TAHAJJUD_ENABLED = "tahajjud_reminder_enabled"
     private const val KEY_TAHAJJUD_OFFSET = "tahajjud_offset_before_fajr"
+    private const val KEY_TAHAJJUD_USE_CLOCK = "tahajjud_use_custom_clock"
+    private const val KEY_TAHAJJUD_CUSTOM_H = "tahajjud_custom_hour"
+    private const val KEY_TAHAJJUD_CUSTOM_M = "tahajjud_custom_minute"
+    private const val KEY_TAHAJJUD_SOUND_ID = "tahajjud_sound_id"
+    private const val KEY_TAHAJJUD_CUSTOM_PATH = "tahajjud_custom_audio_path"
+    private const val KEY_TAHAJJUD_CUSTOM_NAME = "tahajjud_custom_audio_name"
+    private const val KEY_TAHAJJUD_VOLUME = "tahajjud_volume_percent"
 
     // Cached snapshot for background rescheduling & boot recovery
     private const val KEY_LANG = "cached_lang"
@@ -67,6 +86,7 @@ object MihrabReminderManager {
     const val ACTION_ADHKAR_MORNING = "com.example.action.ADHKAR_MORNING"
     const val ACTION_ADHKAR_EVENING = "com.example.action.ADHKAR_EVENING"
     const val ACTION_TAHAJJUD_ALARM = "com.example.action.TAHAJJUD_ALARM"
+    const val ACTION_STOP_ADHAN_BROADCAST = "com.example.action.STOP_ADHAN_BROADCAST"
 
     const val REMINDERS_CHANNEL_ID = "mihrab_spiritual_reminders"
 
@@ -93,7 +113,14 @@ object MihrabReminderManager {
             adhkarEveningHour = p.getInt(KEY_ADHKAR_EVENING_H, 17),
             adhkarEveningMinute = p.getInt(KEY_ADHKAR_EVENING_M, 0),
             tahajjudReminderEnabled = p.getBoolean(KEY_TAHAJJUD_ENABLED, true),
-            tahajjudOffsetBeforeFajrMin = p.getInt(KEY_TAHAJJUD_OFFSET, 0)
+            tahajjudOffsetBeforeFajrMin = p.getInt(KEY_TAHAJJUD_OFFSET, 0),
+            tahajjudUseCustomClock = p.getBoolean(KEY_TAHAJJUD_USE_CLOCK, false),
+            tahajjudCustomHour = p.getInt(KEY_TAHAJJUD_CUSTOM_H, 3).coerceIn(0, 23),
+            tahajjudCustomMinute = p.getInt(KEY_TAHAJJUD_CUSTOM_M, 30).coerceIn(0, 59),
+            tahajjudSoundId = p.getString(KEY_TAHAJJUD_SOUND_ID, "takbir_calm") ?: "takbir_calm",
+            tahajjudCustomAudioPath = p.getString(KEY_TAHAJJUD_CUSTOM_PATH, "") ?: "",
+            tahajjudCustomAudioName = p.getString(KEY_TAHAJJUD_CUSTOM_NAME, "") ?: "",
+            tahajjudVolumePercent = p.getInt(KEY_TAHAJJUD_VOLUME, 85).coerceIn(20, 100)
         )
         _settingsFlow.value = loaded
         return loaded
@@ -115,9 +142,55 @@ object MihrabReminderManager {
             .putInt(KEY_ADHKAR_EVENING_M, updated.adhkarEveningMinute)
             .putBoolean(KEY_TAHAJJUD_ENABLED, updated.tahajjudReminderEnabled)
             .putInt(KEY_TAHAJJUD_OFFSET, updated.tahajjudOffsetBeforeFajrMin)
+            .putBoolean(KEY_TAHAJJUD_USE_CLOCK, updated.tahajjudUseCustomClock)
+            .putInt(KEY_TAHAJJUD_CUSTOM_H, updated.tahajjudCustomHour.coerceIn(0, 23))
+            .putInt(KEY_TAHAJJUD_CUSTOM_M, updated.tahajjudCustomMinute.coerceIn(0, 59))
+            .putString(KEY_TAHAJJUD_SOUND_ID, updated.tahajjudSoundId)
+            .putString(KEY_TAHAJJUD_CUSTOM_PATH, updated.tahajjudCustomAudioPath)
+            .putString(KEY_TAHAJJUD_CUSTOM_NAME, updated.tahajjudCustomAudioName)
+            .putInt(KEY_TAHAJJUD_VOLUME, updated.tahajjudVolumePercent.coerceIn(20, 100))
             .apply()
         _settingsFlow.value = updated
         rescheduleFromSavedPrefs(appCtx)
+    }
+
+    suspend fun importCustomTahajjudAudioFromUri(
+        context: Context,
+        uri: Uri
+    ): Result<Pair<String, String>> = withContext(Dispatchers.IO) {
+        try {
+            val appCtx = context.applicationContext
+            val resolver = appCtx.contentResolver
+            var displayName = "Custom_Tahajjud.mp3"
+            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0) {
+                        displayName = cursor.getString(idx)?.takeIf { it.isNotBlank() } ?: displayName
+                    }
+                }
+            }
+
+            val dir = File(appCtx.filesDir, "tahajjud_custom").apply { mkdirs() }
+            dir.listFiles()?.forEach { it.delete() }
+
+            val safeExt = displayName.substringAfterLast('.', "mp3")
+                .lowercase()
+                .replace(Regex("[^a-z0-9]"), "")
+                .ifBlank { "mp3" }
+            val destFile = File(dir, "user_tahajjud.$safeExt")
+
+            val copiedBytes = resolver.openInputStream(uri)?.use { input ->
+                destFile.outputStream().use { output -> input.copyTo(output) }
+            } ?: throw IllegalStateException("Unable to read selected audio file.")
+
+            if (copiedBytes <= 0L) {
+                throw IllegalStateException("Selected audio file is empty.")
+            }
+            Result.success(destFile.absolutePath to displayName.take(80))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     fun syncAndScheduleAll(
@@ -213,19 +286,18 @@ object MihrabReminderManager {
 
         prayerSpecs.forEach { (key, reqCode, pair) ->
             val (todayEntry, tomorrowEntry) = pair
+            val isTomorrow = calendarAtMinutes(now, todayEntry.timeMinutes).timeInMillis <= nowMs + 5_000L
+            val selectedEntry = if (isTomorrow) tomorrowEntry else todayEntry
+            val targetCal = calendarAtMinutes(if (isTomorrow) tomorrowCal else now, selectedEntry.timeMinutes)
             val pendingIntent = buildPrayerAlarmPendingIntent(
                 context = context,
                 reqCode = reqCode,
                 prayerKey = key,
-                prayerLabel = todayEntry.nameFor(language),
-                prayerTime = formatNumerals(todayEntry.formattedTime, indicUi)
+                prayerLabel = selectedEntry.nameFor(language),
+                prayerTime = formatNumerals(selectedEntry.formattedTime, indicUi)
             )
             if (reminderCfg.prayerEntryAlertsEnabled) {
-                var targetCal = calendarAtMinutes(now, todayEntry.timeMinutes)
-                if (targetCal.timeInMillis <= nowMs + 5_000L) {
-                    targetCal = calendarAtMinutes(tomorrowCal, tomorrowEntry.timeMinutes)
-                }
-                scheduleSafe(alarmMgr, targetCal.timeInMillis, pendingIntent)
+                scheduleSafeAlarmClock(context, alarmMgr, targetCal.timeInMillis, pendingIntent)
             } else {
                 alarmMgr.cancel(pendingIntent)
             }
@@ -249,19 +321,49 @@ object MihrabReminderManager {
             alarmMgr.cancel(eveningPending)
         }
 
-        // 4. Tahajjud & Qiyam al-Layl Alarm
+        // 4. Tahajjud & Qiyam al-Layl Alarm (Exact Clock OR Last Third / Offset before Fajr)
         val tahajjudPending = buildSimpleAlarmPendingIntent(context, REQ_TAHAJJUD, ACTION_TAHAJJUD_ALARM)
         if (reminderCfg.tahajjudReminderEnabled) {
-            val todayTargetMin = computeTahajjudMinutes(todaySchedule.lastThirdQiyamMinutes, todaySchedule.fajr.timeMinutes, reminderCfg.tahajjudOffsetBeforeFajrMin)
-            val tomorrowTargetMin = computeTahajjudMinutes(tomorrowSchedule.lastThirdQiyamMinutes, tomorrowSchedule.fajr.timeMinutes, reminderCfg.tahajjudOffsetBeforeFajrMin)
-            var targetCal = calendarAtMinutes(now, todayTargetMin)
-            if (targetCal.timeInMillis <= nowMs + 5_000L) {
-                targetCal = calendarAtMinutes(tomorrowCal, tomorrowTargetMin)
+            val targetMillis = if (reminderCfg.tahajjudUseCustomClock) {
+                nextOccurrenceAt(now, reminderCfg.tahajjudCustomHour, reminderCfg.tahajjudCustomMinute)
+            } else {
+                val todayTargetMin = computeTahajjudMinutes(
+                    todaySchedule.lastThirdQiyamMinutes,
+                    todaySchedule.fajr.timeMinutes,
+                    reminderCfg.tahajjudOffsetBeforeFajrMin
+                )
+                val tomorrowTargetMin = computeTahajjudMinutes(
+                    tomorrowSchedule.lastThirdQiyamMinutes,
+                    tomorrowSchedule.fajr.timeMinutes,
+                    reminderCfg.tahajjudOffsetBeforeFajrMin
+                )
+                var targetCal = calendarAtMinutes(now, todayTargetMin)
+                if (targetCal.timeInMillis <= nowMs + 5_000L) {
+                    targetCal = calendarAtMinutes(tomorrowCal, tomorrowTargetMin)
+                }
+                targetCal.timeInMillis
             }
-            scheduleSafe(alarmMgr, targetCal.timeInMillis, tahajjudPending)
+            scheduleSafeAlarmClock(context, alarmMgr, targetMillis, tahajjudPending)
         } else {
             alarmMgr.cancel(tahajjudPending)
         }
+    }
+
+    fun formatTahajjudTargetTime(
+        cfg: MihrabReminderSettings,
+        lastThirdTimeStr: String,
+        fajrMinutes: Int,
+        useArabicDigits: Boolean
+    ): String {
+        val raw = if (cfg.tahajjudUseCustomClock) {
+            String.format("%02d:%02d", cfg.tahajjudCustomHour.coerceIn(0, 23), cfg.tahajjudCustomMinute.coerceIn(0, 59))
+        } else if (cfg.tahajjudOffsetBeforeFajrMin <= 0) {
+            lastThirdTimeStr
+        } else {
+            val mins = (fajrMinutes - cfg.tahajjudOffsetBeforeFajrMin + 1440) % 1440
+            String.format("%02d:%02d", mins / 60, mins % 60)
+        }
+        return formatNumerals(raw, useArabicDigits)
     }
 
     private fun computeTahajjudMinutes(lastThirdMin: Int, fajrMin: Int, offsetBeforeFajr: Int): Int {
@@ -292,6 +394,33 @@ object MihrabReminderManager {
             c.add(Calendar.DAY_OF_MONTH, 1)
         }
         return c.timeInMillis
+    }
+
+    private fun scheduleSafeAlarmClock(
+        context: Context,
+        alarmMgr: AlarmManager,
+        triggerAtMillis: Long,
+        operation: PendingIntent
+    ) {
+        val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            runCatching { alarmMgr.canScheduleExactAlarms() }.getOrDefault(false)
+        if (canExact) {
+            val showPending = PendingIntent.getActivity(
+                context,
+                905,
+                Intent(context, MainActivity::class.java).apply {
+                    putExtra("launch_tab", "prayer")
+                    addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val launchedClock = runCatching {
+                alarmMgr.setAlarmClock(AlarmManager.AlarmClockInfo(triggerAtMillis, showPending), operation)
+                true
+            }.getOrDefault(false)
+            if (launchedClock) return
+        }
+        scheduleSafe(alarmMgr, triggerAtMillis, operation)
     }
 
     private fun scheduleSafe(alarmMgr: AlarmManager, triggerAtMillis: Long, operation: PendingIntent) {
@@ -341,8 +470,12 @@ object MihrabReminderManager {
         val appCtx = context.applicationContext
         val prefs = appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val lang = AppLanguage.fromCode(prefs.getString(KEY_LANG, "ar") ?: "ar")
+        val indic = prefs.getBoolean(KEY_INDIC, true) && lang.isArabicUi
 
         when (intent.action) {
+            ACTION_STOP_ADHAN_BROADCAST -> {
+                AdhanRuntimeController.stopAdhan(appCtx)
+            }
             ACTION_PRAYER_ALARM -> {
                 val prayerKey = intent.getStringExtra(AdhanPlaybackService.EXTRA_PRAYER_KEY) ?: "prayer"
                 val prayerLabel = intent.getStringExtra(AdhanPlaybackService.EXTRA_PRAYER_LABEL) ?: "الصلاة"
@@ -357,17 +490,18 @@ object MihrabReminderManager {
                 }.getOrDefault(AdhanAlertMode.FULL_ADHAN.id)
                 val alertMode = if (!adhanEnabled) AdhanAlertMode.SILENT else AdhanAlertMode.fromId(modeId)
 
-                // Always post prayer entry notification or launch Adhan foreground service with Lock Screen / Volume button stop!
                 if (alertMode == AdhanAlertMode.SILENT) {
                     postReminderNotification(
                         context = appCtx,
                         notifId = 7101,
                         title = lang.pick("حان الآن وقت صلاة $prayerLabel", "Time for $prayerLabel Prayer", "$prayerLabel namozi vaqti kirdi"),
                         body = lang.pick("الموعد: $prayerTime • حيّ على الصلاة", "Time: $prayerTime • Stand for Salah", "Vaqt: $prayerTime • Namozga shoshiling"),
-                        launchTab = "prayer"
+                        launchTab = "prayer",
+                        withStopAction = false,
+                        language = lang
                     )
                 } else {
-                    AdhanRuntimeController.triggerAdhan(
+                    val startedFgs = AdhanRuntimeController.triggerAdhan(
                         context = appCtx,
                         prayerKey = prayerKey,
                         prayerLabel = prayerLabel,
@@ -377,6 +511,18 @@ object MihrabReminderManager {
                         customLocalPath = customPath,
                         language = lang
                     )
+                    if (!startedFgs) {
+                        // Lock-screen & Control-shade fallback notification with interactive Stop button
+                        postReminderNotification(
+                            context = appCtx,
+                            notifId = 7101,
+                            title = lang.pick("الأذان • حان وقت صلاة $prayerLabel", "Adhan • Time for $prayerLabel", "Azon • $prayerLabel vaqti kirdi"),
+                            body = lang.pick("الموعد: $prayerTime • اضغط لفتح محراب أو إيقاف الأذان", "Time: $prayerTime • Tap to open or stop", "Vaqt: $prayerTime"),
+                            launchTab = "prayer",
+                            withStopAction = true,
+                            language = lang
+                        )
+                    }
                 }
                 PrayerStatusNotificationManager.refreshFromSavedPrefs(appCtx)
                 rescheduleFromSavedPrefs(appCtx)
@@ -390,7 +536,14 @@ object MihrabReminderManager {
                 rescheduleFromSavedPrefs(appCtx)
             }
             ACTION_TAHAJJUD_ALARM -> {
-                sendTahajjudReminderNow(appCtx, language = lang)
+                val cfg = getSettings(appCtx)
+                val timeStr = if (cfg.tahajjudUseCustomClock) {
+                    formatNumerals(String.format("%02d:%02d", cfg.tahajjudCustomHour, cfg.tahajjudCustomMinute), indic)
+                } else {
+                    val cal = Calendar.getInstance()
+                    formatNumerals(String.format("%02d:%02d", cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE)), indic)
+                }
+                triggerTahajjudAlertOrNotif(appCtx, cfg, timeStr, lang)
                 rescheduleFromSavedPrefs(appCtx)
             }
             Intent.ACTION_BOOT_COMPLETED,
@@ -400,6 +553,43 @@ object MihrabReminderManager {
                 PrayerStatusNotificationManager.refreshFromSavedPrefs(appCtx)
             }
         }
+    }
+
+    private fun triggerTahajjudAlertOrNotif(
+        appCtx: Context,
+        cfg: MihrabReminderSettings,
+        timeLabel: String,
+        language: AppLanguage
+    ) {
+        if (cfg.tahajjudSoundId == "silent_notif") {
+            sendTahajjudReminderNow(appCtx, language)
+            return
+        }
+        val startedFgs = AdhanRuntimeController.triggerTahajjudAlert(
+            context = appCtx,
+            timeLabel = timeLabel,
+            soundId = cfg.tahajjudSoundId,
+            customAudioPath = cfg.tahajjudCustomAudioPath,
+            customAudioName = cfg.tahajjudCustomAudioName,
+            volumePercent = cfg.tahajjudVolumePercent,
+            language = language
+        )
+        if (!startedFgs) {
+            postReminderNotification(
+                context = appCtx,
+                notifId = 7301,
+                title = language.pick("صلاة التهجد والقيام • $timeLabel", "Tahajjud & Qiyam • $timeLabel", "Tahajjud vaqti • $timeLabel"),
+                body = language.pick("قم وصلِّ ركعتين في جوف الليل وادعُ الله.", "Stand for Qiyam al-Layl & sincere Dua.", "Tahajjud namozi va duo vaqti kirdi."),
+                launchTab = "prayer",
+                withStopAction = true,
+                language = language
+            )
+        }
+    }
+
+    fun testTahajjudAlertNow(context: Context, language: AppLanguage, timeLabel: String) {
+        val cfg = getSettings(context)
+        triggerTahajjudAlertOrNotif(context.applicationContext, cfg, timeLabel, language)
     }
 
     fun sendAdhkarReminderNow(context: Context, isMorning: Boolean, language: AppLanguage) {
@@ -426,7 +616,9 @@ object MihrabReminderManager {
             notifId = if (isMorning) 7201 else 7202,
             title = title,
             body = body,
-            launchTab = "dhikr"
+            launchTab = "dhikr",
+            withStopAction = false,
+            language = language
         )
     }
 
@@ -444,7 +636,9 @@ object MihrabReminderManager {
                 "Stand for Qiyam al-Layl & sincere Dua — the gates of mercy and acceptance are open.",
                 "Tahajjud namozi va ijobat duolari uchun eng muborak vaqt kirdi."
             ),
-            launchTab = "prayer"
+            launchTab = "prayer",
+            withStopAction = false,
+            language = language
         )
     }
 
@@ -453,7 +647,9 @@ object MihrabReminderManager {
         notifId: Int,
         title: String,
         body: String,
-        launchTab: String
+        launchTab: String,
+        withStopAction: Boolean,
+        language: AppLanguage
     ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -471,7 +667,7 @@ object MihrabReminderManager {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notif = NotificationCompat.Builder(context, REMINDERS_CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, REMINDERS_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notif_mihrab)
             .setContentTitle(title)
             .setContentText(body)
@@ -479,12 +675,27 @@ object MihrabReminderManager {
             .setContentIntent(openPending)
             .setAutoCancel(true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .build()
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(if (withStopAction) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_REMINDER)
+
+        if (withStopAction) {
+            val stopPending = PendingIntent.getBroadcast(
+                context,
+                notifId + 50,
+                Intent(context, MihrabAlarmReceiver::class.java).apply {
+                    action = ACTION_STOP_ADHAN_BROADCAST
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(
+                R.drawable.ic_media_stop,
+                language.pick("إيقاف الصوت", "Stop Alert", "To'xtatish"),
+                stopPending
+            )
+        }
 
         val mgr = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-        mgr.notify(notifId, notif)
+        mgr.notify(notifId, builder.build())
     }
 
     private fun ensureRemindersChannel(context: Context) {

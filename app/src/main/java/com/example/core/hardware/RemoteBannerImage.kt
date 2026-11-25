@@ -184,7 +184,14 @@ fun RemoteBannerImage(
                 }
 
                 bytes?.let { raw ->
-                    BitmapFactory.decodeByteArray(raw, 0, raw.size)?.asImageBitmap()
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
+                    var sample = 1
+                    while ((bounds.outWidth / sample) > 1200 || (bounds.outHeight / sample) > 1200) {
+                        sample *= 2
+                    }
+                    val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+                    BitmapFactory.decodeByteArray(raw, 0, raw.size, opts)?.asImageBitmap()
                 }
             }.getOrNull()
         }

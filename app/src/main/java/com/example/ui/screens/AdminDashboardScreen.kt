@@ -827,6 +827,23 @@ private fun AppOperationsTab(
                 }
 
                 Spacer(Modifier.height(6.dp))
+                Text(
+                    text = if (ops.bannerEnabled) {
+                        appLanguage.pick(
+                            "الحالة: الإعلان مفعّل وسيظهر بالصورة والرابط في الواجهة الرئيسية وعند دخول التطبيق.",
+                            "Status: Active — visible in Home feed & on app entry.",
+                            "Holat: Faol — bosh sahifada va kirishda ko'rinadi."
+                        )
+                    } else {
+                        appLanguage.pick(
+                            "تنبيه: مفتاح التفعيل بالأعلى مغلق حالياً — فعّله ليظهر الإعلان للمستخدمين.",
+                            "Note: Banner switch above is OFF — turn it ON to display.",
+                            "Eslatma: Yuqoridagi kalit O'CHIQ — ko'rinishi uchun yoqing."
+                        )
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (ops.bannerEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                )
                 Button(
                     onClick = { onSaveOperations(ops) },
                     shape = RoundedCornerShape(16.dp),
