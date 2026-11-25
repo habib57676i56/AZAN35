@@ -161,6 +161,7 @@ data class ReciterDoc(
     val styleEn: String = "Murattal",
     val editionId: String = "ar.alafasy",
     val everyAyahFolder: String = "Alafasy_128kbps",
+    val cloudAudioBaseUrl: String = "",
     val sortOrder: Long = 1L,
     val active: Boolean = true,
     val createdAt: Timestamp? = null,

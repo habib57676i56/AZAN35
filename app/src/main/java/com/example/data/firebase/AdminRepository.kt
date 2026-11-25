@@ -195,6 +195,7 @@ class AdminRepository(
                 "styleEn" to reciter.styleEn.trim().take(60),
                 "editionId" to reciter.editionId.trim().ifBlank { safeId }.take(80),
                 "everyAyahFolder" to reciter.everyAyahFolder.trim().ifBlank { "Alafasy_128kbps" }.take(120),
+                "cloudAudioBaseUrl" to reciter.cloudAudioBaseUrl.trim().take(500),
                 "sortOrder" to reciter.sortOrder.coerceIn(0L, 1000L),
                 "active" to reciter.active,
                 "updatedAt" to FieldValue.serverTimestamp()
@@ -244,6 +245,7 @@ class AdminRepository(
                         styleEn = r.styleEn,
                         editionId = r.editionId,
                         everyAyahFolder = r.everyAyahFolder,
+                        cloudAudioBaseUrl = r.cloudAudioBaseUrl,
                         sortOrder = r.sortOrder.toLong(),
                         active = r.active
                     )
@@ -504,6 +506,7 @@ class AdminRepository(
                             styleEn = obj.optString("styleEn", "Murattal"),
                             editionId = obj.optString("editionId", id),
                             everyAyahFolder = obj.optString("everyAyahFolder", "Alafasy_128kbps"),
+                            cloudAudioBaseUrl = obj.optString("cloudAudioBaseUrl", ""),
                             sortOrder = obj.optLong("sortOrder", (i + 1).toLong()),
                             active = obj.optBoolean("active", true)
                         )

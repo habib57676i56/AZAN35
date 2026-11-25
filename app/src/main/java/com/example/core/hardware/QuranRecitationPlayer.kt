@@ -9,6 +9,7 @@ import android.media.MediaPlayer
 import android.os.Build
 import android.os.PowerManager
 import android.util.Log
+import com.example.core.i18n.AppLanguage
 import com.example.data.firebase.MihrabRepository
 import com.example.data.local.AudioCacheDao
 import com.example.data.local.CachedAudioEntity
@@ -21,9 +22,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -37,6 +41,20 @@ enum class RecitationPlayMode {
     A_TO_B_LOOP
 }
 
+data class ReciterDownloadProgress(
+    val reciterId: String,
+    val currentSurah: Int,
+    val downloadedAyahs: Int,
+    val totalAyahs: Int,
+    val labelAr: String,
+    val labelEn: String,
+    val labelUz: String
+) {
+    fun labelFor(language: AppLanguage): String = language.pick(labelAr, labelEn, labelUz)
+    val fraction: Float
+        get() = if (totalAyahs > 0) (downloadedAyahs.toFloat() / totalAyahs.toFloat()).coerceIn(0f, 1f) else 0f
+}
+
 data class RecitationPlaybackState(
     val isPlaying: Boolean = false,
     val isPaused: Boolean = false,
@@ -47,12 +65,15 @@ data class RecitationPlaybackState(
     val currentGlobalAyah: Int = 1,
     val currentPage: Int = 1,
     val speed: Float = 1.0f,
+    val durationMs: Long = 0L,
+    val positionMs: Long = 0L,
     val playMode: RecitationPlayMode = RecitationPlayMode.CONTINUOUS_SURAH,
     val loopStartAyah: Int = 1,
     val loopEndAyah: Int = 7,
     val loopRepeatTotal: Int = 3,
     val loopRemaining: Int = 3,
     val offlineDownloadingCount: Int = 0,
+    val bulkDownload: ReciterDownloadProgress? = null,
     val errorMessage: String? = null
 )
 
@@ -86,15 +107,20 @@ class QuranRecitationPlayer(
     private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     private var focusRequest: AudioFocusRequest? = null
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(35, TimeUnit.SECONDS)
         .build()
 
     @Volatile
     private var audioCdnBase: String = "https://everyayah.com/data"
 
+    @Volatile
+    private var availableReciters: List<ReciterEntity> = MihrabRepository.DEFAULT_RECITERS
+
     private var mediaPlayer: MediaPlayer? = null
     private var playJob: Job? = null
+    private var bulkDownloadJob: Job? = null
+    private var positionTickerJob: Job? = null
 
     private val _state = MutableStateFlow(RecitationPlaybackState())
     val state: StateFlow<RecitationPlaybackState> = _state.asStateFlow()
@@ -107,6 +133,7 @@ class QuranRecitationPlayer(
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                 if (_state.value.isPlaying) {
                     runCatching { mediaPlayer?.pause() }
+                    stopPositionTicker()
                     _state.value = _state.value.copy(isPlaying = false, isPaused = true)
                     updateForegroundMediaService()
                 }
@@ -124,6 +151,14 @@ class QuranRecitationPlayer(
         RecitationPlayerHolder.instance = this
     }
 
+    fun setAvailableReciters(reciters: List<ReciterEntity>) {
+        if (reciters.isNotEmpty()) {
+            availableReciters = reciters
+        }
+    }
+
+    fun getAvailableReciters(): List<ReciterEntity> = availableReciters
+
     fun setAudioCdnBase(baseUrl: String) {
         val clean = baseUrl.trim().trimEnd('/')
         if (clean.startsWith("https://")) {
@@ -139,6 +174,34 @@ class QuranRecitationPlayer(
         _state.value = _state.value.copy(reciter = reciter, errorMessage = null)
         if (wasPlaying) {
             playAyah(s, a, p, reciter, _state.value.playMode)
+        } else if (_state.value.isPaused) {
+            updateForegroundMediaService()
+        }
+    }
+
+    fun switchToNextReciter() {
+        val list = availableReciters
+        if (list.isEmpty()) return
+        val curIdx = list.indexOfFirst { it.id == _state.value.reciter.id }
+        val next = list[(curIdx + 1) % list.size]
+        val st = _state.value
+        if (st.isPlaying || st.isPaused) {
+            playAyah(st.currentSurah, st.currentAyah, st.currentPage, next, st.playMode)
+        } else {
+            _state.value = st.copy(reciter = next)
+        }
+    }
+
+    fun switchToPreviousReciter() {
+        val list = availableReciters
+        if (list.isEmpty()) return
+        val curIdx = list.indexOfFirst { it.id == _state.value.reciter.id }.coerceAtLeast(0)
+        val prev = list[(curIdx - 1 + list.size) % list.size]
+        val st = _state.value
+        if (st.isPlaying || st.isPaused) {
+            playAyah(st.currentSurah, st.currentAyah, st.currentPage, prev, st.playMode)
+        } else {
+            _state.value = st.copy(reciter = prev)
         }
     }
 
@@ -146,6 +209,20 @@ class QuranRecitationPlayer(
         val safeSpeed = speed.coerceIn(0.75f, 2.0f)
         _state.value = _state.value.copy(speed = safeSpeed)
         applyPlaybackSpeed(safeSpeed)
+        if (_state.value.isPlaying || _state.value.isPaused) {
+            updateForegroundMediaService()
+        }
+    }
+
+    fun seekTo(posMs: Long) {
+        val mp = mediaPlayer ?: return
+        runCatching {
+            val dur = mp.duration.toLong().coerceAtLeast(0L)
+            val safePos = posMs.coerceIn(0L, dur).toInt()
+            mp.seekTo(safePos)
+            _state.value = _state.value.copy(positionMs = safePos.toLong())
+            updateForegroundMediaService()
+        }
     }
 
     fun playAyah(
@@ -166,6 +243,8 @@ class QuranRecitationPlayer(
             currentAyah = ayahNumber,
             currentGlobalAyah = global,
             currentPage = pageNumber.coerceIn(1, 604),
+            durationMs = 0L,
+            positionMs = 0L,
             playMode = mode,
             errorMessage = null
         )
@@ -219,7 +298,9 @@ class QuranRecitationPlayer(
         val mp = mediaPlayer
         if (_state.value.isPlaying && mp != null) {
             runCatching { mp.pause() }
-            _state.value = _state.value.copy(isPlaying = false, isPaused = true)
+            stopPositionTicker()
+            val pos = runCatching { mp.currentPosition.toLong() }.getOrDefault(_state.value.positionMs)
+            _state.value = _state.value.copy(isPlaying = false, isPaused = true, positionMs = pos)
             updateForegroundMediaService()
         } else if (_state.value.isPaused && mp != null) {
             requestAudioFocus()
@@ -228,6 +309,7 @@ class QuranRecitationPlayer(
                 mp.start()
             }
             _state.value = _state.value.copy(isPlaying = true, isPaused = false)
+            startPositionTicker()
             startForegroundMediaService()
         } else {
             val st = _state.value
@@ -281,6 +363,91 @@ class QuranRecitationPlayer(
         }
     }
 
+    fun observeCachedCountForReciter(reciterId: String): Flow<Int> =
+        audioCacheDao.observeCachedCountForReciter(reciterId)
+
+    fun observeCachedBytesForReciter(reciterId: String): Flow<Long> =
+        audioCacheDao.observeCachedBytesForReciter(reciterId)
+
+    fun downloadSurahForReciter(reciter: ReciterEntity, surahNumber: Int) {
+        val meta = QuranCatalog.surahByNumber(surahNumber)
+        downloadSurahsForReciter(
+            reciter = reciter,
+            surahNumbers = listOf(meta.number),
+            labelAr = "سورة ${meta.nameAr}",
+            labelEn = "Surah ${meta.nameEn}",
+            labelUz = "${meta.nameEn} surasi"
+        )
+    }
+
+    fun downloadJuzAmmaForReciter(reciter: ReciterEntity) {
+        downloadSurahsForReciter(
+            reciter = reciter,
+            surahNumbers = (78..114).toList(),
+            labelAr = "جزء عمّ كاملاً",
+            labelEn = "Full Juz 'Amma",
+            labelUz = "To'liq Amma juzi"
+        )
+    }
+
+    fun downloadSurahsForReciter(
+        reciter: ReciterEntity,
+        surahNumbers: List<Int>,
+        labelAr: String,
+        labelEn: String,
+        labelUz: String
+    ) {
+        if (surahNumbers.isEmpty()) return
+        bulkDownloadJob?.cancel()
+        val totalAyahs = surahNumbers.sumOf { QuranCatalog.surahByNumber(it).ayahCount }
+        bulkDownloadJob = scope.launch {
+            var completed = 0
+            try {
+                for (surahNum in surahNumbers) {
+                    val meta = QuranCatalog.surahByNumber(surahNum)
+                    for (ayahNum in 1..meta.ayahCount) {
+                        _state.value = _state.value.copy(
+                            bulkDownload = ReciterDownloadProgress(
+                                reciterId = reciter.id,
+                                currentSurah = surahNum,
+                                downloadedAyahs = completed,
+                                totalAyahs = totalAyahs,
+                                labelAr = labelAr,
+                                labelEn = labelEn,
+                                labelUz = labelUz
+                            )
+                        )
+                        val global = QuranCatalog.globalAyahNumber(surahNum, ayahNum)
+                        runCatching {
+                            ensureAyahCached(reciter, surahNum, ayahNum, global)
+                        }
+                        completed++
+                    }
+                }
+            } finally {
+                _state.value = _state.value.copy(bulkDownload = null)
+            }
+        }
+    }
+
+    fun cancelBulkDownload() {
+        bulkDownloadJob?.cancel()
+        bulkDownloadJob = null
+        _state.value = _state.value.copy(bulkDownload = null)
+    }
+
+    fun deleteReciterCache(reciterId: String) {
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                audioCacheDao.deleteForReciter(reciterId)
+                val reciterDir = File(audioDir, reciterId.replace(Regex("[^a-zA-Z0-9._-]"), "_"))
+                if (reciterDir.exists()) {
+                    reciterDir.deleteRecursively()
+                }
+            }
+        }
+    }
+
     fun stop() {
         stopFromService()
         stopForegroundMediaService()
@@ -288,20 +455,50 @@ class QuranRecitationPlayer(
 
     fun stopFromService() {
         playJob?.cancel()
+        stopPositionTicker()
         abandonAudioFocus()
         runCatching {
             mediaPlayer?.stop()
             mediaPlayer?.release()
         }
         mediaPlayer = null
-        _state.value = _state.value.copy(isPlaying = false, isPaused = false, isBuffering = false)
+        _state.value = _state.value.copy(
+            isPlaying = false,
+            isPaused = false,
+            isBuffering = false,
+            durationMs = 0L,
+            positionMs = 0L
+        )
     }
 
     fun release() {
+        cancelBulkDownload()
         stop()
         if (RecitationPlayerHolder.instance === this) {
             RecitationPlayerHolder.instance = null
         }
+    }
+
+    private fun startPositionTicker() {
+        positionTickerJob?.cancel()
+        positionTickerJob = scope.launch {
+            while (isActive && _state.value.isPlaying) {
+                val mp = mediaPlayer
+                if (mp != null) {
+                    val pos = runCatching { mp.currentPosition.toLong().coerceAtLeast(0L) }.getOrNull()
+                    val dur = runCatching { mp.duration.toLong().coerceAtLeast(0L) }.getOrNull()
+                    if (pos != null && dur != null) {
+                        _state.value = _state.value.copy(positionMs = pos, durationMs = dur)
+                    }
+                }
+                delay(700L)
+            }
+        }
+    }
+
+    private fun stopPositionTicker() {
+        positionTickerJob?.cancel()
+        positionTickerJob = null
     }
 
     private fun requestAudioFocus() {
@@ -337,6 +534,7 @@ class QuranRecitationPlayer(
     }
 
     private fun startMediaPlayer(file: File) {
+        stopPositionTicker()
         runCatching {
             mediaPlayer?.stop()
             mediaPlayer?.release()
@@ -352,19 +550,25 @@ class QuranRecitationPlayer(
             setDataSource(file.absolutePath)
             setOnPreparedListener { player ->
                 applyPlaybackSpeed(_state.value.speed, player)
+                val dur = runCatching { player.duration.toLong().coerceAtLeast(0L) }.getOrDefault(0L)
                 player.start()
                 _state.value = _state.value.copy(
                     isPlaying = true,
                     isPaused = false,
                     isBuffering = false,
+                    durationMs = dur,
+                    positionMs = 0L,
                     errorMessage = null
                 )
+                startPositionTicker()
                 updateForegroundMediaService()
             }
             setOnCompletionListener {
+                stopPositionTicker()
                 handleAyahCompleted()
             }
             setOnErrorListener { _, what, extra ->
+                stopPositionTicker()
                 Log.e(TAG, "MediaPlayer error what=$what extra=$extra")
                 _state.value = _state.value.copy(
                     isPlaying = false,
@@ -382,7 +586,7 @@ class QuranRecitationPlayer(
         val st = _state.value
         when (st.playMode) {
             RecitationPlayMode.SINGLE_AYAH -> {
-                _state.value = st.copy(isPlaying = false, isPaused = false)
+                _state.value = st.copy(isPlaying = false, isPaused = false, positionMs = 0L)
                 stopForegroundMediaService()
             }
             RecitationPlayMode.A_TO_B_LOOP -> {
@@ -399,7 +603,7 @@ class QuranRecitationPlayer(
                         playAyah(st.currentSurah, st.loopStartAyah, page, st.reciter, RecitationPlayMode.A_TO_B_LOOP)
                     }
                 } else {
-                    _state.value = st.copy(isPlaying = false, isPaused = false, loopRemaining = 0)
+                    _state.value = st.copy(isPlaying = false, isPaused = false, loopRemaining = 0, positionMs = 0L)
                     stopForegroundMediaService()
                 }
             }
@@ -415,6 +619,21 @@ class QuranRecitationPlayer(
         val meta = QuranCatalog.surahByNumber(surah)
         if (ayah == 1) return meta.startPage
         return fallbackPage
+    }
+
+    private fun resolveCloudStorageUrl(base: String, surahStr: String, ayahStr: String): String {
+        val clean = base.trim()
+        val fileName = "$surahStr$ayahStr.mp3"
+        return if (clean.contains("firebasestorage.googleapis.com")) {
+            if (clean.contains("?alt=media")) {
+                val prefix = clean.substringBefore("?alt=media").trimEnd('/')
+                "$prefix%2F$fileName?alt=media"
+            } else {
+                "${clean.trimEnd('/')}%2F$fileName?alt=media"
+            }
+        } else {
+            "${clean.trimEnd('/')}/$fileName"
+        }
     }
 
     private suspend fun ensureAyahCached(
@@ -443,12 +662,17 @@ class QuranRecitationPlayer(
 
         val surahStr = surahNumber.toString().padStart(3, '0')
         val ayahStr = ayahNumber.toString().padStart(3, '0')
+
+        val cloudUrl = reciter.cloudAudioBaseUrl.takeIf { it.startsWith("https://") }?.let {
+            resolveCloudStorageUrl(it, surahStr, ayahStr)
+        }
         val primaryUrl = "${audioCdnBase}/${reciter.everyAyahFolder}/$surahStr$ayahStr.mp3"
         val fallbackUrl = "https://cdn.islamic.network/quran/audio/128/${reciter.editionId}/$globalAyah.mp3"
 
-        val bytes = downloadBytesOrNull(primaryUrl)
+        val bytes = cloudUrl?.let { downloadBytesOrNull(it) }
+            ?: downloadBytesOrNull(primaryUrl)
             ?: downloadBytesOrNull(fallbackUrl)
-            ?: throw IllegalStateException("تعذر تنزيل التلاوة الصوتية؛ تحقق من الاتصال.")
+            ?: throw IllegalStateException("تعذر تنزيل التلاوة الصوتية من السحابة؛ تحقق من الاتصال.")
 
         targetFile.writeBytes(bytes)
         audioCacheDao.insertCachedAudio(

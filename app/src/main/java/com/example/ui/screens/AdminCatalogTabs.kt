@@ -120,9 +120,12 @@ fun RecitersCrudTab(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "${r.editionId} • ${r.everyAyahFolder}",
+                            text = buildString {
+                                append("${r.editionId} • ${r.everyAyahFolder}")
+                                if (r.cloudAudioBaseUrl.isNotBlank()) append(" • ☁ Cloud")
+                            },
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (r.cloudAudioBaseUrl.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -153,11 +156,12 @@ fun RecitersCrudTab(
         var styleEn by remember(current) { mutableStateOf(current.styleEn) }
         var editionId by remember(current) { mutableStateOf(current.editionId) }
         var folder by remember(current) { mutableStateOf(current.everyAyahFolder) }
+        var cloudUrl by remember(current) { mutableStateOf(current.cloudAudioBaseUrl) }
         var sortOrder by remember(current) { mutableStateOf(current.sortOrder.toString()) }
 
         AlertDialog(
             onDismissRequest = { editing = null },
-            title = { Text(appLanguage.pick("بيانات القارئ", "Reciter Details", "Qori ma'lumotlari")) },
+            title = { Text(appLanguage.pick("بيانات القارئ والتخزين السحابي", "Reciter & Cloud Audio", "Qori va bulutli audio")) },
             text = {
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -170,6 +174,21 @@ fun RecitersCrudTab(
                     OutlinedTextField(value = styleEn, onValueChange = { styleEn = it }, label = { Text("Style (EN)") }, singleLine = true)
                     OutlinedTextField(value = editionId, onValueChange = { editionId = it }, label = { Text("AlQuranCloud Edition ID") }, singleLine = true)
                     OutlinedTextField(value = folder, onValueChange = { folder = it }, label = { Text("EveryAyah Folder") }, singleLine = true)
+                    OutlinedTextField(
+                        value = cloudUrl,
+                        onValueChange = { cloudUrl = it },
+                        label = {
+                            Text(
+                                appLanguage.pick(
+                                    "رابط التخزين السحابي (Firebase Storage / CDN)",
+                                    "Cloud Storage Base URL (optional)",
+                                    "Bulutli xotira havolasi (ixtiyoriy)"
+                                )
+                            )
+                        },
+                        placeholder = { Text("https://firebasestorage.googleapis.com/v0/b/.../o/reciters%2Falafasy") },
+                        singleLine = true
+                    )
                     OutlinedTextField(
                         value = sortOrder,
                         onValueChange = { sortOrder = it.filter { ch -> ch.isDigit() } },
@@ -190,6 +209,7 @@ fun RecitersCrudTab(
                             styleEn = styleEn,
                             editionId = editionId,
                             everyAyahFolder = folder,
+                            cloudAudioBaseUrl = cloudUrl,
                             sortOrder = sortOrder.toLongOrNull() ?: 1L
                         )
                     )

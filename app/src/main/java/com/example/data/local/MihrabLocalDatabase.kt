@@ -46,7 +46,8 @@ data class ReciterEntity(
     val editionId: String,
     val everyAyahFolder: String,
     val sortOrder: Int,
-    val active: Boolean = true
+    val active: Boolean = true,
+    val cloudAudioBaseUrl: String = ""
 )
 
 @Entity(tableName = "cached_audio")
@@ -158,6 +159,15 @@ interface AudioCacheDao {
     @Query("SELECT COUNT(*) FROM cached_audio WHERE reciterId = :reciterId")
     fun observeCachedCountForReciter(reciterId: String): Flow<Int>
 
+    @Query("SELECT COALESCE(SUM(fileSizeBytes), 0) FROM cached_audio WHERE reciterId = :reciterId")
+    fun observeCachedBytesForReciter(reciterId: String): Flow<Long>
+
+    @Query("SELECT reciterId FROM cached_audio GROUP BY reciterId")
+    fun observeRecitersWithCache(): Flow<List<String>>
+
+    @Query("DELETE FROM cached_audio WHERE reciterId = :reciterId")
+    suspend fun deleteForReciter(reciterId: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCachedAudio(entry: CachedAudioEntity)
 }
@@ -211,7 +221,7 @@ interface AdhkarDao {
         AdhanVoiceEntity::class,
         AdhkarEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class MihrabLocalDatabase : RoomDatabase() {

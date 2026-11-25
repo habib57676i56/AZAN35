@@ -75,6 +75,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.core.hardware.AdhanAudioPlayer
+import com.example.core.hardware.DynamicIslandReciterOverlay
 import com.example.core.hardware.PrayerStatusNotificationManager
 import com.example.core.hardware.QuranTtsAudioPlayer
 import com.example.core.hardware.RecitationPlayerHolder
@@ -338,6 +339,11 @@ private fun AuthenticatedMihrabShell(
     val useIndic by mihrabViewModel.useIndicNumerals.collectAsStateWithLifecycle()
     val quranDefaults by mihrabViewModel.quranDefaultsState.collectAsStateWithLifecycle()
     val appOperations by mihrabViewModel.appOperationsState.collectAsStateWithLifecycle()
+    val reciters by mihrabViewModel.recitersState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(reciters) {
+        recitationPlayer.setAvailableReciters(reciters)
+    }
 
     LaunchedEffect(quranDefaults) {
         mushafRepository.setApiSources(
@@ -943,6 +949,19 @@ private fun AuthenticatedMihrabShell(
                                     }
                                 }
                             }
+
+                            DynamicIslandReciterOverlay(
+                                recitationPlayer = recitationPlayer,
+                                reciters = reciters,
+                                appLanguage = appLanguage,
+                                strings = strings,
+                                onOpenMushaf = {
+                                    quranSubTab = 0
+                                    quranSubTabNonce += 1
+                                    selectedTab = 1
+                                },
+                                modifier = Modifier.align(Alignment.TopCenter)
+                            )
                         }
                     }
                 }

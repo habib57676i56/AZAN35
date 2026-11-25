@@ -166,6 +166,7 @@ service cloud.firestore {
              data.styleEn is string && data.styleEn.size() <= 60 &&
              data.editionId is string && data.editionId.size() >= 1 && data.editionId.size() <= 80 &&
              data.everyAyahFolder is string && data.everyAyahFolder.size() >= 1 && data.everyAyahFolder.size() <= 120 &&
+             (!('cloudAudioBaseUrl' in data) || (data.cloudAudioBaseUrl is string && data.cloudAudioBaseUrl.size() <= 500)) &&
              data.sortOrder is int && data.sortOrder >= 0 && data.sortOrder <= 1000 &&
              data.active is bool &&
              isValidTimestamp(data.createdAt) &&

@@ -307,7 +307,8 @@ class MihrabRepository(
                                 editionId = d.editionId,
                                 everyAyahFolder = d.everyAyahFolder,
                                 sortOrder = d.sortOrder.toInt(),
-                                active = d.active
+                                active = d.active,
+                                cloudAudioBaseUrl = d.cloudAudioBaseUrl
                             )
                         }
                         reciterDao?.upsertAll(mapped)

@@ -964,60 +964,25 @@ fun MadinahMushafReader(
         }
     }
 
-    // --- DYNAMIC RECITER SELECTOR SHEET ---
+    // --- CLOUD STORAGE & RECITERS AUDIO LIBRARY SHEET ---
     if (showReciterSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showReciterSheet = false },
-            containerColor = glass.glassFillStrong
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 520.dp)
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(strings.chooseReciter, style = MaterialTheme.typography.titleLarge)
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(reciters, key = { it.id }) { reciter ->
-                        val selected = audioState.reciter.id == reciter.id
-                        LiquidGlassCard(
-                            onClick = {
-                                recitationPlayer.setReciter(reciter)
-                                viewModel.updateSettings(mapOf("preferredReciterId" to reciter.id))
-                                showReciterSheet = false
-                            },
-                            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f) else glass.glassFill,
-                            contentPadding = 14.dp,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text(
-                                        text = if (isArabicUi) reciter.nameAr else reciter.nameEn,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = if (isArabicUi) reciter.styleAr else reciter.styleEn,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                if (selected) {
-                                    Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
-                                }
-                            }
-                        }
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-            }
-        }
+        val currentSurahNum = (pagesMap[activePageNum] as? UiState.Success)?.data?.ayahs?.firstOrNull()?.surahNumber
+            ?: QuranCatalog.surahs.lastOrNull { it.startPage <= activePageNum }?.number
+            ?: 1
+        ReciterCloudLibrarySheet(
+            reciters = reciters,
+            audioState = audioState,
+            recitationPlayer = recitationPlayer,
+            activeSurahNumber = currentSurahNum,
+            activePageNumber = activePageNum,
+            appLanguage = appLanguage,
+            strings = strings,
+            onSelectReciter = { reciter ->
+                recitationPlayer.setReciter(reciter)
+                viewModel.updateSettings(mapOf("preferredReciterId" to reciter.id))
+            },
+            onDismiss = { showReciterSheet = false }
+        )
     }
 
     // --- A-TO-B MEMORIZATION LOOP DIALOG ---
@@ -1578,6 +1543,14 @@ private fun DockedRecitationAudioBar(
                         icon = Icons.Rounded.CloudDownload,
                         label = if (audioState.offlineDownloadingCount > 0) "..."
                         else if (isArabicUi) "حفظ الصفحة" else "Cache Page"
+                    )
+                }
+                item {
+                    LiquidGlassPill(
+                        selected = audioState.bulkDownload != null,
+                        onClick = onOpenReciters,
+                        icon = Icons.Rounded.RecordVoiceOver,
+                        label = if (isArabicUi) "سحابة المشايخ" else "Cloud Reciters"
                     )
                 }
             }
