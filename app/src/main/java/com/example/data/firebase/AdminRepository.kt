@@ -92,7 +92,10 @@ class AdminRepository(
             require(cleanKey.isNotEmpty()) { "Invalid config key" }
             val ref = db.collection("adminConfigs").document(cleanKey)
             val existing = ref.get().await()
-            val valueJson = jsonObject.toString().take(15900)
+            val valueJson = jsonObject.toString()
+            require(valueJson.length <= 340_000) {
+                "حجم البيانات أو الصورة كبير جداً؛ الرجاء اختيار صورة أصغر."
+            }
             if (existing.exists()) {
                 ref.update(
                     mapOf(

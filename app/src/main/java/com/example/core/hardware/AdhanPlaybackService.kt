@@ -31,6 +31,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.MainActivity
 import com.example.R
@@ -276,7 +277,6 @@ class AdhanPlaybackService : Service() {
             isTahajjud = isTahajjud
         )
         AdhanRuntimeController.setRinging(info)
-        updateMediaSessionState(info, language)
 
         val notification = buildNotification(info, language)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -443,79 +443,8 @@ class AdhanPlaybackService : Service() {
     }
 
     private fun initMediaSession() {
-        val session = MediaSession(this, "MihrabAdhanSession").apply {
-            setCallback(object : MediaSession.Callback() {
-                override fun onPause() = stopAndShutdown()
-                override fun onStop() = stopAndShutdown()
-                override fun onPlay() = stopAndShutdown()
-                override fun onCustomAction(action: String, extras: Bundle?) {
-                    if (action == CUSTOM_ACTION_STOP) {
-                        stopAndShutdown()
-                    }
-                }
-            })
-            isActive = true
-        }
-        mediaSession = session
-    }
-
-    private fun updateMediaSessionState(info: AdhanRingingInfo, language: AppLanguage) {
-        val session = mediaSession ?: return
-        val art = artworkBitmap ?: buildAdhanArtwork(info.isTahajjud).also { artworkBitmap = it }
-        val title = if (info.isTahajjud) {
-            language.pick(
-                "منبه التهجد والقيام • ${info.prayerTime}",
-                "Tahajjud Alert • ${info.prayerTime}",
-                "Tahajjud uyg'otkichi • ${info.prayerTime}"
-            )
-        } else {
-            language.pick(
-                "حان وقت صلاة ${info.prayerLabel} • ${info.prayerTime}",
-                "Adhan: ${info.prayerLabel} • ${info.prayerTime}",
-                "Azon: ${info.prayerLabel} • ${info.prayerTime}"
-            )
-        }
-        val subtitle = "${info.muezzinLabel} • ${
-            language.pick(
-                "اضغط إيقاف أو زر الصوت",
-                "Tap Stop or Volume key",
-                "To'xtatish yoki ovoz tugmasini bosing"
-            )
-        }"
-
-        session.setMetadata(
-            MediaMetadata.Builder()
-                .putString(MediaMetadata.METADATA_KEY_TITLE, title)
-                .putString(MediaMetadata.METADATA_KEY_ARTIST, subtitle)
-                .putString(MediaMetadata.METADATA_KEY_ALBUM, "محراب • Mihrab")
-                .putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, art)
-                .build()
-        )
-
-        val stopLabel = if (info.isTahajjud) {
-            language.pick("إيقاف التهجد", "Stop Alert", "To'xtatish")
-        } else {
-            language.pick("إيقاف الأذان", "Stop Adhan", "Azonni to'xtatish")
-        }
-
-        val customStop = PlaybackState.CustomAction.Builder(
-            CUSTOM_ACTION_STOP,
-            stopLabel,
-            R.drawable.ic_media_stop
-        ).build()
-
-        session.setPlaybackState(
-            PlaybackState.Builder()
-                .setActions(
-                    PlaybackState.ACTION_STOP or
-                        PlaybackState.ACTION_PAUSE or
-                        PlaybackState.ACTION_PLAY_PAUSE or
-                        PlaybackState.ACTION_PLAY
-                )
-                .addCustomAction(customStop)
-                .setState(PlaybackState.STATE_PLAYING, 0L, 1.0f)
-                .build()
-        )
+        // Intentionally kept inactive so Android does not convert the Adhan alert into a tiny Media Player widget;
+        // instead buildNotification renders a full Lock-Screen & Control-Shade text button ("إيقاف الأذان").
     }
 
     private fun buildNotification(info: AdhanRingingInfo, language: AppLanguage): Notification {
@@ -529,7 +458,7 @@ class AdhanPlaybackService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Use broadcast receiver pending intent so Stop works reliably from Lock Screen & Control Shade
+        // BroadcastReceiver PendingIntent ensures tapping "إيقاف الأذان" works reliably from Lock Screen & Control Shade
         val stopPending = PendingIntent.getBroadcast(
             this,
             902,
@@ -553,50 +482,48 @@ class AdhanPlaybackService : Service() {
             )
         }
         val body = language.pick(
-            "${info.muezzinLabel} (${info.prayerTime}) • اضغط إيقاف أو زر خفض/رفع الصوت",
-            "${info.muezzinLabel} (${info.prayerTime}) • Tap Stop or press Volume key to mute",
-            "${info.muezzinLabel} (${info.prayerTime}) • To'xtatish yoki ovoz tugmasini bosing"
+            "${info.muezzinLabel} (${info.prayerTime}) — اضغط على «إيقاف الأذان» أو زر الصوت لإسكات الأذان.",
+            "${info.muezzinLabel} (${info.prayerTime}) — Tap \"Stop Adhan\" or press Volume key to silence.",
+            "${info.muezzinLabel} (${info.prayerTime}) — To'xtatish tugmasini yoki ovoz tugmasini bosing."
         )
         val stopLabel = if (info.isTahajjud) {
-            language.pick("إيقاف التنبيه", "Stop Alert", "Ogohlantirishni to'xtatish")
+            language.pick("إيقاف التهجد", "Stop Tahajjud", "To'xtatish")
         } else {
             language.pick("إيقاف الأذان", "Stop Adhan", "Azonni to'xtatish")
         }
-
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, CHANNEL_ID)
-        } else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(this)
-                .setPriority(Notification.PRIORITY_MAX)
-        }
+        val openLabel = language.pick("فتح محراب", "Open Mihrab", "Mihrobni ochish")
 
         val art = artworkBitmap ?: buildAdhanArtwork(info.isTahajjud).also { artworkBitmap = it }
-        builder
+        return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notif_mihrab)
             .setLargeIcon(art)
             .setContentTitle(title)
             .setContentText(body)
-            .setStyle(
-                Notification.MediaStyle()
-                    .setMediaSession(mediaSession?.sessionToken)
-                    .setShowActionsInCompactView(0)
-            )
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body).setBigContentTitle(title))
             .setContentIntent(openPending)
             .setDeleteIntent(stopPending)
             .setOngoing(true)
+            .setAutoCancel(false)
             .setShowWhen(true)
-            .setVisibility(Notification.VISIBILITY_PUBLIC)
-            .setCategory(Notification.CATEGORY_ALARM)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .addAction(
-                Notification.Action.Builder(
+                NotificationCompat.Action.Builder(
                     R.drawable.ic_media_stop,
                     stopLabel,
                     stopPending
                 ).build()
             )
-
-        return builder.build()
+            .addAction(
+                NotificationCompat.Action.Builder(
+                    R.drawable.ic_notif_mihrab,
+                    openLabel,
+                    openPending
+                ).build()
+            )
+            .build()
     }
 
     private fun createChannel() {
@@ -604,10 +531,10 @@ class AdhanPlaybackService : Service() {
             val mgr = getSystemService(NotificationManager::class.java) ?: return
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "تنبيهات الأذان والمواقيت",
+                "تنبيهات الأذان والتهجد",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "إشعارات دخول وقت الصلاة وتشغيل الأذان مع التحكم من شاشة القفل ولوحة التحكم"
+                description = "إشعارات دخول وقت الصلاة والتهجد مع زر نصي لإيقاف الأذان في شاشة القفل وشريط التحكم"
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
                 setSound(null, null) // Service handles Adhan/Tahajjud audio directly so volume keys silence cleanly
             }
@@ -707,7 +634,7 @@ class AdhanPlaybackService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
-        const val CHANNEL_ID = "mihrab_adhan_alerts"
+        const val CHANNEL_ID = "mihrab_adhan_alerts_v2"
         const val NOTIFICATION_ID = 7088
         const val ACTION_PLAY_ADHAN = "com.example.action.PLAY_ADHAN"
         const val ACTION_STOP_ADHAN = "com.example.action.STOP_ADHAN"

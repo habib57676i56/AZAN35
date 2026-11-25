@@ -73,6 +73,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
@@ -791,36 +792,115 @@ private fun AuthenticatedMihrabShell(
                                             bannerLink.isNotBlank()
                                         val bannerSignature = "$bannerTitle|$bannerBody|${appOperations.bannerImageUrl.take(48)}|$bannerLink|${appOperations.bannerTone}"
 
+                                        LaunchedEffect(appOperations.bannerEnabled, hasAdContent, bannerSignature) {
+                                            if (appOperations.bannerEnabled && hasAdContent) {
+                                                MihrabReminderManager.postBannerAnnouncementNotificationIfNew(
+                                                    context = context,
+                                                    signature = bannerSignature,
+                                                    title = bannerTitle,
+                                                    body = bannerBody,
+                                                    imageUrl = appOperations.bannerImageUrl,
+                                                    linkUrl = bannerLink,
+                                                    language = appLanguage
+                                                )
+                                            }
+                                        }
+
+                                        val toneBorder = when (appOperations.bannerTone) {
+                                            "URGENT", "ALERT" -> MaterialTheme.colorScheme.error.copy(alpha = 0.65f)
+                                            "SUCCESS" -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.65f)
+                                            else -> BurnishedGold.copy(alpha = 0.65f)
+                                        }
+                                        val toneContent = when (appOperations.bannerTone) {
+                                            "URGENT", "ALERT" -> MaterialTheme.colorScheme.error
+                                            else -> MaterialTheme.colorScheme.primary
+                                        }
+                                        val openBannerLink = {
+                                            if (bannerLink.isNotBlank()) {
+                                                val normalized = if (bannerLink.startsWith("http://") || bannerLink.startsWith("https://")) {
+                                                    bannerLink
+                                                } else {
+                                                    "https://$bannerLink"
+                                                }
+                                                runCatching {
+                                                    context.startActivity(
+                                                        Intent(Intent.ACTION_VIEW, Uri.parse(normalized)).apply {
+                                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        if (!showAdminDashboard && appOperations.bannerEnabled && hasAdContent) {
+                                            Surface(
+                                                onClick = { bannerDismissedKey = "" },
+                                                color = glass.glassFillStrong,
+                                                border = BorderStroke(1.dp, toneBorder),
+                                                shape = RoundedCornerShape(16.dp),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                                                    .testTag("top_announcement_strip")
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = MihrabIcons.BroadcastBanner,
+                                                        contentDescription = null,
+                                                        tint = toneContent,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                    Text(
+                                                        text = bannerTitle.ifBlank {
+                                                            bannerBody.ifBlank {
+                                                                appLanguage.pick("إعلان وتنبيه هام في محراب", "Important Announcement", "Muhim e'lon")
+                                                            }
+                                                        },
+                                                        style = MaterialTheme.typography.labelLarge,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = toneContent,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+                                                    Surface(
+                                                        onClick = {
+                                                            if (bannerLink.isNotBlank() && !hasImage && bannerBody.isBlank()) {
+                                                                openBannerLink()
+                                                            } else {
+                                                                bannerDismissedKey = ""
+                                                            }
+                                                        },
+                                                        color = toneContent.copy(alpha = 0.14f),
+                                                        shape = CircleShape
+                                                    ) {
+                                                        Text(
+                                                            text = if (bannerLink.isNotBlank() && !hasImage && bannerBody.isBlank()) {
+                                                                bannerCta
+                                                            } else {
+                                                                appLanguage.pick("عرض", "View", "Ko'rish")
+                                                            },
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = toneContent,
+                                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+
                                         if (!showAdminDashboard &&
                                             appOperations.bannerEnabled &&
                                             hasAdContent &&
                                             bannerDismissedKey != bannerSignature
                                         ) {
-                                            val toneBorder = when (appOperations.bannerTone) {
-                                                "URGENT", "ALERT" -> MaterialTheme.colorScheme.error.copy(alpha = 0.65f)
-                                                "SUCCESS" -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.65f)
-                                                else -> BurnishedGold.copy(alpha = 0.65f)
-                                            }
-                                            val toneContent = when (appOperations.bannerTone) {
-                                                "URGENT", "ALERT" -> MaterialTheme.colorScheme.error
-                                                else -> MaterialTheme.colorScheme.primary
-                                            }
-                                            val openBannerLink = {
-                                                if (bannerLink.isNotBlank()) {
-                                                    val normalized = if (bannerLink.startsWith("http://") || bannerLink.startsWith("https://")) {
-                                                        bannerLink
-                                                    } else {
-                                                        "https://$bannerLink"
-                                                    }
-                                                    runCatching {
-                                                        context.startActivity(
-                                                            Intent(Intent.ACTION_VIEW, Uri.parse(normalized)).apply {
-                                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                                            }
-                                                        )
-                                                    }
-                                                }
-                                            }
                                             Dialog(onDismissRequest = { bannerDismissedKey = bannerSignature }) {
                                                 LiquidGlassCard(
                                                     shape = RoundedCornerShape(26.dp),

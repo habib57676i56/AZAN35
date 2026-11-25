@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Lock
@@ -845,7 +848,19 @@ private fun AppOperationsTab(
                     color = if (ops.bannerEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                 )
                 Button(
-                    onClick = { onSaveOperations(ops) },
+                    onClick = {
+                        val hasAnyContent = ops.bannerTitleAr.isNotBlank() ||
+                            ops.bannerTitleEn.isNotBlank() ||
+                            ops.bannerTitleUz.isNotBlank() ||
+                            ops.bannerBodyAr.isNotBlank() ||
+                            ops.bannerBodyEn.isNotBlank() ||
+                            ops.bannerBodyUz.isNotBlank() ||
+                            ops.bannerImageUrl.isNotBlank() ||
+                            ops.bannerLinkUrl.isNotBlank()
+                        val toPublish = if (hasAnyContent) ops.copy(bannerEnabled = true) else ops
+                        ops = toPublish
+                        onSaveOperations(toPublish)
+                    },
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -855,9 +870,42 @@ private fun AppOperationsTab(
                     Spacer(Modifier.width(8.dp))
                     Text(
                         appLanguage.pick(
-                            "حفظ ونشر الإعلان الآن",
+                            "حفظ ونشر الإعلان الآن (في الشريط والرئيسية والإشعارات)",
                             "Save & Publish Ad Banner Now",
                             "E'lonni hozir saqlash va nashr qilish"
+                        )
+                    )
+                }
+                OutlinedButton(
+                    onClick = {
+                        val subj = ops.bannerTitleAr.ifBlank { ops.bannerTitleEn }.ifBlank { "تنبيه هام من تطبيق محراب" }
+                        val bodyTxt = buildString {
+                            val b = ops.bannerBodyAr.ifBlank { ops.bannerBodyEn }
+                            if (b.isNotBlank()) appendLine(b)
+                            if (ops.bannerLinkUrl.isNotBlank()) {
+                                appendLine()
+                                appendLine("الرابط: ${ops.bannerLinkUrl.trim()}")
+                            }
+                        }
+                        val emailIntent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")).apply {
+                            putExtra(Intent.EXTRA_SUBJECT, subj)
+                            putExtra(Intent.EXTRA_TEXT, bodyTxt)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        runCatching { context.startActivity(emailIntent) }
+                    },
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("admin_email_alert_button")
+                ) {
+                    Icon(Icons.Rounded.Email, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        appLanguage.pick(
+                            "إرسال التذكير الهام بالبريد الإلكتروني",
+                            "Send Important Alert via Email",
+                            "Muhim eslatmani email orqali yuborish"
                         )
                     )
                 }

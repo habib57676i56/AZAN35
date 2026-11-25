@@ -9,9 +9,12 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
+import android.util.Base64
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.MainActivity
@@ -81,6 +84,7 @@ object MihrabReminderManager {
     private const val KEY_ADHAN_VOICE = "cached_adhan_voice"
     private const val KEY_CUSTOM_ADHAN_PATH = "cached_custom_adhan_path"
     private const val KEY_PER_PRAYER_JSON = "cached_per_prayer_json"
+    private const val KEY_LAST_AD_NOTIF_SIG = "last_ad_banner_notif_sig"
 
     const val ACTION_PRAYER_ALARM = "com.example.action.PRAYER_ALARM"
     const val ACTION_ADHKAR_MORNING = "com.example.action.ADHKAR_MORNING"
@@ -89,6 +93,7 @@ object MihrabReminderManager {
     const val ACTION_STOP_ADHAN_BROADCAST = "com.example.action.STOP_ADHAN_BROADCAST"
 
     const val REMINDERS_CHANNEL_ID = "mihrab_spiritual_reminders"
+    const val IMPORTANT_ALERTS_CHANNEL_ID = "mihrab_important_announcements"
 
     private const val REQ_FAJR = 4101
     private const val REQ_DHUHR = 4102
@@ -711,5 +716,116 @@ object MihrabReminderManager {
             }
             mgr.createNotificationChannel(channel)
         }
+    }
+
+    suspend fun postBannerAnnouncementNotificationIfNew(
+        context: Context,
+        signature: String,
+        title: String,
+        body: String,
+        imageUrl: String,
+        linkUrl: String,
+        language: AppLanguage
+    ) = withContext(Dispatchers.IO) {
+        val appCtx = context.applicationContext
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(appCtx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return@withContext
+        }
+        val prefs = appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (prefs.getString(KEY_LAST_AD_NOTIF_SIG, "") == signature) {
+            return@withContext
+        }
+        prefs.edit().putString(KEY_LAST_AD_NOTIF_SIG, signature).apply()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val mgr = appCtx.getSystemService(NotificationManager::class.java)
+            mgr?.createNotificationChannel(
+                NotificationChannel(
+                    IMPORTANT_ALERTS_CHANNEL_ID,
+                    "الإعلانات والتنبيهات الهامة",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "تنبيهات وإعلانات محراب الهامة"
+                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                }
+            )
+        }
+
+        val notifTitle = title.ifBlank {
+            language.pick("إشعار هام من محراب", "Important Notice from Mihrab", "Mihrobdan muhim xabar")
+        }
+        val notifBody = body.ifBlank {
+            linkUrl.ifBlank {
+                language.pick("اضغط لعرض التفاصيل داخل التطبيق.", "Tap to view details inside Mihrab.", "Tafsilotlarni ilovada ko'ring.")
+            }
+        }
+
+        val openAppPending = PendingIntent.getActivity(
+            appCtx,
+            7401,
+            Intent(appCtx, MainActivity::class.java).apply {
+                putExtra("launch_tab", "prayer")
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val primaryPending = if (linkUrl.isNotBlank()) {
+            val normalized = if (linkUrl.startsWith("http://") || linkUrl.startsWith("https://")) linkUrl else "https://$linkUrl"
+            PendingIntent.getActivity(
+                appCtx,
+                7402,
+                Intent(Intent.ACTION_VIEW, Uri.parse(normalized)).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        } else {
+            openAppPending
+        }
+
+        val previewBitmap: Bitmap? = runCatching {
+            if (imageUrl.startsWith("data:image", ignoreCase = true)) {
+                val comma = imageUrl.indexOf(',')
+                if (comma > 0) {
+                    val raw = Base64.decode(imageUrl.substring(comma + 1), Base64.DEFAULT)
+                    BitmapFactory.decodeByteArray(raw, 0, raw.size)
+                } else null
+            } else null
+        }.getOrNull()
+
+        val builder = NotificationCompat.Builder(appCtx, IMPORTANT_ALERTS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notif_mihrab)
+            .setContentTitle(notifTitle)
+            .setContentText(notifBody)
+            .setContentIntent(openAppPending)
+            .setAutoCancel(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+
+        if (previewBitmap != null) {
+            builder.setLargeIcon(previewBitmap)
+                .setStyle(
+                    NotificationCompat.BigPictureStyle()
+                        .bigPicture(previewBitmap)
+                        .bigLargeIcon(null as Bitmap?)
+                        .setSummaryText(notifBody)
+                )
+        } else {
+            builder.setStyle(NotificationCompat.BigTextStyle().bigText(notifBody))
+        }
+
+        if (linkUrl.isNotBlank()) {
+            builder.addAction(
+                R.drawable.ic_notif_mihrab,
+                language.pick("افتح الرابط", "Open Link", "Havolani ochish"),
+                primaryPending
+            )
+        }
+
+        val mgr = appCtx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return@withContext
+        mgr.notify(7401, builder.build())
     }
 }
